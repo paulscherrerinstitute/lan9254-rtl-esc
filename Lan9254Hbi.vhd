@@ -33,7 +33,7 @@ end entity Lan9254HBI;
 
 architecture rtl of Lan9254HBI is
 
-   -- Bus Timing (wait-ack: '0' -> WAIT, '1' -> ACK)
+   -- Bus Timing (wait-ack: not WAITb_ACK_C -> WAIT, WAITb_ACK_C -> ACK)
    --
    -- Read data cycle (after address):
    --    assert RS 
@@ -72,15 +72,19 @@ architecture rtl of Lan9254HBI is
    constant TRDWA_C                : real := 10.0E-9 + MARGIN_C;
    constant TWR_C                  : real := 32.0E-9 + MARGIN_C;
    constant TDWRH_C                : real :=  5.0E-9 + MARGIN_C;
+   -- add a timeout for wait/ack in case it is not configured
+   constant TWAK_TIMEO_C           : real := 600.0E-9;
 
-   constant TWALE_CNT_C            : natural := initCnt(TWALE_C);
-   constant TADRS_CNT_C            : natural := initCnt(TADRS_C);
-   constant TADRH_CNT_C            : natural := initCnt(TADRH_C);
-   constant TALER_CNT_C            : natural := initCnt(TADRH_C);
-   constant TRDAL_CNT_C            : natural := initCnt(TRDAL_C);
-   constant TRDWA_CNT_C            : natural := initCnt(TRDWA_C) + SYNC_STAGES_C;
-   constant TWR_CNT_C              : natural := initCnt(TWR_C  );
-   constant TDWRH_CNT_C            : natural := initCnt(TDWRH_C);
+
+   constant TWALE_CNT_C            : natural := initCnt(TWALE_C*CLOCK_FREQ_G);
+   constant TADRS_CNT_C            : natural := initCnt(TADRS_C*CLOCK_FREQ_G);
+   constant TADRH_CNT_C            : natural := initCnt(TADRH_C*CLOCK_FREQ_G);
+   constant TALER_CNT_C            : natural := initCnt(TADRH_C*CLOCK_FREQ_G);
+   constant TRDAL_CNT_C            : natural := initCnt(TRDAL_C*CLOCK_FREQ_G);
+   constant TRDWA_CNT_C            : natural := initCnt(TRDWA_C*CLOCK_FREQ_G) + SYNC_STAGES_C;
+   constant TWR_CNT_C              : natural := initCnt(TWR_C  *CLOCK_FREQ_G);
+   constant TDWRH_CNT_C            : natural := initCnt(TDWRH_C*CLOCK_FREQ_G);
+   constant TWAK_TIMEO_CNT_C       : natural := initCnt(TWAK_TIMEO_C*CLOCK_FREQ_G);
 
 
    constant MAX_DELAY_C            : natural := max(
@@ -100,6 +104,8 @@ architecture rtl of Lan9254HBI is
 
    subtype DelayType is natural range 0 to MAX_DELAY_C;
 
+   subtype TimeoType is natural range 0 to TWAK_TIMEO_CNT_C;
+
    type RegType is record
       hbiOut         : Lan9254HBIOutType;
       req            : Lan9254ReqType;
@@ -107,6 +113,7 @@ architecture rtl of Lan9254HBI is
       state          : StateType;
       nstate         : StateType;
       dly            : DelayType;
+      timeo          : TimeoType;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -115,13 +122,15 @@ architecture rtl of Lan9254HBI is
       hbiOut         => LAN9254HBIOUT_INIT_C,
       state          => IDLE,
       nstate         => IDLE,
-      dly            => 0
+      dly            => 0,
+      timeo          => 0
    );
 
    signal r           : RegType := REG_INIT_C;
    signal rin         : RegType;
 
    signal waitAckSync : std_logic;
+   signal waitAckDone : boolean;
 
    constant END_SEL_C : std_logic := '0';
 
@@ -134,7 +143,8 @@ begin
    -- wait/ack is supplied asynchronously!
    U_WA_SYNC : entity work.SynchronizerBit
       generic map (
-         STAGES_G   => SYNC_STAGES_C
+         STAGES_G   => SYNC_STAGES_C,
+         RSTPOL_G   => (not WAITb_ACK_C)
       )
       port map (
          clk        => clk,
@@ -143,7 +153,9 @@ begin
          datOut(0)  => waitAckSync
       );
 
-   P_COMB : process( r, req, hbiInp, waitAckSync ) is
+   waitAckDone <= ( (r.timeo = 0) or ( (waitAckSync = WAITb_ACK_C) and (r.req.noAck = '0') ) );
+
+   P_COMB : process( r, req, hbiInp, waitAckDone ) is
       variable v : RegType;
 
       constant BE_DEASS_C  : std_logic_vector(3 downto 0)          := (others => not HBI_BE_ACT_C);
@@ -163,6 +175,10 @@ begin
 
       -- reply only valid for 1 cycle
       v.rep.valid := '0';
+
+      if ( r.timeo /= 0 ) then
+         v.timeo := r.timeo - 1;
+      end if;
 
       -- delay counter
       B_DELAY : if ( r.dly /= 0 ) then
@@ -213,7 +229,6 @@ begin
                   v.dly                    := TWALE_CNT_C;
                   v.state                  := AWAIT;
                else
-report "MIS " & integer'image(to_integer(unsigned(r.req.addr(1 downto 0)))) & " be " & integer'image(to_integer(unsigned(r.req.be)));
                   -- misaligned address or otherwise done
                   DONE( v );
                end if;
@@ -240,12 +255,14 @@ report "MIS " & integer'image(to_integer(unsigned(r.req.addr(1 downto 0)))) & " 
                         v.hbiOut.ad   := req.wdata(15 downto  0);
                      end if;
                   end if;
+                  v.timeo := TWAK_TIMEO_CNT_C;
                end if;
 
             when READ =>
                if ( r.hbiOut.rs = HBI_RS_ACT_C ) then
                   -- wait ack
-                  if ( waitAckSync = '1' ) then
+                  if ( waitAckDone ) then
+                     v.timeo        := 0;
                      -- capture data
                      if ( r.hbiOut.ad(0) = '1' ) then -- hi-word selected
                         v.rep.rdata(31 downto 16) := hbiInp.ad;
@@ -267,7 +284,8 @@ report "MIS " & integer'image(to_integer(unsigned(r.req.addr(1 downto 0)))) & " 
 
             when WRITE =>
                if ( r.hbiOut.ws = HBI_WS_ACT_C ) then
-                  if ( waitAckSync = '1' ) then
+                  if ( waitAckDone ) then
+                     v.timeo     := 0;
                      v.rep.berr  := (others => '0');
                      v.hbiOut.ws := not HBI_WS_ACT_C;
                      if ( r.req.be = BE_DEASS_C ) then
@@ -289,6 +307,8 @@ report "MIS " & integer'image(to_integer(unsigned(r.req.addr(1 downto 0)))) & " 
                end if;
          end case;
       end if B_DELAY;
+
+      v.hbiOut.cs := '0';
 
       rin <= v;
    end process P_COMB;

@@ -10,6 +10,7 @@ package Lan9254Pkg is
       be      : std_logic_vector( 3 downto 0);
       valid   : std_logic;
       rdnwr   : std_logic;
+      noAck   : std_logic; -- waitAck not operational; must use timeout
    end record Lan9254ReqType;
 
    constant LAN9254REQ_INIT_C : Lan9254ReqType := (
@@ -17,7 +18,8 @@ package Lan9254Pkg is
       wdata   => (others => '0'),
       be      => (others => '0'),
       valid   => '0',
-      rdnwr   => '1'
+      rdnwr   => '1',
+      noAck   => '0'
    );
 
    type Lan9254RepType is record
@@ -50,6 +52,44 @@ package Lan9254Pkg is
    constant HBI_WS_ACT_C : std_logic := '0';
    constant HBI_AL_ACT_C : std_logic := '0';
 
+   -- ACK-level; while this theoretically may be programmed in the EEPROM
+   -- not all settings are possible:
+   --   wait-polarity    : 1/0  (ACK is the complement)
+   --   driver open drain: 1/0  (0   is push-pull)
+   -- HOWEVER: the '00' setting *disables* wait-ack alltogether (lan9252
+   --          compatibility.
+   -- Therefore, in a push-pull configuration only wait-polarity = '1' (=> ACK = '0')
+   -- is possible.
+   -- NOTE/UPDATE -- the documentation seems incorrect: my experiments show the
+   --      following behaviour:
+   --      pol. (Reg150[1])  driver (Reg150[0])
+   --              1               1              ack => '0', wait => '1'   (pullup-enabled)
+   --              1               0              ack => '1', wait => '0'   (pullup-enabled)
+   --              0               1              ack => '1', wait => '0'   (pullup-enabled)
+   --              0               0              disabled  (always '1' with pullup-enabled)
+   --              0               0              disabled  (always '0' with pulldown)
+   --              0               1              ack => '1', wait => '0'   (pulldown)
+   --              1               0              always '0' (pulldown-enabled)
+   --              1               1              ack => '0', wait => '1' (pulldown enabled)
+   --              
+   -- Hence, it seems the functionality is
+   --
+   --     Reg150[1:0]
+   --          00  => disabled
+   --          01  => ack=1, wait=0, push-pull
+   --          10  => ack=1, wait=0, open-drain
+   --          11  => ack=0, wait=1, push-pull
+   --
+   -- (makes kind of sense that the open-drain + wait=1 combination is the one
+   -- that cannot be chosen - this wouldn't be useful for a wired-or type of
+   -- configuration where multiple sources can indicate 'wait').
+   -- 
+   -- Furthermore, in EEPROM emulation mode wait/ack is not available at all until
+   -- the config bytes are loaded.
+   -- Therefore, we provide an enable/disable functionality as well as a timeout
+   --
+   constant WAITb_ACK_C : std_logic := '1'; -- set eeprom to 01 (push-pull) or 10 (open-drain)
+
    constant LAN9254HBIOUT_INIT_C : Lan9254HBIOutType := (
       cs      => not HBI_CS_ACT_C,
       be      => (others => not HBI_BE_ACT_C),
@@ -68,7 +108,7 @@ package Lan9254Pkg is
    end record Lan9254HBIInpType;
 
    constant LAN9254HBIINP_INIT_C : Lan9254HBIInpType := (
-      waitAck => '1',
+      waitAck => (not WAITb_ACK_C),
       ad      => (others => 'U')
    );
 
