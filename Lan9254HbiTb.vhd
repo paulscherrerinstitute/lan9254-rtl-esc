@@ -74,7 +74,7 @@ begin
          case ( sw ) is
             when "11" => v(i) := 'Z';
             when "01" => v(i) := hbiOut.ad(i);
-            when "10" => 
+            when "10" =>
                assert ( wadr >= m.mem'low and wadr <= m.mem'high ) report "invalid memory address" severity failure;
                if ( m.aptr - 4*wadr /= 0 ) then
                   v(i) := w(16 + i);
@@ -135,7 +135,7 @@ begin
       end if;
 
       if ( hbiOut.ws = '1' and m.lws = '0' ) then
-         wadr := m.aptr/4; 
+         wadr := m.aptr/4;
          assert ( wadr >= m.mem'low and wadr <= m.mem'high ) report "invalid memory address" severity failure;
          if ( m.aptr - 4*wadr = 0 ) then
             if ( hbiOut.be(1) = '0' ) then

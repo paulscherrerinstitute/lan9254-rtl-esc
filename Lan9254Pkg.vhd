@@ -71,7 +71,7 @@ package Lan9254Pkg is
    --              0               1              ack => '1', wait => '0'   (pulldown)
    --              1               0              always '0' (pulldown-enabled)
    --              1               1              ack => '0', wait => '1' (pulldown enabled)
-   --              
+   --
    -- Hence, it seems the functionality is
    --
    --     Reg150[1:0]
@@ -83,7 +83,7 @@ package Lan9254Pkg is
    -- (makes kind of sense that the open-drain + wait=1 combination is the one
    -- that cannot be chosen - this wouldn't be useful for a wired-or type of
    -- configuration where multiple sources can indicate 'wait').
-   -- 
+   --
    -- Furthermore, in EEPROM emulation mode wait/ack is not available at all until
    -- the config bytes are loaded.
    -- Therefore, we provide an enable/disable functionality as well as a timeout

@@ -36,7 +36,7 @@ architecture rtl of Lan9254HBI is
    -- Bus Timing (wait-ack: not WAITb_ACK_C -> WAIT, WAITb_ACK_C -> ACK)
    --
    -- Read data cycle (after address):
-   --    assert RS 
+   --    assert RS
    --    must wait until wait_ack indicates the internal machinery is crunching (twadv)
    --    wait until wait_ack indicates internal read has completed (-> until '1')
    --    latch data and deassert RS
@@ -53,7 +53,7 @@ architecture rtl of Lan9254HBI is
    -- trdwa  (rd assert to waitack lo  < 10ns)
    -- twadv  (waitack hi to data valid < 5 ns) 'normal' wait-ack (=> valid data after WAIT_ACK = '1')
    -- tdvwa  (data valid to waitack hi > 15ns) 'delayed' wait-ack (=> valid data AFTER wait-ack = '1')
-   -- 
+   --
    -- POSTED WRITE timing
    -- talewr (ALE release to WR        >  5ns)  => matches read timing
    -- twr    (WR pulse width           > 32ns)  (stretched by waitb-ack)
@@ -159,7 +159,7 @@ begin
       variable v : RegType;
 
       constant BE_DEASS_C  : std_logic_vector(3 downto 0)          := (others => not HBI_BE_ACT_C);
-      constant ALE_DEASS_C : std_logic_vector(r.hbiOut.ale'range)  := (others => not HBI_AL_ACT_C); 
+      constant ALE_DEASS_C : std_logic_vector(r.hbiOut.ale'range)  := (others => not HBI_AL_ACT_C);
 
       procedure DONE(
          variable vv: inout RegType;
@@ -190,7 +190,7 @@ begin
 
             when IDLE =>
                v.rep    := LAN9254REP_INIT_C;
-         
+
                -- latch request
                v.req    := req;
                -- reset reply and bus signals
