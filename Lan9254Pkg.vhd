@@ -112,11 +112,6 @@ package Lan9254Pkg is
       ad      => (others => 'U')
    );
 
-   type EcRegType is record
-      addr     : std_logic_vector(15 downto 0);
-      bena     : std_logic_vector( 3 downto 0);
-   end record EcRegType;
-
    procedure lan9254HBIRead(
       variable rdOut: inout Lan9254ReqType;
       signal   rdInp: in    Lan9254RepType;

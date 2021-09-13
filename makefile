@@ -9,7 +9,7 @@ CXX=$(CROSS)g++
 GHDLFLAGS=
 
 PROG=lan9254escrun
-OBJS=Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o
+OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o
 
 TOPS=Lan9254ESCTb.o Lan9254ESCrun.o 
 
@@ -27,8 +27,17 @@ readWriteSim.o: readWriteSim.c
 run: $(PROG)
 	$(GHDL) -r $(PROG) $(GHDLRUNFLAGS)
 
+EEPROMContentPkg.vhd: eeprom.bin
+	od -Ad -tu2 --endian=little -w2 -v $< | awk -f gen-prom.awk > $@
+
 # Targets to analyze files
+EEPROMContentPkg.o: EEPROMContentPkg.vhd
+	$(GHDL) -a $(GHDLFLAGS) $<
+EEEmulPkg.o: EEEmulPkg.vhd
+	$(GHDL) -a $(GHDLFLAGS) $<
 Lan9254Pkg.o: Lan9254Pkg.vhd
+	$(GHDL) -a $(GHDLFLAGS) $<
+Lan9254ESCPkg.o: Lan9254ESCPkg.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 Lan9254ESC.o: Lan9254ESC.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
@@ -42,13 +51,13 @@ Lan9254ESCrun.o: Lan9254ESCrun.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o EEPROMContentPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o
 Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o
 
 clean:
-	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS)
+	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd
 
 .PHONY: clean all run

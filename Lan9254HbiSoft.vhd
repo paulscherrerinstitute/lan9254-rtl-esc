@@ -79,11 +79,11 @@ begin
                  
             when DELAY =>
                -- req.valid = '1' at this point
-               a := to_integer(unsigned(req.addr));
+               a := to_integer(signed(req.addr));
                if ( req.rdnwr = '1' ) then
-                  d := 0;
+                  d := 12345;
                else
-                  d := to_integer(unsigned(req.wdata));
+                  d := to_integer(signed(req.wdata));
                end if;
                l := 0;
                for i in req.be'range loop
@@ -91,12 +91,20 @@ begin
                      l := l + 1;
                   end if;
                end loop;
+               L_SHFT : for i in req.be'low to req.be'high loop
+                  if ( req.be(i) = '1' ) then
+                     exit L_SHFT;
+                  end if;
+                  a := a + 1;
+               end loop L_SHFT;
+-- report "calling C: " & integer'image(a) & " " & integer'image(d) & " " & integer'image(l);
                readWrite_C(a, req.rdnwr, d, l);
                v.rep.berr  := (others => '0');
                v.rep.valid := '1';
                if ( req.rdnwr = '1' ) then
-                  v.rep.rdata := std_logic_vector(to_unsigned(d, v.rep.rdata'length));
+                  v.rep.rdata := std_logic_vector(to_signed(d, v.rep.rdata'length));
                end if;
+               v.state := IDLE;
          end case;
       end if B_DELAY;
 
