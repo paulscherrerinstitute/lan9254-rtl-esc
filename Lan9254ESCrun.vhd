@@ -5,10 +5,10 @@ use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
 
-entity Lan9254ESCTb is
-end entity Lan9254ESCTb;
+entity Lan9254ESCrun is
+end entity Lan9254ESCrun;
 
-architecture rtl of Lan9254ESCTb is
+architecture rtl of Lan9254ESCrun is
    signal clk : std_logic := '0';
    signal rst : std_logic := '0';
    signal run : boolean   := true;
