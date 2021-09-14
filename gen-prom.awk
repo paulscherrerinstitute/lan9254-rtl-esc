@@ -5,13 +5,17 @@ BEGIN {
   print("package EEPROMContentPkg is")
   print("type EEPROMArray is array (natural range <>) of std_logic_vector(15 downto 0);")
   print("constant EEPROM_INIT_C : EEPROMArray := (")
-  COMMA=""
 }
 END {
-  print(");")
-  print("end package EEPROMContentPkg;")
+  # pad with zeroes; since emulation always reads in blocks of 8 bytes
+  # it sometimes reads beyond the end...
+  printf("      %d/2 => x\"0000\",\n", LSTA + 2);
+  printf("      %d/2 => x\"0000\",\n", LSTA + 4);
+  printf("      %d/2 => x\"0000\"\n",  LSTA + 6);
+  printf(");\n")
+  printf("end package EEPROMContentPkg;\n")
 }
 {
-  printf("%s%d/2 => x\"%04x\"\n", COMMA, $1, $2)
-  COMMA=", "
+  printf("      %d/2 => x\"%04x\",\n", $1, $2)
+  LSTA=$1
 }
