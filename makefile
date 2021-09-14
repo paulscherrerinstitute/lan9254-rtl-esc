@@ -27,7 +27,7 @@ readWriteSim.o: readWriteSim.c
 run: $(PROG)
 	$(GHDL) -r $(PROG) $(GHDLRUNFLAGS)
 
-EEPROMContentPkg.vhd: eeprom.bin
+EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
 	od -Ad -tu2 --endian=little -w2 -v $< | awk -f gen-prom.awk > $@
 
 # Targets to analyze files
@@ -51,7 +51,8 @@ Lan9254ESCrun.o: Lan9254ESCrun.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o EEPROMContentPkg.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o
+EEEmulPkg.o: EEPROMContentPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o
 Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
