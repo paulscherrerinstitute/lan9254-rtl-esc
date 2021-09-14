@@ -3,10 +3,12 @@
 # Command used to generate this makefile:
 # ghdl --gen-makefile lan9254esctb
 
-CROXX=
+CROSS=arm-linux-gnueabi-
 GHDL=$(CROSS)ghdl
 CXX=$(CROSS)g++
 GHDLFLAGS=
+SIITOOL=../master/siitool/siitool
+
 
 PROG=lan9254escrun
 OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o
@@ -29,6 +31,10 @@ run: $(PROG)
 
 EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
 	od -Ad -tu2 --endian=little -w2 -v $< | awk -f gen-prom.awk > $@
+
+eeprom.bin: test.xml
+	$(RM) $@
+	$(SIITOOL) -o $@ $<
 
 # Targets to analyze files
 EEPROMContentPkg.o: EEPROMContentPkg.vhd

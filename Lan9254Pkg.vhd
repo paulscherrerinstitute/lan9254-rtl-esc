@@ -1,5 +1,6 @@
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 use ieee.math_real.all;
 
 package Lan9254Pkg is
@@ -32,6 +33,22 @@ package Lan9254Pkg is
       valid   => '0',
       rdata   => (others => 'X'),
       berr    => (others => '1')
+   );
+
+   type Lan9254PDOMstType is record
+      wrdAddr : unsigned(12 downto 0);
+      data    : std_logic_vector(15 downto 0);
+      valid   : std_logic;
+      ben     : std_logic_vector(1 downto 0);
+      last    : std_logic;
+   end record Lan9254PDOMstType;
+
+   constant LAN9254PDO_MST_INIT_C : Lan9254PDOMstType := (
+      wrdAddr => (others => '0'),
+      data    => (others => 'X'),
+      valid   => '0',
+      ben     => (others => '0'),
+      last    => '0'
    );
 
    type Lan9254HBIOutType is record
@@ -136,6 +153,8 @@ package Lan9254Pkg is
    function numBits(constant x: integer ) return integer;
    function initCnt(constant p: real    ) return natural;
 
+   function toString(constant x : std_logic_vector) return string;
+
 end package Lan9254Pkg;
 
 package body Lan9254Pkg is
@@ -218,5 +237,37 @@ package body Lan9254Pkg is
    begin
       return IVAL;
    end function initCnt;
+
+   function toString(constant x : std_logic_vector)
+   return string is
+      variable s : string((x'length + 3)/4 - 1 downto 0);
+      variable t : std_logic_vector(x'length + 3 downto 0);
+      variable d : std_logic_vector(3 downto 0);
+   begin
+      t                        := (others => '0');
+      t(x'length - 1 downto 0) := x;
+      for i in 0 to s'length - 1 loop
+         d := t(4*i+3 downto 4*i);
+         if    ( d = x"0") then s(i) := '0';
+         elsif ( d = x"1") then s(i) := '1';
+         elsif ( d = x"2") then s(i) := '2';
+         elsif ( d = x"3") then s(i) := '3';
+         elsif ( d = x"4") then s(i) := '4';
+         elsif ( d = x"5") then s(i) := '5';
+         elsif ( d = x"6") then s(i) := '6';
+         elsif ( d = x"7") then s(i) := '7';
+         elsif ( d = x"8") then s(i) := '8';
+         elsif ( d = x"9") then s(i) := '9';
+         elsif ( d = x"A") then s(i) := 'A';
+         elsif ( d = x"B") then s(i) := 'B';
+         elsif ( d = x"C") then s(i) := 'C';
+         elsif ( d = x"D") then s(i) := 'D';
+         elsif ( d = x"E") then s(i) := 'E';
+         elsif ( d = x"F") then s(i) := 'F';
+         else                   s(i) := 'U';
+         end if;
+      end loop;
+      return s; 
+   end function toString;
 
 end package body Lan9254Pkg;

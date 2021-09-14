@@ -5,6 +5,17 @@ use ieee.math_real.all;
 
 package Lan9254ESCPkg is
 
+   -- we list BOOT last so the valid increments in state (except for boot)
+   -- are always '1'
+   type ESCStateType is (
+      INIT,
+      PREOP,
+      SAFEOP,
+      OP,
+      BOOT,
+      UNKNOWN
+   );
+
    type EcRegType is record
       addr     : std_logic_vector(15 downto 0);
       bena     : std_logic_vector( 3 downto 0);
@@ -30,8 +41,13 @@ package Lan9254ESCPkg is
       bena     => "1111"
    );
 
-   constant EC_AL_EREQ_CTL_IDX_C         : natural := 0;
-   constant EC_AL_EREQ_EEP_IDX_C         : natural := 5;
+   constant EC_AL_EREQ_CTL_IDX_C         : natural :=  0;
+   constant EC_AL_EREQ_EEP_IDX_C         : natural :=  5;
+   constant EC_AL_EREQ_SMA_IDX_C         : natural :=  4;
+   constant EC_AL_EREQ_SM0_IDX_C         : natural :=  8;
+   constant EC_AL_EREQ_SM1_IDX_C         : natural :=  9;
+   constant EC_AL_EREQ_SM2_IDX_C         : natural := 10;
+   constant EC_AL_EREQ_SM3_IDX_C         : natural := 11;
 
    constant EC_REG_EEP_CSR_C : EcRegType := (
       addr     => x"0500",
@@ -88,14 +104,28 @@ package Lan9254ESCPkg is
    constant EC_ALER_OK_C                                : ESCVal16Type := x"0000";
    constant EC_ALER_INVALIDSTATECHANGE_C                : ESCVal16Type := x"0011";
    constant EC_ALER_UNKNOWNSTATE_C                      : ESCVal16Type := x"0012";
+   constant EC_ALER_INVALIDMBXCONFIG_C                  : ESCVal16Type := x"0016";
    constant EC_ALER_INVALIDOUTPUTSM_C                   : ESCVal16Type := x"001D";
    constant EC_ALER_INVALIDINPUTSM_C                    : ESCVal16Type := x"001E";
 
+   constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
+   constant ESC_SM0_SMC_C                               : ESCVal16Type := x"0026";
+   constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0080";
+   constant ESC_SM0_ACT_C                               : std_logic    := '1';
+
+   constant ESC_SM1_SMA_C                               : ESCVal16Type := x"1080";
+   constant ESC_SM1_SMC_C                               : ESCVal16Type := x"0022";
+   constant ESC_SM1_LEN_C                               : ESCVal16Type := x"0080";
+   constant ESC_SM1_ACT_C                               : std_logic    := '1';
+
+
+   -- PDO address **must** be word-aligned for now
    constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1100";
    constant ESC_SM2_SMC_C                               : ESCVal16Type := x"0024";
-   constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0002";
+   constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
+   -- PDO address **must** be word-aligned for now
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
    constant ESC_SM3_SMC_C                               : ESCVal16Type := x"0020";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0001";
@@ -171,6 +201,5 @@ package body LAN9254ESCPkg is
    begin
       return v(10 downto 8);
    end function EE_CMD_GET_F;
-
 
 end package body LAN9254ESCPkg;
