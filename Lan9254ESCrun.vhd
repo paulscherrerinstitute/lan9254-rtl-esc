@@ -9,17 +9,20 @@ entity Lan9254ESCrun is
 end entity Lan9254ESCrun;
 
 architecture rtl of Lan9254ESCrun is
-   signal clk : std_logic := '0';
-   signal rst : std_logic := '0';
-   signal run : boolean   := true;
+   signal clk      : std_logic := '0';
+   signal rst      : std_logic := '0';
+   signal run      : boolean   := true;
 
-   signal req : Lan9254ReqType := LAN9254REQ_INIT_C;
-   signal rep : Lan9254RepType := LAN9254REP_INIT_C;
+   signal req      : Lan9254ReqType := LAN9254REQ_INIT_C;
+   signal rep      : Lan9254RepType := LAN9254REP_INIT_C;
 
-   signal al  : std_logic_vector(31 downto 0) := x"0000_0002";
-   signal as  : std_logic_vector(31 downto 0) := x"0000_0001";
+   signal al       : std_logic_vector(31 downto 0) := x"0000_0002";
+   signal as       : std_logic_vector(31 downto 0) := x"0000_0001";
 
-   signal cnt : integer := 0;
+   signal cnt      : integer := 0;
+
+   signal rxPDOMst : Lan9254PDOMstType;
+   signal rxPDORdy : std_logic;
 
 begin
 
@@ -48,7 +51,10 @@ begin
          rst         => rst,
 
          req         => req,
-         rep         => rep
+         rep         => rep,
+
+         rxPdoMst    => rxPDOMst,
+         rxPdoRdy    => rxPDORdy
       );
 
    U_HBI : entity work.Lan9254Hbi
@@ -60,6 +66,15 @@ begin
          rst         => rst,
          req         => req,
          rep         => rep
+      );
+
+   U_RXPDO : entity work.RxPDOSoft
+      port map (
+         clk         => clk,
+         rst         => rst,
+
+         rxPdoMst    => rxPDOMst,
+         rxPdoRdy    => rxPDORdy
       );
 
 end architecture rtl;

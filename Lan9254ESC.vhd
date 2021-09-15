@@ -43,6 +43,7 @@ architecture rtl of Lan9254ESC is
       EN_DIS_SM,
       SM_ACTIVATION_CHANGED,
       UPDATE_RXPDO,
+      DROP_RXPDO,
       UPDATE_TXPDO
    );
 
@@ -204,7 +205,7 @@ begin
    assert ESC_SM2_SMA_C(0) = '0' report "RXPDO address must be word aligned" severity failure;
    assert ESC_SM3_SMA_C(0) = '0' report "TXPDO address must be word aligned" severity failure;
 
-   P_COMB : process (r, rep, rxPDORdy, txPDO) is
+   P_COMB : process (r, rep, rxPDORdy, txPDOMst) is
       variable v   : RegType;
       variable val : std_logic_vector(31 downto 0);
       variable xct : RWXactType;
@@ -240,18 +241,22 @@ report "READ_AS " & toString( r.program.seq(0).val );
                v.lastAL(EC_AL_EREQ_CTL_IDX_C) := '0';
                v.state                        := READ_AL;
 report "AL  EVENT";
-            elsif ( r.program.seq(0).val(EC_AL_EREQ_EEP_IDX_C) = '1' ) then
+            elsif ( r.lastAL(EC_AL_EREQ_EEP_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_EEP_IDX_C) := '0';
                v.state                        := EEP_EMUL;
 report "EEP EVENT";
-            elsif ( r.program.seq(0).val(EC_AL_EREQ_SMA_IDX_C) = '1' ) then
+            elsif ( r.lastAL(EC_AL_EREQ_SMA_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_SMA_IDX_C) := '0';
                v.state                        := SM_ACTIVATION_CHANGED;
 report "SMA EVENT";
-            elsif ( r.program.seq(0).val(EC_AL_EREQ_SM2_IDX_C) = '1' ) then
+            elsif ( r.lastAL(EC_AL_EREQ_SM2_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_SM2_IDX_C) := '0';
                if ( (ESC_SM2_ACT_C = '1') and (unsigned(ESC_SM2_LEN_C) > 0) ) then
-                  v.state                     := UPDATE_RXPDO;
+                  if ( r.curState = OP ) then
+                     v.state                     := UPDATE_RXPDO;
+                  else
+                     v.state                     := DROP_RXPDO;
+                  end if;
                end if;
             end if;
 
@@ -593,90 +598,97 @@ severity warning;
                v.state := HANDLE_AL_EVENT;
             end if;
 
+         when DROP_RXPDO =>
+            if ( not r.program.don ) then
+               scheduleRegXact(
+                  v,
+                  (
+                     0 => RWXACT( EC_REG_RXPDO_L_C )
+                  )
+               );
+            else
+               v.state := HANDLE_AL_EVENT;
+            end if;
+
          when UPDATE_RXPDO =>
             if ( r.decim > 0 ) then
                v.decim := v.decim - 1;
                v.state := HANDLE_AL_EVENT;
 else
             
-            if ( ( ( r.rxPDO.valid and rxPDORdy ) = '1' ) or ( r.curState /= OP ) ) then
+            if ( ( r.rxPDO.valid and rxPDORdy ) = '1' ) then
                v.rxPDO.valid := '0';
-report "UPDATE_RXPDO " & toString(std_logic_vector(r.rxPDO.wrdAddr)) & " LST: " & std_logic'image(r.rxPDO.last) & " BEN " & toString(r.rxPDO.ben);
+--report "UPDATE_RXPDO " & toString(std_logic_vector(r.rxPDO.wrdAddr)) & " LST: " & std_logic'image(r.rxPDO.last) & " BEN " & toString(r.rxPDO.ben) & " DAT " & toString(r.rxPDO.data);
                if ( r.rxPDO.last = '1' ) then
                   v.state := HANDLE_AL_EVENT;
                   v.rxPDO := LAN9254PDO_MST_INIT_C;
-v.decim := 100;
+--v.decim := 100;
                else
                   v.rxPDO.wrdAddr := r.rxPDO.wrdAddr + 1;
                end if;
             end if;
 
             if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-               if ( r.ctlReq.be(0) = '1' ) then
+               if ( r.ctlReq.be(0) = HBI_BE_ACT_C ) then
                   v.rxPDO.data   := rep.rdata(15 downto  0);
                else
                   v.rxPDO.data   := rep.rdata(31 downto 16);
                end if;
-               if ( r.curState = OP ) then
-                  v.rxPDO.valid  := '1';
-               end if;
+               v.rxPDO.valid  := '1';
                v.ctlReq.valid := '0';
             end if;
 
-            if ( (v.ctlReq.valid or v.rxPDO.valid) = '0' ) then
+            -- if the last transaction is complete don't start a next one
+            if ( (v.ctlReq.valid or v.rxPDO.valid or r.rxPDO.last) = '0' ) then
                v.ctlReq.addr  := std_logic_vector((r.rxPDO.wrdAddr & "0") + unsigned(ESC_SM2_SMA_C(v.ctlReq.addr'range)));
                v.rxPDO.ben    := "11";
                v.rxPDO.last   := '0';
+              
+               if ( v.ctlReq.addr(1) = '1' ) then
+                  v.ctlReq.addr(1) := '0';
+                  v.ctlReq.be      := HBI_BE_W1_C;
+               else
+                  v.ctlReq.be      := HBI_BE_W0_C;
+               end if;
+
                if ( signed( "0" & r.rxPDO.wrdAddr ) = to_signed((to_integer(signed(ESC_SM2_LEN_C)) - 1 )/2, r.rxPDO.wrdAddr'length + 1) ) then
                   v.rxPDO.last := '1';
                   if ( ESC_SM2_LEN_C(0) = '1' ) then
                      v.rxPDO.ben(1) := '0';
+                     v.ctlReq.be(3) := not HBI_BE_ACT_C;
+                     v.ctlReq.be(1) := not HBI_BE_ACT_C;
                   end if;
                end if;
-               
-               if ( v.ctlReq.addr(1) = '1' ) then
-                  v.ctlReq.addr(1) := '0';
-                  v.ctlReq.be      := "1100";
-               else
-                  v.ctlReq.be      := "0011";
-               end if;
+
                v.ctlReq.rdnwr      := '1';
                v.ctlReq.valid      := '1';
             end if;
 end if;
 
          when UPDATE_TXPDO =>
-            -- abuse rxPDO.addr as an address counter
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-               v.ctlReq.valid := '0';
-            end if;
-
-            if ( (txPDO.valid and r.txPDORdy) = '1' ) then
-               v.txPDORdy    := '0';
-               v.ctlReq.addr := std_logic_vector((txPDO.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
-               if ( v.ctlReq.addr(1) = '1' ) then
-                  v.ctlReq.addr(1) := '0';
-                  v.ctlReq.wdat    := txPDO.data & x"0000";
-                  v.ctlReq.be      := txPDO.ben  & "00";
-               else
-                  v.ctlReq.wdat    := x"0000"    & txPDO.data;
-                  v.ctlReq.be      :=  "00"      & txPDO.ben;
-               end if;
-               v.ctlReq.rdnwr      := '0';
-               v.ctlReq.valid      := '1';
-            end if;
-         wrOut       := LAN9254REQ_INIT_C;
-         wrOut.addr  := wrAdr(wrOut.addr'range);
-         wrOut.be    := wrBEn;
-         wrOut.wdata := wrDat;
-         wrOut.rdnwr := '0';
-         wrOut.valid := '1';
-
-            if ( (v.ctlReq.valid or v.txPDORdy) = '0' ) then
-               v.ctlReq.addr  := std_logic_vector(r.rxPDO.wrdAddr & "0");
-               if ( v.ctlReq.addr(1) = '1' ) then
-                  v.ctlReq.wdata := 
-
+--
+--            -- abuse rxPDO.addr as an address counter
+--            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+--               v.ctlReq.valid := '0';
+--               if ( signed( "0" & r.rxPDO.wrdAddr ) = to_signed((to_integer(signed(ESC_SM2_LEN_C)) - 1 )/2, r.rxPDO.wrdAddr'length + 1) ) then
+--               end if;
+--            end if;
+--
+--            if ( (txPDO.valid and r.txPDORdy) = '1' ) then
+--               v.txPDORdy    := '0';
+--               v.ctlReq.addr := std_logic_vector((txPDO.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
+--               if ( v.ctlReq.addr(1) = '1' ) then
+--                  v.ctlReq.addr(1) := '0';
+--                  v.ctlReq.wdat    := txPDO.data & x"0000";
+--                  v.ctlReq.be      := txPDO.ben  & "00";
+--               else
+--                  v.ctlReq.wdat    := x"0000"    & txPDO.data;
+--                  v.ctlReq.be      :=  "00"      & txPDO.ben;
+--               end if;
+--               v.ctlReq.rdnwr      := '0';
+--               v.ctlReq.valid      := '1';
+--            end if;
+--
       end case C_STATE;
 
       rin <= v;

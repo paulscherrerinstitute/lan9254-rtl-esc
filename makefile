@@ -11,7 +11,7 @@ SIITOOL=../master/siitool/siitool
 
 
 PROG=lan9254escrun
-OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o
+OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o
 
 TOPS=Lan9254ESCTb.o Lan9254ESCrun.o 
 
@@ -37,6 +37,8 @@ eeprom.bin: test.xml
 	$(SIITOOL) -o $@ $<
 
 # Targets to analyze files
+RxPDOSoft.o: RxPDOSoft.vhd
+	$(GHDL) -a $(GHDLFLAGS) $<
 EEPROMContentPkg.o: EEPROMContentPkg.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 EEEmulPkg.o: EEEmulPkg.vhd
@@ -57,7 +59,7 @@ Lan9254ESCrun.o: Lan9254ESCrun.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o
 EEEmulPkg.o: EEPROMContentPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o

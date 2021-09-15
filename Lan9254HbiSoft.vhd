@@ -87,12 +87,12 @@ begin
                end if;
                l := 0;
                for i in req.be'range loop
-                  if ( req.be(i) = '1' ) then
+                  if ( req.be(i) = HBI_BE_ACT_C ) then
                      l := l + 1;
                   end if;
                end loop;
                L_SHFT : for i in req.be'low to req.be'high loop
-                  if ( req.be(i) = '1' ) then
+                  if ( req.be(i) = HBI_BE_ACT_C ) then
                      exit L_SHFT;
                   end if;
                   a := a + 1;

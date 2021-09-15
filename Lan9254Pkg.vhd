@@ -69,6 +69,34 @@ package Lan9254Pkg is
    constant HBI_WS_ACT_C : std_logic := '0';
    constant HBI_AL_ACT_C : std_logic := '0';
 
+   constant HBI_BE_B0_C  : std_logic_vector(3 downto 0) := (
+      3 => not HBI_BE_ACT_C, 2 => not HBI_BE_ACT_C, 1 => not HBI_BE_ACT_C, 0 =>     HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_B1_C  : std_logic_vector(3 downto 0) := (
+      3 => not HBI_BE_ACT_C, 2 => not HBI_BE_ACT_C, 1 =>     HBI_BE_ACT_C, 0 => not HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_B2_C  : std_logic_vector(3 downto 0) := (
+      3 => not HBI_BE_ACT_C, 2 =>     HBI_BE_ACT_C, 1 => not HBI_BE_ACT_C, 0 => not HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_B3_C  : std_logic_vector(3 downto 0) := (
+      3 =>     HBI_BE_ACT_C, 2 => not HBI_BE_ACT_C, 1 => not HBI_BE_ACT_C, 0 => not HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_W1_C : std_logic_vector(3 downto 0) := (
+      3 =>     HBI_BE_ACT_C, 2 =>     HBI_BE_ACT_C, 1 => not HBI_BE_ACT_C, 0 => not HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_W0_C : std_logic_vector(3 downto 0) := (
+      3 => not HBI_BE_ACT_C, 2 => not HBI_BE_ACT_C, 1 =>     HBI_BE_ACT_C, 0 =>     HBI_BE_ACT_C
+   );
+
+   constant HBI_BE_DW_C : std_logic_vector(3 downto 0) := (
+      others => HBI_BE_ACT_C
+   );
+
    -- ACK-level; while this theoretically may be programmed in the EEPROM
    -- not all settings are possible:
    --   wait-polarity    : 1/0  (ACK is the complement)
