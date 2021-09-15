@@ -34,7 +34,7 @@ EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
 
 eeprom.bin: test.xml
 	$(RM) $@
-	$(SIITOOL) -o $@ $<
+	$(SIITOOL) -m -o $@ $<
 
 # Targets to analyze files
 RxPDOSoft.o: RxPDOSoft.vhd
