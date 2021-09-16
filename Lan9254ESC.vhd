@@ -89,10 +89,33 @@ architecture rtl of Lan9254ESC is
       return rv;
    end function RWXACT;
 
+   function RWXACT(
+      constant addr: std_logic_vector;
+      constant bena: std_logic_vector( 3 downto 0);
+      constant val : std_logic_vector := ""
+   )
+   return RWXactType is
+      variable rv    : RWXactType;
+      variable reg   : EcRegType;
+   begin
+      reg.addr                          := (others => '0');
+      reg.addr(addr'length -1 downto 0) := addr;
+      reg.bena                          := bena;
+      return RWXACT( reg, val );
+   end function RWXACT;
+
    type RWXactArray is array (natural range <>) of RWXactType;
 
-   constant LD_XACT_MAX_C : natural := 3;
-   constant XACT_MAX_C    : natural := 2**LD_XACT_MAX_C;
+   constant LD_XACT_MAX_C          : natural := 3;
+   constant XACT_MAX_C             : natural := 2**LD_XACT_MAX_C;
+
+   -- not valid for length = 0 -- assume this is checked before using WADDR_END
+   constant SM2_WADDR_END_C        : unsigned(13 downto 0) :=
+      to_unsigned( (to_integer(signed(ESC_SM2_HACK_LEN_C)) - 1 )/2, 14 );
+   constant SM3_WADDR_END_C        : unsigned(13 downto 0) :=
+      to_unsigned( (to_integer(signed(ESC_SM3_HACK_LEN_C)) - 1 )/2, 14 );
+
+   constant TXPDO_BURST_MAX_C      : natural := 7;
 
    type RWXactSeqType is record
       seq      : RWXactArray(0 to XACT_MAX_C - 1);
@@ -126,11 +149,12 @@ architecture rtl of Lan9254ESC is
       lastAL   : std_logic_vector(31 downto 0);
       rxPDO    : Lan9254PDOMstType;
       txPDORdy : std_logic;
+      txPDOBst : natural range 0 to TXPDO_BURST_MAX_C;
       decim    : natural;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
-      state    => INIT,
+      state    => UPDATE_AS,
       reqState => INIT,
       errAck   => '0',
       curState => INIT,
@@ -143,6 +167,7 @@ architecture rtl of Lan9254ESC is
       lastAL   => (others => '0'),
       rxPDO    => LAN9254PDO_MST_INIT_C,
       txPDORdy => '0',
+      txPDOBst => 0,
       decim    => 0
    );
 
@@ -199,6 +224,20 @@ architecture rtl of Lan9254ESC is
       end case;
       return ret;
    end function toSlv;
+
+   procedure maybeUpdateTXPDO(
+      variable v : inout RegType;
+      constant b : in    natural
+   ) is
+   begin
+      if (    ( r.curState = SAFEOP or r.curState = OP )
+          and ( ESC_SM3_ACT_C = '1' )
+          and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) then
+         v.txPDOBst :=  b;
+         v.txPDORdy := '1';
+         v.state    := UPDATE_TXPDO;
+      end if;
+   end procedure maybeUpdateTXPDO;
 
 begin
 
@@ -259,6 +298,9 @@ report "SMA EVENT";
                      v.state                     := DROP_RXPDO;
                   end if;
                end if;
+            else
+               -- maybe the TXPDO needs to be updated
+               maybeUpdateTXPDO( v, TXPDO_BURST_MAX_C );
             end if;
 
          when READ_AL =>
@@ -284,6 +326,7 @@ report "SMA EVENT";
                end if;
 
 report "READ_AL " & toString( r.program.seq(0).val ) & " v.errSta " & std_logic'image(v.errSta) & " r.errSta " & std_logic'image(r.errSta);
+report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE " & integer'image(ESCStateType'pos(v.reqState));
                if ( v.reqState /= r.reqState or v.errSta /= r.errSta ) then
                   v.state := EVALUATE_TRANSITION;
                else
@@ -612,35 +655,39 @@ severity warning;
             end if;
 
          when UPDATE_RXPDO =>
-            if ( r.decim > 0 ) then
-               v.decim := v.decim - 1;
-               v.state := HANDLE_AL_EVENT;
-else
-            
-            if ( ( r.rxPDO.valid and rxPDORdy ) = '1' ) then
-               v.rxPDO.valid := '0';
---report "UPDATE_RXPDO " & toString(std_logic_vector(r.rxPDO.wrdAddr)) & " LST: " & std_logic'image(r.rxPDO.last) & " BEN " & toString(r.rxPDO.ben) & " DAT " & toString(r.rxPDO.data);
-               if ( r.rxPDO.last = '1' ) then
-                  v.state := HANDLE_AL_EVENT;
-                  v.rxPDO := LAN9254PDO_MST_INIT_C;
---v.decim := 100;
-               else
-                  v.rxPDO.wrdAddr := r.rxPDO.wrdAddr + 1;
-               end if;
-            end if;
 
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+            if ( r.rxPDO.valid = '1' ) then
+               -- write to RXPDO pending
+               if ( rxPDORdy  = '1' ) then
+if ( r.decim = 0 ) then
+report "UPDATE_RXPDO " & toString(std_logic_vector(r.rxPDO.wrdAddr)) & " LST: " & std_logic'image(r.rxPDO.last) & " BEN " & toString(r.rxPDO.ben) & " DAT " & toString(r.rxPDO.data);
+v.decim := 200;
+else
+v.decim := r.decim - 1;
+end if;
+                  -- write to RXPDO complete
+                  v.rxPDO.valid := '0';
+                  if ( r.rxPDO.last = '1' ) then
+                     -- last write completed; we are done
+                     v.state := HANDLE_AL_EVENT;
+                     v.rxPDO := LAN9254PDO_MST_INIT_C;
+                  else
+                     -- next word
+                     v.rxPDO.wrdAddr := r.rxPDO.wrdAddr + 1;
+                  end if;
+               end if;
+            elsif ( r.program.don ) then
+               -- read from lan9254 complete; initiate write to RXPDO interface
                if ( r.ctlReq.be(0) = HBI_BE_ACT_C ) then
                   v.rxPDO.data   := rep.rdata(15 downto  0);
                else
                   v.rxPDO.data   := rep.rdata(31 downto 16);
                end if;
                v.rxPDO.valid  := '1';
-               v.ctlReq.valid := '0';
-            end if;
+            else
+               -- RXPDO write not onging and lan9254 register read not done
+               -- => initiate next lan9254 register read operation
 
-            -- if the last transaction is complete don't start a next one
-            if ( (v.ctlReq.valid or v.rxPDO.valid or r.rxPDO.last) = '0' ) then
                v.ctlReq.addr  := std_logic_vector((r.rxPDO.wrdAddr & "0") + unsigned(ESC_SM2_SMA_C(v.ctlReq.addr'range)));
                v.rxPDO.ben    := "11";
                v.rxPDO.last   := '0';
@@ -652,44 +699,87 @@ else
                   v.ctlReq.be      := HBI_BE_W0_C;
                end if;
 
-               if ( signed( "0" & r.rxPDO.wrdAddr ) = to_signed((to_integer(signed(ESC_SM2_LEN_C)) - 1 )/2, r.rxPDO.wrdAddr'length + 1) ) then
+               if ( r.rxPDO.wrdAddr = SM2_WADDR_END_C ) then
                   v.rxPDO.last := '1';
-                  if ( ESC_SM2_LEN_C(0) = '1' ) then
+                  if ( ESC_SM2_HACK_LEN_C(0) = '1' ) then
                      v.rxPDO.ben(1) := '0';
                      v.ctlReq.be(3) := not HBI_BE_ACT_C;
                      v.ctlReq.be(1) := not HBI_BE_ACT_C;
                   end if;
                end if;
 
-               v.ctlReq.rdnwr      := '1';
-               v.ctlReq.valid      := '1';
+               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be ) ) );
+
             end if;
-end if;
 
          when UPDATE_TXPDO =>
---
---            -- abuse rxPDO.addr as an address counter
---            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
---               v.ctlReq.valid := '0';
---               if ( signed( "0" & r.rxPDO.wrdAddr ) = to_signed((to_integer(signed(ESC_SM2_LEN_C)) - 1 )/2, r.rxPDO.wrdAddr'length + 1) ) then
---               end if;
---            end if;
---
---            if ( (txPDO.valid and r.txPDORdy) = '1' ) then
---               v.txPDORdy    := '0';
---               v.ctlReq.addr := std_logic_vector((txPDO.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
---               if ( v.ctlReq.addr(1) = '1' ) then
---                  v.ctlReq.addr(1) := '0';
---                  v.ctlReq.wdat    := txPDO.data & x"0000";
---                  v.ctlReq.be      := txPDO.ben  & "00";
---               else
---                  v.ctlReq.wdat    := x"0000"    & txPDO.data;
---                  v.ctlReq.be      :=  "00"      & txPDO.ben;
---               end if;
---               v.ctlReq.rdnwr      := '0';
---               v.ctlReq.valid      := '1';
---            end if;
---
+            if ( r.txPDORdy = '1' ) then
+
+               v.txPDORdy := '0';
+
+               -- write to RXPDO pending
+               if ( txPDOMst.valid  = '1' ) then
+
+if ( r.decim = 0 ) then
+report "UPDATE_TXPDO " & toString(std_logic_vector(txPDOMst.wrdAddr)) & " LST: " & std_logic'image(txPDOMst.last) & " BEN " & toString(txPDOMst.ben) & " DAT " & toString(txPDOMst.data);
+v.decim := 200;
+else
+v.decim := r.decim - 1;
+end if;
+                  if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
+                     v.ctlReq.addr  := std_logic_vector((txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
+                     -- replicate across all lanes
+                     v.ctlReq.wdata := ( txPDOMst.data & txPDOMst.data );
+   
+                     if ( v.ctlReq.addr(1) = '1' ) then
+                        v.ctlReq.addr(1) := '0';
+                        v.ctlReq.be      := HBI_BE_W1_C;
+                     else
+                        v.ctlReq.be      := HBI_BE_W0_C;
+                     end if;
+                     if ( txPDOMst.ben(0) = '0' ) then
+                        v.ctlReq.be(0) := not HBI_BE_ACT_C;
+                        v.ctlReq.be(2) := not HBI_BE_ACT_C;
+                     end if;
+
+                     -- if last byte make sure proper byte-enable is deasserted
+                     if (    ( txPDOMst.ben(1) = '0'       )
+                          or (    ( ESC_SM3_HACK_LEN_C(0) = '1' )
+                              and ( txPDOMst.wrdAddr      = SM3_WADDR_END_C )
+                             )
+                        ) then
+                        v.ctlReq.be(1) := not HBI_BE_ACT_C;
+                        v.ctlReq.be(3) := not HBI_BE_ACT_C;
+                     end if;
+                  else 
+                     -- illegal address; drop
+                     if ( r.txPDOBst = 0 ) then
+                        v.state := POLL_AL_EVENT;
+                     else
+                        v.txPDORdy := '1';
+                        v.txPDOBst := r.txPDOBst - 1;
+                     end if;
+                  end if;
+               else
+                  -- nothing to send ATM
+                  v.state    := POLL_AL_EVENT;
+                  v.txPDOBst := 0;
+               end if;
+            elsif ( r.program.don ) then
+               -- write to lan9254 done
+               if ( r.txPDOBst = 0 ) then
+                  v.state := POLL_AL_EVENT;
+               else
+                  v.txPDORdy := '1';
+                  v.txPDOBst := r.txPDOBst - 1;
+               end if;
+            else
+               -- => initiate lan9254 register write operation
+
+               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.wdata ) ) );
+
+            end if;
+
       end case C_STATE;
 
       rin <= v;
@@ -710,5 +800,6 @@ end if;
    req      <= r.ctlReq;
    rxPDOMst <= r.rxPDO;
    escState <= r.curState;
+   txPDORdy <= r.txPDORdy;
 
 end architecture rtl;

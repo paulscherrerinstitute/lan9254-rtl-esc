@@ -46,8 +46,9 @@ package Lan9254ESCPkg is
    );
 
    constant EC_AL_EREQ_CTL_IDX_C         : natural :=  0;
-   constant EC_AL_EREQ_EEP_IDX_C         : natural :=  5;
    constant EC_AL_EREQ_SMA_IDX_C         : natural :=  4;
+   constant EC_AL_EREQ_EEP_IDX_C         : natural :=  5;
+   constant EC_AL_EREQ_WDG_IDX_C         : natural :=  6;
    constant EC_AL_EREQ_SM0_IDX_C         : natural :=  8;
    constant EC_AL_EREQ_SM1_IDX_C         : natural :=  9;
    constant EC_AL_EREQ_SM2_IDX_C         : natural := 10;
@@ -128,14 +129,16 @@ package Lan9254ESCPkg is
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1100";
-   constant ESC_SM2_SMC_C                               : ESCVal16Type := x"0024";
-   constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0002";
+   constant ESC_SM2_SMC_C                               : ESCVal16Type := x"0064";
+   constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
+   constant ESC_SM2_HACK_LEN_C                          : ESCVal16Type := x"0003";
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
    constant ESC_SM3_SMC_C                               : ESCVal16Type := x"0020";
-   constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0001";
+   constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
+   constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";
    constant ESC_SM3_ACT_C                               : std_logic    := '1';
 
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.

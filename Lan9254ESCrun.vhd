@@ -4,6 +4,7 @@ use ieee.numeric_std.all;
 use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
+use work.Lan9254ESCPkg.all;
 
 entity Lan9254ESCrun is
 end entity Lan9254ESCrun;
@@ -24,6 +25,9 @@ architecture rtl of Lan9254ESCrun is
    signal rxPDOMst : Lan9254PDOMstType;
    signal rxPDORdy : std_logic;
 
+   signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+   signal txPDORdy : std_logic;
+
 begin
 
    process is begin
@@ -35,15 +39,25 @@ begin
       end if;
    end process;
 
---   process ( clk ) is
---   begin
---      if ( rising_edge( clk ) ) then
---         cnt <= cnt + 1;
---         if ( cnt = 10000 ) then
---            run <= false;
---         end if;
---      end if;
---   end process;
+   txPDOMst.ben   <= "11";
+
+   process ( clk ) is
+   begin
+      if ( rising_edge( clk ) ) then
+         if ( txPDOMst.valid = '0' ) then
+            txPDOMst.data    <= (others => '0');
+            txPDOMst.wrdAddr <= (others => '0');
+            txPDOMst.valid   <= '1';
+         elsif ( txPDORdy = '1' ) then
+            txPDOMst.data    <= std_logic_vector(to_unsigned(cnt, txPDOMst.data'length));
+            cnt              <= cnt + 1;
+            txPDOMst.wrdAddr <= txPDOMst.wrdAddr + 1;
+            if ( txPDOMst.wrdAddr >= unsigned(ESC_SM3_LEN_C) ) then
+               txPDOMst.wrdAddr <= (others => '0');
+            end if;
+         end if;
+      end if;
+   end process;
 
    U_DUT : entity work.Lan9254ESC
       port map (
@@ -54,7 +68,10 @@ begin
          rep         => rep,
 
          rxPdoMst    => rxPDOMst,
-         rxPdoRdy    => rxPDORdy
+         rxPdoRdy    => rxPDORdy,
+
+         txPDOMst    => txPDOMst,
+         txPDORdy    => txPDORdy
       );
 
    U_HBI : entity work.Lan9254Hbi
@@ -75,6 +92,7 @@ begin
 
          rxPdoMst    => rxPDOMst,
          rxPdoRdy    => rxPDORdy
+
       );
 
 end architecture rtl;
