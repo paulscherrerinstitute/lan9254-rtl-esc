@@ -222,6 +222,7 @@ begin
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_STAT_C ) ) );
             else
                v.curState := toESCState(r.program.seq(0).val);
+               v.reqState := v.curState;
                v.errSta   := r.program.seq(0).val(4);
                v.state    := READ_AL;
 report "READ_AS " & toString( r.program.seq(0).val );
