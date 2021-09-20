@@ -24,6 +24,7 @@ package Lan9254ESCPkg is
    end record EcRegType;
 
    subtype  ESCVal16Type is std_logic_vector(15 downto 0);
+   subtype  ESCVal08Type is std_logic_vector( 7 downto 0);
 
    constant EC_REG_AL_CTRL_C : EcRegType := (
       addr     => x"0120",
@@ -45,6 +46,12 @@ package Lan9254ESCPkg is
       bena     => HBI_BE_DW_C
    );
 
+   constant EC_REG_WD_PDST_C : EcRegType := (
+      addr     => x"0440",
+      bena     => HBI_BE_W0_C
+   );
+
+
    constant EC_AL_EREQ_CTL_IDX_C         : natural :=  0;
    constant EC_AL_EREQ_SMA_IDX_C         : natural :=  4;
    constant EC_AL_EREQ_EEP_IDX_C         : natural :=  5;
@@ -55,8 +62,8 @@ package Lan9254ESCPkg is
    constant EC_AL_EREQ_SM3_IDX_C         : natural := 11;
 
    constant EC_REG_EEP_CSR_C : EcRegType := (
-      addr     => x"0500",
-      bena     => HBI_BE_W1_C
+      addr     => x"0502",
+      bena     => HBI_BE_W0_C
    );
 
    subtype EEPROMCommandType is std_logic_vector(2 downto 0);
@@ -114,32 +121,41 @@ package Lan9254ESCPkg is
    constant EC_ALER_INVALIDSTATECHANGE_C                : ESCVal16Type := x"0011";
    constant EC_ALER_UNKNOWNSTATE_C                      : ESCVal16Type := x"0012";
    constant EC_ALER_INVALIDMBXCONFIG_C                  : ESCVal16Type := x"0016";
+   constant EC_ALER_WATCHDOG_C                          : ESCVal16Type := x"001B";
    constant EC_ALER_INVALIDOUTPUTSM_C                   : ESCVal16Type := x"001D";
    constant EC_ALER_INVALIDINPUTSM_C                    : ESCVal16Type := x"001E";
 
    constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
-   constant ESC_SM0_SMC_C                               : ESCVal16Type := x"0026";
+   constant ESC_SM0_SMC_C                               : ESCVal08Type :=   x"26";
    constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0080";
    constant ESC_SM0_ACT_C                               : std_logic    := '1';
 
    constant ESC_SM1_SMA_C                               : ESCVal16Type := x"1080";
-   constant ESC_SM1_SMC_C                               : ESCVal16Type := x"0022";
+   constant ESC_SM1_SMC_C                               : ESCVal08Type :=   x"22";
    constant ESC_SM1_LEN_C                               : ESCVal16Type := x"0080";
    constant ESC_SM1_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1100";
-   constant ESC_SM2_SMC_C                               : ESCVal16Type := x"0064";
+   constant ESC_SM2_SMC_C                               : ESCVal08Type :=   x"64";
    constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
    constant ESC_SM2_HACK_LEN_C                          : ESCVal16Type := x"0003";
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
-   constant ESC_SM3_SMC_C                               : ESCVal16Type := x"0020";
+   constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"50";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
    constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";
    constant ESC_SM3_ACT_C                               : std_logic    := '1';
+
+   -- last PDO word address; not valid for length = 0
+   -- assume this is checked before using WADDR_END
+   constant SM2_WADDR_END_C        : unsigned(13 downto 0) :=
+      to_unsigned( (to_integer(signed(ESC_SM2_HACK_LEN_C)) - 1 )/2, 14 );
+   constant SM3_WADDR_END_C        : unsigned(13 downto 0) :=
+      to_unsigned( (to_integer(signed(ESC_SM3_HACK_LEN_C)) - 1 )/2, 14 );
+
 
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
@@ -171,8 +187,8 @@ package body LAN9254ESCPkg is
    return EcRegType is
       variable v : EcRegType;
    begin
-      v.addr := SM_ADDR_F(sm, 0);
-      v.bena := HBI_BE_W1_C;
+      v.addr := SM_ADDR_F(sm, 2);
+      v.bena := HBI_BE_W0_C;
       return v;
    end function EC_REG_SM_LEN_F;
 
@@ -216,12 +232,9 @@ package body LAN9254ESCPkg is
       variable u : unsigned(addr'high downto addr'low);
       variable l : natural;
    begin
-report integer'image(u'left) & " " & integer'image(addr'left);
       u           := unsigned(addr) + unsigned(off) + unsigned(to_signed(adj, u'length));
-      v.addr      := std_logic_vector( u(u'high downto 2) ) & "00";
-      v.bena      := (others => not HBI_BE_ACT_C);
-      l           := to_integer( u(1 downto 0) );
-      v.bena( l ) := HBI_BE_ACT_C;
+      v.addr      := std_logic_vector( u );
+      v.bena      := HBI_BE_B0_C;
       return v; 
    end function EC_BYTE_REG_F;
 

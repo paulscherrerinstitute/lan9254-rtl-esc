@@ -28,6 +28,10 @@ architecture rtl of Lan9254ESCrun is
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
 
+   signal decim    : natural := 1000;
+
+   signal rstDrv   : std_logic := '1';
+
 begin
 
    process is begin
@@ -44,20 +48,32 @@ begin
    process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-         if ( txPDOMst.valid = '0' ) then
-            txPDOMst.data    <= (others => '0');
+         if ( rstDrv = '1' ) then
             txPDOMst.wrdAddr <= (others => '0');
-            txPDOMst.valid   <= '1';
-         elsif ( txPDORdy = '1' ) then
-            txPDOMst.data    <= std_logic_vector(to_unsigned(cnt, txPDOMst.data'length));
-            cnt              <= cnt + 1;
-            txPDOMst.wrdAddr <= txPDOMst.wrdAddr + 1;
-            if ( txPDOMst.wrdAddr >= unsigned(ESC_SM3_LEN_C) ) then
-               txPDOMst.wrdAddr <= (others => '0');
+            decim            <= 0;
+            txPDOMst.valid   <= '0';
+            rstDrv           <= '0';
+         else
+            if ( txPDOMst.valid = '0' ) then
+               if ( decim = 0 ) then
+                  txPDOMst.valid   <= '1';
+                  decim            <= 1000;
+               else
+                  decim <= decim - 1;
+               end if;
+            elsif ( txPDORdy = '1' ) then
+               cnt              <= cnt + 1;
+               txPDOMst.wrdAddr <= txPDOMst.wrdAddr + 1;
+               if ( txPDOMst.wrdAddr >= SM3_WADDR_END_C ) then
+                  txPDOMst.wrdAddr <= (others => '0');
+                  txPDOMst.valid   <= '0';
+               end if;
             end if;
          end if;
       end if;
    end process;
+
+   txPDOMst.data <= std_logic_vector(to_unsigned(cnt, txPDOMst.data'length));
 
    U_DUT : entity work.Lan9254ESC
       port map (

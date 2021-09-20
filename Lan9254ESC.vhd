@@ -6,31 +6,43 @@ use ieee.math_real.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.EEEmulPkg.all;
+use work.EEPROMContentPkg.all;
+
+use work.IlaWrappersPkg.all;
 
 entity Lan9254ESC is
+   generic (
+      REG_IO_TEST_ENABLE_G : boolean := true
+   );
    port (
       clk         : in  std_logic;
       rst         : in  std_logic;
 
       req         : out Lan9254ReqType;
-      rep         : in  Lan9254RepType;
+      rep         : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
       escState    : out ESCStateType;
+      debug       : out std_logic_vector(23 downto 0);
 
       txPDOMst    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
-      txPDORdy    : out std_logic := '0';
+      txPDORdy    : out std_logic;
 
       rxPDOMst    : out Lan9254PDOMstType;
-      rxPDORdy    : in  std_logic := '1'
+      rxPDORdy    : in  std_logic := '1';
+
+      testFailed  : out std_logic_vector(4 downto 0)
    );
 end entity Lan9254ESC;
 
 architecture rtl of Lan9254ESC is
 
+   signal eeprom : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
+
    type ControllerState is (
-      INIT,
+      TEST,
       POLL_AL_EVENT,
       HANDLE_AL_EVENT,
+      HANDLE_WD_EVENT,
       READ_AL,
       EEP_EMUL,
       EEP_READ,
@@ -46,6 +58,27 @@ architecture rtl of Lan9254ESC is
       DROP_RXPDO,
       UPDATE_TXPDO
    );
+
+   constant RB0 : EcRegType := ( addr=> x"3064", bena => HBI_BE_B0_C );
+   constant RB1 : EcRegType := ( addr=> x"3065", bena => HBI_BE_B0_C );
+   constant RB2 : EcRegType := ( addr=> x"3066", bena => HBI_BE_B0_C );
+   constant RB3 : EcRegType := ( addr=> x"3067", bena => HBI_BE_B0_C );
+
+   constant RW0 : EcRegType := ( addr=> x"3064", bena => HBI_BE_W0_C );
+   constant RW1 : EcRegType := ( addr=> x"3066", bena => HBI_BE_W0_C );
+
+   constant RD0 : EcRegType := ( addr=> x"3064", bena => (others => HBI_BE_ACT_C) );
+
+   constant WB0 : EcRegType := ( addr=> x"0F80", bena => HBI_BE_B0_C );
+   constant WB1 : EcRegType := ( addr=> x"0F81", bena => HBI_BE_B0_C );
+   constant WB2 : EcRegType := ( addr=> x"0F82", bena => HBI_BE_B0_C );
+   constant WB3 : EcRegType := ( addr=> x"0F83", bena => HBI_BE_B0_C );
+
+   constant WW0 : EcRegType := ( addr=> x"0F80", bena => HBI_BE_W0_C );
+   constant WW1 : EcRegType := ( addr=> x"0F82", bena => HBI_BE_W0_C );
+
+   constant WD0 : EcRegType := ( addr=> x"0F80", bena => (others => HBI_BE_ACT_C) );
+
 
    function toESCState(constant x : std_logic_vector)
    return EscStateType is
@@ -72,6 +105,11 @@ architecture rtl of Lan9254ESC is
       val      => ( others => '0' ),
       rdnwr    => true
    );
+
+   function toSL(constant x : boolean) return std_logic is
+   begin
+      if ( x ) then return '1'; else return '0'; end if;
+   end function toSL;
 
    function RWXACT(
       constant reg : EcRegType;
@@ -109,12 +147,6 @@ architecture rtl of Lan9254ESC is
    constant LD_XACT_MAX_C          : natural := 3;
    constant XACT_MAX_C             : natural := 2**LD_XACT_MAX_C;
 
-   -- not valid for length = 0 -- assume this is checked before using WADDR_END
-   constant SM2_WADDR_END_C        : unsigned(13 downto 0) :=
-      to_unsigned( (to_integer(signed(ESC_SM2_HACK_LEN_C)) - 1 )/2, 14 );
-   constant SM3_WADDR_END_C        : unsigned(13 downto 0) :=
-      to_unsigned( (to_integer(signed(ESC_SM3_HACK_LEN_C)) - 1 )/2, 14 );
-
    constant TXPDO_BURST_MAX_C      : natural := 7;
 
    type RWXactSeqType is record
@@ -122,7 +154,7 @@ architecture rtl of Lan9254ESC is
       idx      : unsigned(LD_XACT_MAX_C - 1 downto 0);
       num      : unsigned(LD_XACT_MAX_C - 1 downto 0);
       dly      : unsigned(                3 downto 0); -- FIXME
-      don      : boolean;
+      don      : std_logic;
       ret      : ControllerState;
    end record RWXactSeqType;
 
@@ -131,12 +163,14 @@ architecture rtl of Lan9254ESC is
       idx      => (others => '0'),
       num      => (others => '0'),
       dly      => (others => '0'),
-      don      => false,
+      don      => '0',
       ret      => POLL_AL_EVENT
    );
 
    type RegType is record
       state    : ControllerState;
+      testPhas : natural range 0 to 3;
+      testFail : natural range 0 to 31;
       reqState : ESCStateType;
       errAck   : std_logic;
       curState : ESCStateType;
@@ -154,7 +188,9 @@ architecture rtl of Lan9254ESC is
    end record RegType;
 
    constant REG_INIT_C : RegType := (
-      state    => UPDATE_AS,
+      state    => TEST,
+      testPhas => 0,
+      testFail => 0,
       reqState => INIT,
       errAck   => '0',
       curState => INIT,
@@ -174,6 +210,11 @@ architecture rtl of Lan9254ESC is
    signal     r    : RegType := REG_INIT_C;
    signal     rin  : RegType; 
 
+   signal     probe0 : std_logic_vector(63 downto 0) := (others => '0');
+   signal     probe1 : std_logic_vector(63 downto 0) := (others => '0');
+   signal     probe2 : std_logic_vector(63 downto 0) := (others => '0');
+   signal     probe3 : std_logic_vector(63 downto 0) := (others => '0');
+
    procedure scheduleRegXact(
       variable endp : inout RegType;
       constant prog : in    RWXactArray;
@@ -186,7 +227,6 @@ architecture rtl of Lan9254ESC is
       endp.program.idx             := (others => '0');
       endp.program.num             := to_unsigned(prog'length - 1, endp.program.num'length);
       endp.program.dly             := dly;
-      endp.program.don             := false;
       endp.ctlReq.valid            := '0';
    end procedure scheduleRegXact;
 
@@ -225,50 +265,156 @@ architecture rtl of Lan9254ESC is
       return ret;
    end function toSlv;
 
-   procedure maybeUpdateTXPDO(
-      variable v : inout RegType;
-      constant b : in    natural
+   procedure testRegisterIO(
+      variable v : inout RegType
    ) is
    begin
-      if (    ( r.curState = SAFEOP or r.curState = OP )
-          and ( ESC_SM3_ACT_C = '1' )
-          and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) then
-         v.txPDOBst :=  b;
-         v.txPDORdy := '1';
-         v.state    := UPDATE_TXPDO;
-      end if;
-   end procedure maybeUpdateTXPDO;
+      CASE_TEST : case ( r.testPhas ) is
+         when 0 =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v,
+                  (
+                     0 => RWXACT( RD0 ), -- read twice (after reset)
+                     1 => RWXACT( RD0 ),
+                     2 => RWXACT( RB3 ),
+                     3 => RWXACT( RB2 ),
+                     4 => RWXACT( RB1 ),
+                     5 => RWXACT( RB0 ),
+                     6 => RWXACT( RW1 ),
+                     7 => RWXACT( RW0 )
+                  )
+               );
+            else
+               if ( r.program.seq(1).val(31 downto  0) /= x"87654321" ) then
+                  assert false report "Reg32  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 1; end if;
+               end if;
+               if ( r.program.seq(2).val( 7 downto  0) /= x"87"       ) then
+                  assert false report "Reg8d  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 2; end if;
+               end if;
+               if ( r.program.seq(3).val( 7 downto  0) /= x"65"       ) then
+                  assert false report "Reg8c  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 3; end if;
+               end if;
+               if ( r.program.seq(4).val( 7 downto  0) /= x"43"       ) then
+                  assert false report "Reg8b  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 4; end if;
+               end if;
+               if ( r.program.seq(5).val( 7 downto  0) /= x"21"       ) then
+                  assert false report "Reg8a  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 5; end if;
+               end if;
+               if ( r.program.seq(6).val(15 downto  0) /= x"8765"     ) then
+                  assert false report "Reg16b readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 6; end if;
+               end if;
+               if ( r.program.seq(7).val(15 downto  0) /= x"4321"     ) then
+                  assert false report "Reg16a readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 7; end if;
+               end if;
+               v.testPhas := r.testPhas + 1;
+            end if;
+
+         when 1 =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v,
+                  (
+                     0 => RWXACT( WD0, x"c3b2a1f0" ),
+                     1 => RWXACT( RD0 ),
+                     2 => RWXACT( WD0 ),
+                     3 => RWXACT( WB3, x"aa" ),
+                     4 => RWXACT( WD0 ),
+                     5 => RWXACT( WB2, x"bb" ),
+                     6 => RWXACT( WD0 )
+                  )
+               );
+            else
+               if ( r.program.seq(1).val(31 downto  0) /= x"87654321" ) then
+                  assert false report "Reg32 (check) readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 8; end if;
+               end if;
+               if ( r.program.seq(2).val(31 downto  0) /= x"c3b2a1f0" ) then
+                  assert false report "Write32 readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail := 9; end if;
+               end if;
+               if ( r.program.seq(4).val(31 downto  0) /= x"aab2a1f0" ) then
+                  assert false report "Write8d  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=10; end if;
+               end if;
+               if ( r.program.seq(6).val(31 downto  0) /= x"aabba1f0" ) then
+                  assert false report "Write8c  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=11; end if;
+               end if;
+               v.testPhas := r.testPhas + 1;
+            end if;
+
+         when 2 =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v,
+                  (
+                     0 => RWXACT( WB1, x"cc" ),
+                     1 => RWXACT( WD0 ),
+                     2 => RWXACT( WB0, x"dd" ),
+                     3 => RWXACT( WD0 ),
+                     4 => RWXACT( WW1, x"4433" ),
+                     5 => RWXACT( WD0 ),
+                     6 => RWXACT( WW0, x"2211" ),
+                     7 => RWXACT( WD0 )
+                  )
+               );
+            else
+               if ( r.program.seq(1).val(31 downto  0) /= x"aabbccf0" ) then
+                  assert false report "Write8b  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=12; end if;
+               end if;
+               if ( r.program.seq(3).val(31 downto  0) /= x"aabbccdd" ) then
+                  assert false report "Write8a  readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=13; end if;
+               end if;
+               if ( r.program.seq(5).val(31 downto  0) /= x"4433ccdd" ) then
+                  assert false report "Write16b readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=14; end if;
+               end if;
+               if ( r.program.seq(7).val(31 downto  0) /= x"44332211" ) then
+                  assert false report "Write16a readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=15; end if;
+               end if;
+               v.testPhas := 0;
+               v.state    := UPDATE_AS;
+            end if;
+         when others =>
+            v.testPhas := 0;
+            v.state    := UPDATE_AS;
+      end case CASE_TEST;
+   end procedure testRegisterIO;
 
 begin
 
    assert ESC_SM2_SMA_C(0) = '0' report "RXPDO address must be word aligned" severity failure;
    assert ESC_SM3_SMA_C(0) = '0' report "TXPDO address must be word aligned" severity failure;
 
-   P_COMB : process (r, rep, rxPDORdy, txPDOMst) is
+   P_COMB : process (r, rep, rxPDORdy, txPDOMst, eeprom) is
       variable v   : RegType;
       variable val : std_logic_vector(31 downto 0);
       variable xct : RWXactType;
    begin
       v             := r;
-      v.program.don := false;
+      v.program.don := '0';
       val           := (others => '0');
       xct           := RWXACT_INIT_C;
 
       C_STATE : case r.state is
 
-         when INIT =>
-            if ( not r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_STAT_C ) ) );
+         when TEST =>
+            if ( REG_IO_TEST_ENABLE_G ) then
+               testRegisterIO(v);
             else
-               v.curState := toESCState(r.program.seq(0).val);
-               v.reqState := v.curState;
-               v.errSta   := r.program.seq(0).val(4);
-               v.state    := READ_AL;
-report "READ_AS " & toString( r.program.seq(0).val );
+               v.state := UPDATE_AS;
             end if;
 
          when POLL_AL_EVENT =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
             else
                v.lastAL := r.program.seq(0).val;
@@ -298,14 +444,48 @@ report "SMA EVENT";
                      v.state                     := DROP_RXPDO;
                   end if;
                end if;
+            elsif ( r.lastAL(EC_AL_EREQ_WDG_IDX_C) = '1' ) then
+               -- NOTE: we only detect if the watchdog expires if it has ever
+               --       been triggered (by the master) and subsequently expires.
+               --       We cannot clear the watchdog from the PDI interface and
+               --       thus cannot reset it when entering OP state.
+               --       Therefore, if we enter OP state and the watchdog is never petted
+               --       then it never expires (because it already is) and we'll
+               --       never get an event.
+               v.lastAL(EC_AL_EREQ_WDG_IDX_C) := '0';
+               v.state                        := HANDLE_WD_EVENT;
+            elsif ( r.lastAL(EC_AL_EREQ_SM3_IDX_C) = '1' ) then
+               v.lastAL(EC_AL_EREQ_SM3_IDX_C) := '0';
+assert false report "SM3 EVENT" severity note;
             else
                -- maybe the TXPDO needs to be updated
-               maybeUpdateTXPDO( v, TXPDO_BURST_MAX_C );
+               if (    ( r.curState = SAFEOP or r.curState = OP )
+                   and ( ESC_SM3_ACT_C = '1' )
+                   and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) then
+                  v.txPDOBst :=  TXPDO_BURST_MAX_C;
+                  v.txPDORdy := '1';
+                  v.state    := UPDATE_TXPDO;
+               end if;
+            end if;
+
+         when HANDLE_WD_EVENT =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_WD_PDST_C ) ) );
+            else
+report "WATCHDOG EVENT: " & std_logic'image( r.program.seq(0).val(0) );
+               if ( r.program.seq(0).val(0) = '0' ) then
+                  v.alErr    := EC_ALER_WATCHDOG_C;
+                  v.errSta   := '1';
+                  v.reqState := SAFEOP;
+                  v.state    := UPDATE_AS;
+               else
+                  v.state := HANDLE_AL_EVENT;
+               end if;
             end if;
 
          when READ_AL =>
             -- read AL control reg
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_CTRL_C ) ) );
             else
                v.errAck       := r.program.seq(0).val(4);
@@ -400,7 +580,7 @@ report "starting SM23";
             if ( xct.rdnwr ) then
                readReg( v.ctlReq, rep, xct.reg );
                if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-                  v.program.seq(to_integer(r.program.idx)).val := rep.rdata;
+                  v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.wdata;
                end if;
             else
 --report "WRITE " & integer'image(to_integer(unsigned(xct.reg.addr))) & " " & integer'image(to_integer(signed(xct.val)));
@@ -410,14 +590,14 @@ report "starting SM23";
                v.ctlReq.valid := '0';
                if ( r.program.idx = r.program.num ) then
                   v.state        := r.program.ret;
-                  v.program.don  := true;
+                  v.program.don  := '1';
                else
                   v.program.idx  := r.program.idx + 1;
                end if;
             end if;
 
          when UPDATE_AS =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                val(4)          := r.errSta;
                val(3 downto 0) := toSlv( r.reqState );
 report "entering UPDATE_AS " & toString( val );
@@ -436,7 +616,7 @@ report "entering UPDATE_AS " & toString( val );
             end if;
 
          when CHECK_SM =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
                   (
@@ -488,7 +668,7 @@ severity warning;
             end if;
 
          when CHECK_MBOX =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
                   (
@@ -540,7 +720,7 @@ severity warning;
             end if;
 
          when EN_DIS_SM =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
                   (
@@ -562,7 +742,7 @@ severity warning;
             report "last AL  " & toString( r.lastAL );
 
               
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
                   (
@@ -589,7 +769,7 @@ severity warning;
             end if;
 
          when EEP_EMUL =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                -- read CSR last; we keep it in the same position;
                -- in case of a READ command it must be written last!
                scheduleRegXact(
@@ -601,31 +781,31 @@ severity warning;
                   )
                );
             else
-               case EE_CMD_GET_F( r.program.seq(2).val ) is
+               case r.program.seq(2).val(10 downto 8) is
                   when EEPROM_WRITE_C =>
-                     writeEEPROMEmul( r.program.seq(1).val, r.program.seq(0).val );
+--DONX                     writeEEPROMEmul( eeprom, r.program.seq(1).val, r.program.seq(0).val );
                      v.state := EEP_WRITE;
 
                   when EEPROM_READ_C | EEPROM_RELD_C  =>
-                     readEEPROMEmul( r.program.seq(1).val, v.program.seq(0).val, v.program.seq(1).val );
+                     readEEPROMEmul( eeprom, r.program.seq(1).val, v.program.seq(0).val, v.program.seq(1).val );
                      v.state := EEP_READ;
 
                   when others  =>
-                     report "UNSUPPORTED EE EMULATION COMMAND " & integer'image(to_integer(unsigned(r.program.seq(0).val)))
-                        severity failure;
+                     report "UNSUPPORTED EE EMULATION COMMAND " & integer'image(to_integer(unsigned(r.program.seq(2).val)))
+                        severity warning;
                      v.state := HANDLE_AL_EVENT;
                end case;
             end if;
 
         when EEP_WRITE =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val ) ) );
             else
                v.state := HANDLE_AL_EVENT;
             end if;
                      
         when EEP_READ =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
 --report "EEP_READ CSR" & integer'image(to_integer(signed(r.program.seq(0).val)));
 --report "         VLO" & integer'image(to_integer(signed(r.program.seq(1).val)));
 --report "         VHI" & integer'image(to_integer(signed(r.program.seq(2).val)));
@@ -643,7 +823,7 @@ severity warning;
             end if;
 
          when DROP_RXPDO =>
-            if ( not r.program.don ) then
+            if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
                   (
@@ -676,13 +856,9 @@ end if;
                      v.rxPDO.wrdAddr := r.rxPDO.wrdAddr + 1;
                   end if;
                end if;
-            elsif ( r.program.don ) then
+            elsif ( '1' = r.program.don ) then
                -- read from lan9254 complete; initiate write to RXPDO interface
-               if ( r.ctlReq.be(0) = HBI_BE_ACT_C ) then
-                  v.rxPDO.data   := rep.rdata(15 downto  0);
-               else
-                  v.rxPDO.data   := rep.rdata(31 downto 16);
-               end if;
+               v.rxPDO.data   := rep.rdata(15 downto  0);
                v.rxPDO.valid  := '1';
             else
                -- RXPDO write not onging and lan9254 register read not done
@@ -691,19 +867,12 @@ end if;
                v.ctlReq.addr  := std_logic_vector((r.rxPDO.wrdAddr & "0") + unsigned(ESC_SM2_SMA_C(v.ctlReq.addr'range)));
                v.rxPDO.ben    := "11";
                v.rxPDO.last   := '0';
+               v.ctlReq.be    := HBI_BE_W0_C;
               
-               if ( v.ctlReq.addr(1) = '1' ) then
-                  v.ctlReq.addr(1) := '0';
-                  v.ctlReq.be      := HBI_BE_W1_C;
-               else
-                  v.ctlReq.be      := HBI_BE_W0_C;
-               end if;
-
                if ( r.rxPDO.wrdAddr = SM2_WADDR_END_C ) then
                   v.rxPDO.last := '1';
                   if ( ESC_SM2_HACK_LEN_C(0) = '1' ) then
                      v.rxPDO.ben(1) := '0';
-                     v.ctlReq.be(3) := not HBI_BE_ACT_C;
                      v.ctlReq.be(1) := not HBI_BE_ACT_C;
                   end if;
                end if;
@@ -728,18 +897,11 @@ v.decim := r.decim - 1;
 end if;
                   if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
                      v.ctlReq.addr  := std_logic_vector((txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
-                     -- replicate across all lanes
-                     v.ctlReq.wdata := ( txPDOMst.data & txPDOMst.data );
-   
-                     if ( v.ctlReq.addr(1) = '1' ) then
-                        v.ctlReq.addr(1) := '0';
-                        v.ctlReq.be      := HBI_BE_W1_C;
-                     else
-                        v.ctlReq.be      := HBI_BE_W0_C;
-                     end if;
+                     v.ctlReq.wdata := ( x"0000" & txPDOMst.data );
+                     v.ctlReq.be    := HBI_BE_W0_C;
+
                      if ( txPDOMst.ben(0) = '0' ) then
                         v.ctlReq.be(0) := not HBI_BE_ACT_C;
-                        v.ctlReq.be(2) := not HBI_BE_ACT_C;
                      end if;
 
                      -- if last byte make sure proper byte-enable is deasserted
@@ -749,7 +911,6 @@ end if;
                              )
                         ) then
                         v.ctlReq.be(1) := not HBI_BE_ACT_C;
-                        v.ctlReq.be(3) := not HBI_BE_ACT_C;
                      end if;
                   else 
                      -- illegal address; drop
@@ -765,7 +926,7 @@ end if;
                   v.state    := POLL_AL_EVENT;
                   v.txPDOBst := 0;
                end if;
-            elsif ( r.program.don ) then
+            elsif ( '1' = r.program.don ) then
                -- write to lan9254 done
                if ( r.txPDOBst = 0 ) then
                   v.state := POLL_AL_EVENT;
@@ -786,14 +947,14 @@ end if;
 
    end process P_COMB;
 
-   P_SEQ : process (clk) is
+   P_SEQ : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-         if ( rst = '1' ) then
+       if ( rst = '1' ) then
             r <= REG_INIT_C;
-         else
+       else
             r <= rin;
-         end if;
+       end if;
       end if;
    end process P_SEQ;
 
@@ -801,5 +962,59 @@ end if;
    rxPDOMst <= r.rxPDO;
    escState <= r.curState;
    txPDORdy <= r.txPDORdy;
+
+debug(4  downto 0) <= std_logic_vector( to_unsigned( ControllerState'pos( r.state ), 5) );
+debug(7 downto 5)  <= r.program.seq(2).val(10 downto 8);
+debug(12 downto 8) <= std_logic_vector( to_unsigned( ControllerState'pos( rin.state ), 5) );
+debug(15 downto 13) <= std_logic_vector(r.program.idx);
+debug(20 downto 16) <= r.program.seq(0).val(8 downto 4);
+debug(21)           <= r.program.don;
+debug(22)           <= r.ctlReq.valid;
+debug(23)           <= rep.valid;
+
+
+   probe0(13 downto  0) <= r.ctlReq.addr;
+   probe0(15 downto 14) <= (others => '0');
+   probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerState'pos( r.state ), 5) );
+   probe0(21          ) <= r.ctlReq.rdnwr;
+   probe0(22          ) <= r.ctlReq.valid;
+   probe0(23          ) <= rep.valid;
+   probe0(28 downto 24) <= std_logic_vector( to_unsigned( ControllerState'pos( rin.state ), 5) );
+   probe0(29          ) <= r.program.don;
+   probe0(31 downto 30) <= (others => '0');
+   probe0(63 downto 32) <= r.ctlReq.wdata;
+
+   probe1(31 downto  0) <= rep.rdata;
+   probe1(63 downto 32) <= r.lastAL;
+
+   probe2( 2 downto  0) <= std_logic_vector(r.program.idx);
+   probe2( 3 downto  3) <= (others => '0');
+   probe2( 6 downto  4) <= std_logic_vector(r.program.num);
+   probe2( 7 downto  7) <= (others => '0');
+   probe2( 8          ) <= toSL(r.program.seq(0).rdnwr);
+   probe2( 9          ) <= toSL(r.program.seq(1).rdnwr);
+   probe2(10          ) <= toSL(r.program.seq(2).rdnwr);
+   probe2(11 downto 11) <= (others => '0');
+   probe2(15 downto 12) <= r.program.seq(0).reg.bena;
+   probe2(19 downto 16) <= r.program.seq(1).reg.bena;
+   probe2(23 downto 20) <= r.program.seq(2).reg.bena;
+   probe2(27 downto 24) <= r.ctlReq.be;
+   
+
+   probe2(63 downto 32) <= r.program.seq(0).val;
+
+   probe3(31 downto  0) <= r.program.seq(1).val;
+   probe3(63 downto 32) <= r.program.seq(2).val;
+
+   U_ILA_ESC : component Ila_256
+      port map (
+         clk    => clk,
+         probe0 => probe0,
+         probe1 => probe1,
+         probe2 => probe2,
+         probe3 => probe3
+      );
+
+   testFailed <= std_logic_vector(to_unsigned(r.testFail, testFailed'length));
 
 end architecture rtl;

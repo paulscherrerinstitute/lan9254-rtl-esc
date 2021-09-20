@@ -105,8 +105,9 @@ package Lan9254Pkg is
    --          compatibility.
    -- Therefore, in a push-pull configuration only wait-polarity = '1' (=> ACK = '0')
    -- is possible.
-   -- NOTE/UPDATE -- the documentation seems incorrect: my experiments show the
-   --      following behaviour:
+   -- NOTE/UPDATE -- the documentation seems incorrect: my experiments with external
+   --                pull-ups and pull-downs (implemented in the fpga) show the
+   --                following behaviour:
    --      pol. (Reg150[1])  driver (Reg150[0])
    --              1               1              ack => '0', wait => '1'   (pullup-enabled)
    --              1               0              ack => '1', wait => '0'   (pullup-enabled)
@@ -161,7 +162,7 @@ package Lan9254Pkg is
       variable rdOut: inout Lan9254ReqType;
       signal   rdInp: in    Lan9254RepType;
       constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
-      constant rdBEn: in    std_logic_vector(3 downto 0)  := "1111";
+      constant rdBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
       constant enbl : in    boolean                       := true
    );
 
@@ -170,7 +171,7 @@ package Lan9254Pkg is
       signal   wrInp: in    Lan9254RepType;
       constant wrAdr: in    std_logic_vector(15 downto 0) := (others => '0');
       constant wrDat: in    std_logic_vector(31 downto 0);
-      constant wrBEn: in    std_logic_vector(3 downto 0)  := "1111";
+      constant wrBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
       constant enbl : in    boolean                       := true
    );
 
@@ -187,23 +188,67 @@ end package Lan9254Pkg;
 
 package body Lan9254Pkg is
 
+   function adjReq(
+      constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
+      constant bena : in    std_logic_vector( 3 downto 0) := (others => HBI_BE_ACT_C);
+      constant rdnwr: in    std_logic                     := '1';
+      constant data : in    std_logic_vector(31 downto 0) := (others => '0')
+   ) return Lan9254ReqType is
+      variable rv : Lan9254ReqType;
+   begin
+      rv       := LAN9254REQ_INIT_C;
+      rv.addr  := rdAdr(rv.addr'high downto 2) & "00";
+      rv.be    := bena;
+      rv.wdata := data;
+      rv.rdnwr := rdnwr;
+      rv.valid := '1';
+      if    ( rdAdr(1 downto 0) = "11" ) then
+         rv.be    := ( 3 => bena(0), others => not HBI_BE_ACT_C );
+         rv.wdata := data  ( 7 downto 0) & x"00_0000";
+      elsif ( rdAdr(1 downto 0) = "10" ) then
+         rv.be( 3 downto 2 ) := bena(1 downto 0);
+         rv.be( 1 downto 0)  := (others => not HBI_BE_ACT_C);
+         rv.wdata := data  (15 downto 0) & x"0000";
+      elsif ( rdAdr(1 downto 0) = "01" ) then
+         rv.be    := bena  ( 2 downto 0) & not HBI_BE_ACT_C;
+         rv.wdata := data  (23 downto 0) & x"00";
+      end if;
+      return rv;
+   end function adjReq;
+
+   function adjRep(
+      constant req : in Lan9254ReqType;
+      constant rep : in Lan9254RepType
+   ) return std_logic_vector is
+      variable v : std_logic_vector(31 downto 0);
+   begin
+      v := rep.rdata;
+      if    ( req.be(2 downto 0) = not (HBI_BE_ACT_C & HBI_BE_ACT_C & HBI_BE_ACT_C) ) then
+         v := x"0000_00" & rep.rdata(31 downto 24);
+      elsif ( req.be(1 downto 0) = not (HBI_BE_ACT_C & HBI_BE_ACT_C) ) then
+         v := x"0000" & rep.rdata(31 downto 16);
+      elsif ( req.be(0) = not HBI_BE_ACT_C ) then
+         v := x"00" & rep.rdata(31 downto  8);
+      end if;
+      return v;
+   end function adjRep;
+
    procedure lan9254HBIRead(
       variable rdOut: inout Lan9254ReqType;
       signal   rdInp: in    Lan9254RepType;
       constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
-      constant rdBEn: in    std_logic_vector(3 downto 0) := "1111";
-      constant enbl : in    boolean                      := true
+      constant rdBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
+      constant enbl : in    boolean                       := true
    ) is
    begin
       if ( rdOut.valid = '0' ) then
-         rdOut       := LAN9254REQ_INIT_C;
-         rdOut.addr  := rdAdr(rdOut.addr'range);
-         rdOut.be    := rdBEn;
-         rdOut.rdnwr := '1';
-         rdOut.valid := '1';
+         rdOut := adjReq(rdAdr, rdBEn, '1');
+--report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
       else
          if ( rdInp.valid = '1' ) then
             rdOut.valid := '0';
+            rdOut.wdata := adjRep( rdOut, rdInp );
+--report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.wdata) & " (rdata " & toString(rdInp.rdata) &")";
          end if;
       end if;
    end procedure lan9254HBIRead;
@@ -213,17 +258,12 @@ package body Lan9254Pkg is
       signal   wrInp: in    Lan9254RepType;
       constant wrAdr: in    std_logic_vector(15 downto 0) := (others => '0');
       constant wrDat: in    std_logic_vector(31 downto 0);
-      constant wrBEn: in    std_logic_vector(3 downto 0)  := "1111";
+      constant wrBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
       constant enbl : in    boolean                       := true
    ) is
    begin
       if ( wrOut.valid = '0' ) then
-         wrOut       := LAN9254REQ_INIT_C;
-         wrOut.addr  := wrAdr(wrOut.addr'range);
-         wrOut.be    := wrBEn;
-         wrOut.wdata := wrDat;
-         wrOut.rdnwr := '0';
-         wrOut.valid := '1';
+         wrOut       := adjReq(wrAdr, wrBEn, '0', wrDat);
       else
          if ( wrInp.valid = '1' ) then
             wrOut.valid := '0';
