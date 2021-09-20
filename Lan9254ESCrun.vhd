@@ -30,7 +30,18 @@ architecture rtl of Lan9254ESCrun is
 
    signal decim    : natural := 1000;
 
+   signal irq      : std_logic := not EC_IRQ_ACT_C;
+
    signal rstDrv   : std_logic := '1';
+
+   function pollIRQ_C return integer;
+
+   attribute foreign of pollIRQ_C : function is "VHPIDIRECT pollIRQ_C";
+
+   function pollIRQ_C return integer is
+   begin
+      assert false report "pollIRQ_C should be foreign" severity failure;
+   end function pollIRQ_C;
 
 begin
 
@@ -73,9 +84,25 @@ begin
       end if;
    end process;
 
+   process ( clk ) is
+   begin
+      if ( rising_edge( clk ) ) then
+         -- just reflect the level here; we don't know
+         -- which one is active...
+         if ( pollIrq_C /= 0 ) then
+            irq <= '1';
+         else
+            irq <= '0';
+         end if;
+      end if;
+   end process;
+
    txPDOMst.data <= std_logic_vector(to_unsigned(cnt, txPDOMst.data'length));
 
    U_DUT : entity work.Lan9254ESC
+      generic map (
+         CLK_FREQ_G  => 10.0E4
+      )
       port map (
          clk         => clk,
          rst         => rst,
@@ -87,7 +114,9 @@ begin
          rxPdoRdy    => rxPDORdy,
 
          txPDOMst    => txPDOMst,
-         txPDORdy    => txPDORdy
+         txPDORdy    => txPDORdy,
+
+         irq         => irq
       );
 
    U_HBI : entity work.Lan9254Hbi

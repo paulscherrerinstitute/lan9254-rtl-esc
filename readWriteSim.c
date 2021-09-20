@@ -152,4 +152,19 @@ void writeRxPDO_C(int wrdAddr, int val, int ben)
     }
 }
 
+int pollIRQ_C()
+{
+uint32_t irq;
+int      rval;
+	irq = *(dev->a32 + (0x3004 >> 2));
+	rval = (irq & 1) ? 1 : 0;
+#ifdef DEBUG
+	printf("pollIRQ_C: %d\n", rval);
+	printf("EVREQ    : %x\n", *(dev->a32 + (0x0220 >> 2)));
+	printf("IRQCTL   : %x\n", *(dev->a32 + (0x3054 >> 2)));
+	printf("IRQSTA   : %x\n", *(dev->a32 + (0x3058 >> 2)));
+#endif
+	return rval;
+}
+
 }

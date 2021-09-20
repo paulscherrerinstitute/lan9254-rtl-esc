@@ -51,6 +51,9 @@ begin
    end process;
 
    U_DUT : entity work.Lan9254ESC
+      generic map (
+         CLK_FREQ_G  => 10.0E3
+      )
       port map (
          clk         => clk,
          rst         => rst,

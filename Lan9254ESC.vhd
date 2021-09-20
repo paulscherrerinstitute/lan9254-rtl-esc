@@ -12,7 +12,9 @@ use work.IlaWrappersPkg.all;
 
 entity Lan9254ESC is
    generic (
-      REG_IO_TEST_ENABLE_G : boolean := true
+      CLK_FREQ_G              : real;
+      TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
+      REG_IO_TEST_ENABLE_G    : boolean := true
    );
    port (
       clk         : in  std_logic;
@@ -30,6 +32,8 @@ entity Lan9254ESC is
       rxPDOMst    : out Lan9254PDOMstType;
       rxPDORdy    : in  std_logic := '1';
 
+      irq         : in  std_logic := EC_IRQ_ACT_C; -- defaults to polling mode
+
       testFailed  : out std_logic_vector(4 downto 0)
    );
 end entity Lan9254ESC;
@@ -38,8 +42,12 @@ architecture rtl of Lan9254ESC is
 
    signal eeprom : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
 
+   constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
+
    type ControllerState is (
       TEST,
+      INIT,
+      POLL_IRQ,
       POLL_AL_EVENT,
       HANDLE_AL_EVENT,
       HANDLE_WD_EVENT,
@@ -79,6 +87,26 @@ architecture rtl of Lan9254ESC is
 
    constant WD0 : EcRegType := ( addr=> x"0F80", bena => (others => HBI_BE_ACT_C) );
 
+   constant EC_IRQ_CFG_INIT_C : std_logic_vector(31 downto 0) := (
+      EC_IRQ_CFG_TYP_IDX_C => '1', -- push-pull
+      EC_IRQ_CFG_ENA_IDX_C => '1', -- enable
+      EC_IRQ_CFG_POL_IDX_C => EC_IRQ_ACT_C,
+      others               => '0'
+   );
+
+   constant EC_IRQ_ENA_INIT_C : std_logic_vector(31 downto 0) := (
+      EC_IRQ_ENA_ECAT_IDX_C => '1',
+      others                => '0'
+   );
+
+   constant EC_AL_EMSK_INIT_C : std_logic_vector(31 downto 0) := (
+      EC_AL_EREQ_CTL_IDX_C  => '1',
+      EC_AL_EREQ_EEP_IDX_C  => '1',
+      EC_AL_EREQ_SMA_IDX_C  => '1',
+      EC_AL_EREQ_SM2_IDX_C  => '1',
+      EC_AL_EREQ_WDG_IDX_C  => '1',
+      others                => '0'
+   );
 
    function toESCState(constant x : std_logic_vector)
    return EscStateType is
@@ -164,7 +192,7 @@ architecture rtl of Lan9254ESC is
       num      => (others => '0'),
       dly      => (others => '0'),
       don      => '0',
-      ret      => POLL_AL_EVENT
+      ret      => POLL_IRQ
    );
 
    type RegType is record
@@ -184,6 +212,8 @@ architecture rtl of Lan9254ESC is
       rxPDO    : Lan9254PDOMstType;
       txPDORdy : std_logic;
       txPDOBst : natural range 0 to TXPDO_BURST_MAX_C;
+      txPDOSnt : natural range 0 to to_integer(unsigned(ESC_SM3_LEN_C)) - 1;
+      txPDODcm : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
       decim    : natural;
    end record RegType;
 
@@ -204,6 +234,8 @@ architecture rtl of Lan9254ESC is
       rxPDO    => LAN9254PDO_MST_INIT_C,
       txPDORdy => '0',
       txPDOBst => 0,
+      txPDOSnt => 0,
+      txPDODcm => 0,
       decim    => 0
    );
 
@@ -380,12 +412,15 @@ architecture rtl of Lan9254ESC is
                   assert false report "Write16a readback mismatch" severity failure;
                   if ( v.testFail = 0 ) then v.testFail :=15; end if;
                end if;
-               v.testPhas := 0;
-               v.state    := UPDATE_AS;
+               if ( v.testFail = 0 ) then
+                  v.testPhas := 0;
+                  v.state    := INIT;
+               else
+                  v.testPhas := r.testPhas + 1; -- go into limbo
+               end if;
             end if;
          when others =>
-            v.testPhas := 0;
-            v.state    := UPDATE_AS;
+            -- remain here
       end case CASE_TEST;
    end procedure testRegisterIO;
 
@@ -394,7 +429,7 @@ begin
    assert ESC_SM2_SMA_C(0) = '0' report "RXPDO address must be word aligned" severity failure;
    assert ESC_SM3_SMA_C(0) = '0' report "TXPDO address must be word aligned" severity failure;
 
-   P_COMB : process (r, rep, rxPDORdy, txPDOMst, eeprom) is
+   P_COMB : process (r, rep, rxPDORdy, txPDOMst, eeprom, irq) is
       variable v   : RegType;
       variable val : std_logic_vector(31 downto 0);
       variable xct : RWXactType;
@@ -404,13 +439,47 @@ begin
       val           := (others => '0');
       xct           := RWXACT_INIT_C;
 
+      if ( r.txPDODcm > 0 ) then
+         v.txPDODcm := r.txPDODcm - 1;
+      end if;
+
       C_STATE : case r.state is
 
          when TEST =>
             if ( REG_IO_TEST_ENABLE_G ) then
                testRegisterIO(v);
             else
+               v.state := INIT;
+            end if;
+
+         when INIT =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact(
+                  v,
+                  (
+                     0 => RWXACT( EC_REG_AL_EMSK_C, EC_AL_EMSK_INIT_C ),
+                     1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
+                     2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
+                  )
+               );
+            else
                v.state := UPDATE_AS;
+            end if;
+
+         when POLL_IRQ =>
+            if ( irq = EC_IRQ_ACT_C ) then
+               v.state := POLL_AL_EVENT;
+            else
+               -- maybe the TXPDO needs to be updated
+               if (    ( r.curState = SAFEOP or r.curState = OP )
+                   and ( ESC_SM3_ACT_C = '1' )
+                   and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
+                   and ( r.txPDODcm = 0 )
+                  ) then
+                  v.txPDOBst :=  TXPDO_BURST_MAX_C;
+                  v.txPDORdy := '1';
+                  v.state    := UPDATE_TXPDO;
+               end if;
             end if;
 
          when POLL_AL_EVENT =>
@@ -418,11 +487,20 @@ begin
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
             else
                v.lastAL := r.program.seq(0).val;
-               v.state  := HANDLE_AL_EVENT;
+               if ( (r.program.seq(0).val and EC_AL_EMSK_INIT_C) = x"0000_0000" ) then
+                  -- no more events pending; wait for an IRQ
+                  v.state  := POLL_IRQ;
+               else
+                  v.state  := HANDLE_AL_EVENT;
+               end if;
             end if;
 
+         -- ************ NOTE ************
+         -- All events handled here must be
+         -- enabled in EC_REG_AL_EMSK_C
+         -- ******************************
          when HANDLE_AL_EVENT =>
-            v.state := POLL_AL_EVENT;
+            v.state := POLL_AL_EVENT; -- keep polling AL until nothing is pending
             if    ( r.lastAL(EC_AL_EREQ_CTL_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_CTL_IDX_C) := '0';
                v.state                        := READ_AL;
@@ -454,18 +532,6 @@ report "SMA EVENT";
                --       never get an event.
                v.lastAL(EC_AL_EREQ_WDG_IDX_C) := '0';
                v.state                        := HANDLE_WD_EVENT;
-            elsif ( r.lastAL(EC_AL_EREQ_SM3_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_SM3_IDX_C) := '0';
-assert false report "SM3 EVENT" severity note;
-            else
-               -- maybe the TXPDO needs to be updated
-               if (    ( r.curState = SAFEOP or r.curState = OP )
-                   and ( ESC_SM3_ACT_C = '1' )
-                   and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) then
-                  v.txPDOBst :=  TXPDO_BURST_MAX_C;
-                  v.txPDORdy := '1';
-                  v.state    := UPDATE_TXPDO;
-               end if;
             end if;
 
          when HANDLE_WD_EVENT =>
@@ -612,7 +678,7 @@ report "entering UPDATE_AS " & toString( val );
                -- handle state transitions
                report "Transition from " & integer'image(ESCStateType'pos(r.curState)) & " => " & integer'image(ESCStateType'pos(r.reqState));
                v.curState := r.reqState;
-               v.state    := POLL_AL_EVENT;
+               v.state    := POLL_IRQ;
             end if;
 
          when CHECK_SM =>
@@ -760,7 +826,7 @@ severity warning;
                for i in 0 to 7 loop
                   report "SM " & integer'image(i) & " active: " & std_logic'image(r.program.seq(i).val(0));
                end loop;
-               v.state := POLL_AL_EVENT;
+               v.state := POLL_IRQ;
                if ( r.curState = SAFEOP or r.curState = OP ) then
                   v.state := CHECK_SM;
                elsif ( r.curState = PREOP ) then
@@ -895,6 +961,7 @@ v.decim := 200;
 else
 v.decim := r.decim - 1;
 end if;
+
                   if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
                      v.ctlReq.addr  := std_logic_vector((txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range)));
                      v.ctlReq.wdata := ( x"0000" & txPDOMst.data );
@@ -915,7 +982,7 @@ end if;
                   else 
                      -- illegal address; drop
                      if ( r.txPDOBst = 0 ) then
-                        v.state := POLL_AL_EVENT;
+                        v.state := POLL_IRQ;
                      else
                         v.txPDORdy := '1';
                         v.txPDOBst := r.txPDOBst - 1;
@@ -923,13 +990,19 @@ end if;
                   end if;
                else
                   -- nothing to send ATM
-                  v.state    := POLL_AL_EVENT;
+                  v.state    := POLL_IRQ;
                   v.txPDOBst := 0;
                end if;
             elsif ( '1' = r.program.don ) then
                -- write to lan9254 done
+               if ( r.txPDOSnt = to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) then
+                  v.txPDOSnt := 0;
+                  v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
+               else
+                  v.txPDOSnt := r.txPDOSnt + 1;
+               end if;
                if ( r.txPDOBst = 0 ) then
-                  v.state := POLL_AL_EVENT;
+                  v.state := POLL_IRQ;
                else
                   v.txPDORdy := '1';
                   v.txPDOBst := r.txPDOBst - 1;

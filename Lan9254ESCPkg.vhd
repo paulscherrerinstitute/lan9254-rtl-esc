@@ -41,6 +41,11 @@ package Lan9254ESCPkg is
       bena     => HBI_BE_W0_C
    );
 
+   constant EC_REG_AL_EMSK_C : EcRegType := (
+      addr     => x"0204",
+      bena     => HBI_BE_DW_C
+   );
+
    constant EC_REG_AL_EREQ_C : EcRegType := (
       addr     => x"0220",
       bena     => HBI_BE_DW_C
@@ -50,7 +55,6 @@ package Lan9254ESCPkg is
       addr     => x"0440",
       bena     => HBI_BE_W0_C
    );
-
 
    constant EC_AL_EREQ_CTL_IDX_C         : natural :=  0;
    constant EC_AL_EREQ_SMA_IDX_C         : natural :=  4;
@@ -96,6 +100,29 @@ package Lan9254ESCPkg is
       addr     => x"050C",
       bena     => HBI_BE_DW_C
    );
+
+   constant EC_REG_IRQ_CFG_C : EcRegType := (
+      addr     => x"3054",
+      bena     => HBI_BE_DW_C
+   );
+
+   constant EC_IRQ_CFG_TYP_IDX_C : natural   := 0;   -- '1' : push-pull, '0' open-drain
+   constant EC_IRQ_CFG_POL_IDX_C : natural   := 4;
+   constant EC_IRQ_CFG_ENA_IDX_C : natural   := 8;
+   constant EC_IRQ_ACT_C         : std_logic := '0'; -- active low if 'POL' bit is '0'
+
+
+   constant EC_REG_IRQ_STS_C : EcRegType := (
+      addr     => x"3058",
+      bena     => HBI_BE_DW_C
+   );
+
+   constant EC_REG_IRQ_ENA_C : EcRegType := (
+      addr     => x"305C",
+      bena     => HBI_BE_DW_C
+   );
+
+   constant EC_IRQ_ENA_ECAT_IDX_C : natural := 0;
 
    function EC_REG_SM_PSA_F(constant sm : natural range 0 to 7)
    return EcRegType;
