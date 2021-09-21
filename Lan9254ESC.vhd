@@ -212,7 +212,7 @@ architecture rtl of Lan9254ESC is
       rxPDO    : Lan9254PDOMstType;
       txPDORdy : std_logic;
       txPDOBst : natural range 0 to TXPDO_BURST_MAX_C;
-      txPDOSnt : natural range 0 to to_integer(unsigned(ESC_SM3_LEN_C)) - 1;
+      txPDOSnt : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
       txPDODcm : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
       decim    : natural;
    end record RegType;
@@ -995,7 +995,7 @@ end if;
                end if;
             elsif ( '1' = r.program.don ) then
                -- write to lan9254 done
-               if ( r.txPDOSnt = to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) then
+               if ( r.txPDOSnt = ( ( to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) / 2 ) ) then
                   v.txPDOSnt := 0;
                   v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
                else
@@ -1054,7 +1054,8 @@ debug(23)           <= rep.valid;
    probe0(23          ) <= rep.valid;
    probe0(28 downto 24) <= std_logic_vector( to_unsigned( ControllerState'pos( rin.state ), 5) );
    probe0(29          ) <= r.program.don;
-   probe0(31 downto 30) <= (others => '0');
+   probe0(30 downto 30) <= (others => '0');
+   probe0(31          ) <= irq;
    probe0(63 downto 32) <= r.ctlReq.wdata;
 
    probe1(31 downto  0) <= rep.rdata;
