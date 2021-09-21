@@ -69,6 +69,6 @@ Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o
 
 clean:
-	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd
+	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd eeprom.bin
 
 .PHONY: clean all run
