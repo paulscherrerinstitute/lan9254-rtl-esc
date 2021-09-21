@@ -8,6 +8,8 @@ use work.Lan9254ESCPkg.all;
 use work.EEEmulPkg.all;
 use work.EEPROMContentPkg.all;
 
+-- ESC Core; ESC state machine interfacing to the LAN9254 controller
+
 use work.IlaWrappersPkg.all;
 
 entity Lan9254ESC is

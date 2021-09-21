@@ -3,6 +3,10 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+-- Wrapper module to provide a simulated RXPDO;
+-- the RXPDO data is consumed by C-code (which
+-- flashes LEDs on the development board).
+
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 

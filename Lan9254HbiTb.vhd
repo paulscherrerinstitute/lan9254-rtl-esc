@@ -7,6 +7,8 @@ use work.Lan9254Pkg.all;
 entity Lan9254HbiTb is
 end entity Lan9254HbiTb;
 
+-- Test bed for Lan9254Hbi (HBI interface to LAN9254)
+
 architecture rtl of Lan9254HbiTb is
 
    constant CLOCK_FREQ_C : real := 1.0E8;

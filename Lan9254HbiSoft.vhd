@@ -5,6 +5,22 @@ use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
 
+-- 'soft' implementation/architecture of Lan9254Hbi
+-- 
+--     [ simulation of ESC running on ZYNQ ]
+--              HBI master interface
+--
+--     [        HBI slave  interface       ]          <- Lan9254HbiSoft.vhd
+--     [            translates to C-       ]
+--     [            function calls         ]  CPU     <- readWrite.c
+--     [            AXI master             ]
+-- ==================AXI  BUS  ===============================================
+--     [            AXI slave              ]  FPGA fabric
+--     [        HBI master interface       ]
+-- ===========================================================================
+--               LAN9254 HARDWARE             hardware land
+--
+
 architecture rtl of Lan9254HBI is
 
    constant MAX_DELAY_C : natural := 7;

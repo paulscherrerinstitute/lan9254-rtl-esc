@@ -6,6 +6,15 @@ use ieee.math_real.all;
 use work.Lan9254Pkg.all;
 
 -- HBI in single-cycle, 16-bit wide multiplexed mode
+-- The entity is declared here; architectures are implemented
+-- in separate files:
+--   Lan9254HbiImpl.vhd -> implementation in FPGA fabric (RTL)
+--   Lan9254HbiSoft.vhd -> wrapper for simulation mode when
+--                         running simulation on a ZYNQ.
+--                         This enables the simulation/CPU to interact
+--                         with the real LAN9254 hardware via
+--                         a AXI-bus-to-HBI-bridge.
+
 entity Lan9254HBI is
 
    generic (

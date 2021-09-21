@@ -3,6 +3,11 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+-- General types, definitions and helpers for supporting
+-- the lan9254 in multiplexed, directly-mapped 16-bit HBI
+-- mode.
+-- The focus of this package are HBI bus transactions.
+
 package Lan9254Pkg is
 
    type Lan9254ReqType is record

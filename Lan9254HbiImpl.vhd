@@ -5,7 +5,11 @@ use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
 
+-- RTL ('real') implementation of HBI interface for driving the
+-- LAN9254 from the FPGA fabric.
+
 -- HBI in single-cycle, 16-bit wide multiplexed mode
+
 
 architecture rtl of Lan9254HBI is
 

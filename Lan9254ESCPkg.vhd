@@ -5,6 +5,8 @@ use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
 
+-- Types, declarations, helpers for ESC support
+
 package Lan9254ESCPkg is
 
    -- we list BOOT last so the valid increments in state (except for boot)

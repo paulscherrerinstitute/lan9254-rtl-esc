@@ -9,6 +9,10 @@ use work.Lan9254ESCPkg.all;
 entity Lan9254ESCrun is
 end entity Lan9254ESCrun;
 
+-- Simulation environment for Lan9254ESC. Run a simulation
+-- of the ESC and let it talk to real LAN9254 hardware (e.g.
+-- from a ZYNQ CPU).
+
 architecture rtl of Lan9254ESCrun is
    signal clk      : std_logic := '0';
    signal rst      : std_logic := '0';

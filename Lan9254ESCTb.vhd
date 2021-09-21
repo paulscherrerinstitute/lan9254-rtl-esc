@@ -8,6 +8,11 @@ use work.Lan9254Pkg.all;
 entity Lan9254ESCTb is
 end entity Lan9254ESCTb;
 
+-- Test-bed for Lan9254ESC; this is a basic test bed.
+-- More comprehensive testing is possible using Lan9254ESCrun.vhd
+-- which implements a simulation that talks to the actual
+-- LAN9254 hardware.
+
 architecture rtl of Lan9254ESCTb is
    signal clk : std_logic := '0';
    signal rst : std_logic := '0';

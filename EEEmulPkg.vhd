@@ -3,6 +3,11 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+-- EEPROM emulation support helpers for Lan9254 ESC;
+-- the functions in this package marshal eeprom
+-- contents into words of the required size (16-bit
+-- for writing, 64-bit for reading).
+
 use work.EEPROMContentPkg.all;
 
 package EEEMulPkg is

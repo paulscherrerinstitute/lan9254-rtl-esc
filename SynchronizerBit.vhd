@@ -1,6 +1,9 @@
 library ieee;
 use     ieee.std_logic_1164.all;
 
+-- General-purpose synchronizer. Re-implemented here
+-- to be independent of other libraries.
+
 entity SynchronizerBit is
    generic (
       STAGES_G : positive  := 2;
