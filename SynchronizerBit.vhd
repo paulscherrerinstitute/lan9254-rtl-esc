@@ -49,6 +49,3 @@ begin
 
   end generate GEN_SYNC;
 end architecture rtl;
-
-
-
