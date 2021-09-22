@@ -1,2 +1,3 @@
 EEPROMContentPkg.vhd
 config.local.mk
+eeprom.bin
