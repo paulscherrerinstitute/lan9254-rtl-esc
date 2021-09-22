@@ -3,12 +3,14 @@
 # Command used to generate this makefile:
 # ghdl --gen-makefile lan9254esctb
 
-CROSS=arm-linux-gnueabi-
+
+CROSS=
 GHDL=$(CROSS)ghdl
 CXX=$(CROSS)g++
 GHDLFLAGS=
-SIITOOL=../master/siitool/siitool
+SIITOOL=siitool
 
+-include config.local.mk
 
 PROG=lan9254escrun
 OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
