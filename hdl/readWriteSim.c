@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-#undef  DEBUG
+#define DEBUG  (-1)
 
 #define STD_LOGIC_1 3
 #define STD_LOGIC_0 2
@@ -90,7 +90,7 @@ int      i;
 	}
 
 	if ( len > 4 ) {
-		printf("readWrite_C(): BAD LENGTH (must be < 4) %" PRId32 "\n", len);
+		printf("readWrite_C(): BAD LENGTH (must be <= 4) %" PRId32 "\n", len);
 		abort();
 	}
 
@@ -113,7 +113,7 @@ int      i;
 				}
 			break;
 		}
-#ifdef DEBUG
+#if DEBUG > 0
 		printf("Reading (l=%" PRId32 ") from 0x%04" PRIx32 ": 0x%08" PRIx32 "\n", len, addr, d);
 #endif
 		*d_p = d;
@@ -121,7 +121,7 @@ int      i;
 
 		d = *d_p;
 
-#ifdef DEBUG
+#if DEBUG > 0
 		printf("Writing (l=%" PRId32 ") to   0x%04" PRIx32 ": 0x%08" PRIx32 "\n", len, addr, d);
 #endif
 
@@ -147,7 +147,7 @@ int      i;
 void writeRxPDO_C(int wrdAddr, int val, int ben)
 {
 /*printf("writeRxPDO_C: %d %d %d\n", wrdAddr, val, ben); */
-	if ( 0 == wrdAddr && (ben & 1) ) {
+	if ( 0x1100/2 == wrdAddr && (ben & 1) ) {
 		*(dev->a8 + 0x3001) = (val & 0xff);
     }
 }
@@ -158,7 +158,7 @@ uint32_t irq;
 int      rval;
 	irq = *(dev->a32 + (0x3004 >> 2));
 	rval = (irq & 1) ? 1 : 0;
-#ifdef DEBUG
+#if DEBUG > 1
 	printf("pollIRQ_C: %d\n", rval);
 	printf("EVREQ    : %x\n", *(dev->a32 + (0x0220 >> 2)));
 	printf("IRQCTL   : %x\n", *(dev->a32 + (0x3054 >> 2)));

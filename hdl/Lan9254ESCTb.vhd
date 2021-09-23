@@ -57,7 +57,8 @@ begin
 
    U_DUT : entity work.Lan9254ESC
       generic map (
-         CLK_FREQ_G  => 10.0E3
+         CLK_FREQ_G           => 10.0E3,
+         REG_IO_TEST_ENABLE_G => false
       )
       port map (
          clk         => clk,

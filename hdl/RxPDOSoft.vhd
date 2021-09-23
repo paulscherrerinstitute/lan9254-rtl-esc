@@ -47,6 +47,7 @@ begin
    begin
       if ( rising_edge( clk ) ) then
          if ( ( rxPDORdyLoc and rxPDOMst.valid ) = '1' ) then
+--report "RXPDO @" & toString(rxPDOMst.wrdAddr) & " BE " & toString(rxPDOMst.ben) & " :" & toString(rxPDOMst.data);
             writeRxPDO_C(
                to_integer( unsigned( rxPDOMst.wrdAddr ) ),
                to_integer( unsigned( rxPDOMst.data    ) ),

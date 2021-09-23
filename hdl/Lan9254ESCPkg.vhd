@@ -88,6 +88,12 @@ package Lan9254ESCPkg is
       constant adj  : integer      := 0
    ) return EcRegType;
 
+   function EC_WORD_REG_F(
+      constant addr : ESCVal16Type;
+      constant off  : ESCVal16Type := (others => '0');
+      constant adj  : integer      := 0
+   ) return EcRegType;
+
    constant EC_REG_EEP_ADR_C : EcRegType := (
       addr     => x"0504",
       bena     => HBI_BE_DW_C
@@ -185,12 +191,12 @@ package Lan9254ESCPkg is
    constant SM3_WADDR_END_C        : unsigned(13 downto 0) :=
       to_unsigned( (to_integer(signed(ESC_SM3_HACK_LEN_C)) - 1 )/2, 14 );
 
-
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
+   constant EC_REG_RXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM0_SMA_C, ESC_SM0_LEN_C, -1 );
+   constant EC_REG_TXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM1_SMA_C, ESC_SM1_LEN_C, -1 );
    constant EC_REG_RXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM2_SMA_C, ESC_SM2_LEN_C, -1 );
    constant EC_REG_TXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM3_SMA_C, ESC_SM3_LEN_C, -1 );
-
 
 end package LAN9254ESCPkg;
 
@@ -252,10 +258,11 @@ package body LAN9254ESCPkg is
       return v(10 downto 8);
    end function EE_CMD_GET_F;
 
-   function EC_BYTE_REG_F(
+   function EC_REG_F(
       constant addr : ESCVal16Type;
       constant off  : ESCVal16Type := (others => '0');
-      constant adj  : integer      := 0
+      constant adj  : integer      := 0;
+      constant be   : std_logic_vector(3 downto 0)
    ) return EcRegType is
       variable v : EcRegType;
       variable u : unsigned(addr'high downto addr'low);
@@ -263,8 +270,27 @@ package body LAN9254ESCPkg is
    begin
       u           := unsigned(addr) + unsigned(off) + unsigned(to_signed(adj, u'length));
       v.addr      := std_logic_vector( u );
-      v.bena      := HBI_BE_B0_C;
+      v.bena      := be;
       return v; 
+   end function EC_REG_F;
+
+   function EC_BYTE_REG_F(
+      constant addr : ESCVal16Type;
+      constant off  : ESCVal16Type := (others => '0');
+      constant adj  : integer      := 0
+   ) return EcRegType is
+   begin
+      return EC_REG_F(addr, off, adj, HBI_BE_B0_C);
    end function EC_BYTE_REG_F;
+
+   function EC_WORD_REG_F(
+      constant addr : ESCVal16Type;
+      constant off  : ESCVal16Type := (others => '0');
+      constant adj  : integer      := 0
+   ) return EcRegType is
+   begin
+      return EC_REG_F(addr, off, adj, HBI_BE_W0_C);
+   end function EC_WORD_REG_F;
+  
 
 end package body LAN9254ESCPkg;

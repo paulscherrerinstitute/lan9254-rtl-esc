@@ -12,17 +12,21 @@ SIITOOL=siitool
 
 -include config.local.mk
 
-PROG=lan9254escrun
-OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
+PROG=lan9254escrun lan9254esctb
+OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o
 
-TOPS=Lan9254ESCTb.o Lan9254ESCrun.o 
+TOPS=Lan9254ESCTb.o  #Lan9254ESCrun.o 
 
 # Default target
 all: $(PROG)
 
 # Elaboration target
-$(PROG): $(OBJS) $(TOPS)
+lan9254escrun: $(OBJS) Lan9254ESCrun.o
 	$(GHDL) -e -Wl,readWriteSim.o $(GHDLFLAGS) $@
+
+# Elaboration target
+lan9254esctb: $(OBJS) Lan9254ESCTb.o
+	$(GHDL) -e $(GHDLFLAGS) $@
 
 readWriteSim.o: readWriteSim.c
 	$(CXX) -c -o $@ $^ -Wall
@@ -39,36 +43,40 @@ eeprom.bin: test.xml
 	$(SIITOOL) -m -o $@ $<
 
 # Targets to analyze files
-RxPDOSoft.o: RxPDOSoft.vhd Lan9254ESCPkg.vhd Lan9254Pkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-EEPROMContentPkg.o: EEPROMContentPkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-IlaWrappersPkg.o: IlaWrappersPkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-EEEmulPkg.o: EEEmulPkg.vhd Lan9254Pkg.vhd Lan9254ESCPkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254Pkg.o: Lan9254Pkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254ESCPkg.o: Lan9254ESCPkg.vhd Lan9254Pkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254ESC.o: Lan9254ESC.vhd Lan9254Pkg.o Lan9254ESCPkg.o IlaWrappersPkg.o
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254Hbi.o: Lan9254Hbi.vhd Lan9254Pkg.o Lan9254ESCPkg.o
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254HbiSoft.o: Lan9254HbiSoft.vhd Lan9254Pkg.o Lan9254ESCPkg.o
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254ESCTb.o: Lan9254ESCTb.vhd Lan9254Pkg.vhd Lan9254ESCPkg.vhd
-	$(GHDL) -a $(GHDLFLAGS) $<
-Lan9254ESCrun.o: Lan9254ESCrun.vhd Lan9254Pkg.vhd Lan9254ESCPkg.vhd
+##MMRxPDOSoft.o: RxPDOSoft.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMEEPROMContentPkg.o: EEPROMContentPkg.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMIlaWrappersPkg.o: IlaWrappersPkg.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMEEEmulPkg.o: EEEmulPkg.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254Pkg.o: Lan9254Pkg.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254ESCPkg.o: Lan9254ESCPkg.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254ESC.o: Lan9254ESC.vhd 
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254Hbi.o: Lan9254Hbi.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254HbiSoft.o: Lan9254HbiSoft.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254ESCTb.o: Lan9254ESCTb.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+##MMLan9254ESCrun.o: Lan9254ESCrun.vhd
+##MM	$(GHDL) -a $(GHDLFLAGS) $<
+%.o: %.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o
-EEEmulPkg.o: EEPROMContentPkg.o
-Lan9254Hbi.o:  Lan9254Pkg.o
-Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o
-Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
-Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o
+EEEmulPkg.o: EEPROMContentPkg.o Lan9254Pkg.o Lan9254ESCPkg.o
+Lan9254Hbi.o:  Lan9254Pkg.o Lan9254Pkg.o Lan9254ESCPkg.o
+Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
+Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o Lan9254ESCPkg.o
+Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o Lan9254ESCPkg.o
+RxPDOSoft.o: Lan9254ESCPkg.o Lan9254Pkg.o
+Lan9254ESCPkg.o: Lan9254Pkg.o
 
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd eeprom.bin

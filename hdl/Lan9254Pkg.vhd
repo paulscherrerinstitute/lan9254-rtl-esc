@@ -10,8 +10,11 @@ use ieee.math_real.all;
 
 package Lan9254Pkg is
 
+   subtype Lan9254ByteAddrType is unsigned(13 downto 0);
+   subtype Lan9254WordAddrType is unsigned(12 downto 0);
+
    type Lan9254ReqType is record
-      addr    : std_logic_vector(13 downto 0);
+      addr    : Lan9254ByteAddrType;
       wdata   : std_logic_vector(31 downto 0);
       be      : std_logic_vector( 3 downto 0);
       valid   : std_logic;
@@ -41,7 +44,7 @@ package Lan9254Pkg is
    );
 
    type Lan9254PDOMstType is record
-      wrdAddr : unsigned(12 downto 0);
+      wrdAddr : Lan9254WordAddrType;
       data    : std_logic_vector(15 downto 0);
       valid   : std_logic;
       ben     : std_logic_vector(1 downto 0);
@@ -55,6 +58,18 @@ package Lan9254Pkg is
       ben     => (others => '0'),
       last    => '0'
    );
+
+   type ESCStreamType is (
+      PDO,
+      COE
+   );
+
+   subtype ESCStreamIndexType is natural range
+      ESCStreamType'pos(ESCStreamType'high)
+         downto
+      ESCStreamType'pos(ESCStreamType'low);
+
+   type Lan9254PDOMstArray is array (ESCStreamIndexType) of Lan9254PDOMstType;
 
    type Lan9254HBIOutType is record
       cs      : std_logic;
@@ -188,6 +203,9 @@ package Lan9254Pkg is
    function initCnt(constant p: real    ) return natural;
 
    function toString(constant x : std_logic_vector) return string;
+   function toString(constant x : unsigned        ) return string;
+
+   function toSl(constant a: boolean) return std_logic;
 
 end package Lan9254Pkg;
 
@@ -202,7 +220,7 @@ package body Lan9254Pkg is
       variable rv : Lan9254ReqType;
    begin
       rv       := LAN9254REQ_INIT_C;
-      rv.addr  := rdAdr(rv.addr'high downto 2) & "00";
+      rv.addr  := unsigned(rdAdr(rv.addr'high downto 2)) & "00";
       rv.be    := bena;
       rv.wdata := data;
       rv.rdnwr := rdnwr;
@@ -342,5 +360,17 @@ package body Lan9254Pkg is
       end loop;
       return s; 
    end function toString;
+
+   function toString(constant x : unsigned)
+   return string is
+   begin
+      return toString(std_logic_vector(x));
+   end function toString;
+
+   function toSl(constant a: boolean)
+   return std_logic is
+   begin
+      if ( a ) then return '1'; else return '0'; end if;
+   end function toSl;
 
 end package body Lan9254Pkg;

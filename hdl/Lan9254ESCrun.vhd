@@ -29,6 +29,9 @@ architecture rtl of Lan9254ESCrun is
    signal rxPDOMst : Lan9254PDOMstType;
    signal rxPDORdy : std_logic;
 
+   signal rxStmMst : Lan9254PDOMstArray;
+   signal rxStmRdy : std_logic_vector(ESCStreamIndexType);
+
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
 
@@ -46,6 +49,11 @@ architecture rtl of Lan9254ESCrun is
    begin
       assert false report "pollIRQ_C should be foreign" severity failure;
    end function pollIRQ_C;
+
+   constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
+      ESCStreamType'pos( PDO ) => '1',
+      others                   => '0'
+   );
 
 begin
 
@@ -93,7 +101,7 @@ begin
       if ( rising_edge( clk ) ) then
          -- just reflect the level here; we don't know
          -- which one is active...
-         if ( pollIrq_C /= 0 ) then
+         if ( pollIRQ_C /= 0 ) then
             irq <= '1';
          else
             irq <= '0';
@@ -105,7 +113,8 @@ begin
 
    U_DUT : entity work.Lan9254ESC
       generic map (
-         CLK_FREQ_G  => 10.0E4
+         CLK_FREQ_G  => 10.0E4,
+         ENABLED_STREAMS_G => STREAM_CONFIG_C
       )
       port map (
          clk         => clk,
@@ -114,14 +123,17 @@ begin
          req         => req,
          rep         => rep,
 
-         rxPdoMst    => rxPDOMst,
-         rxPdoRdy    => rxPDORdy,
+         rxStrmMst   => rxStmMst,
+         rxStrmRdy   => rxStmRdy,
 
          txPDOMst    => txPDOMst,
          txPDORdy    => txPDORdy,
 
          irq         => irq
       );
+
+   rxPDOMst <= rxStmMst( ESCStreamType'pos( PDO ) );
+   rxStmRdy <= ( ESCStreamType'pos( PDO ) => rxPdoRdy, others => '0' );
 
    U_HBI : entity work.Lan9254Hbi
       generic map (

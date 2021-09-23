@@ -114,7 +114,7 @@ begin
                   a := a + 1;
                   d := d / 256;
                end loop L_RSHFT;
--- report "calling C: " & integer'image(a) & " " & integer'image(d) & " " & integer'image(l);
+--report "calling C: " & toString(std_logic_vector(to_unsigned(a,16))) & " " & toString(std_logic_vector(to_signed(d,32))) & " " & integer'image(l);
                readWrite_C(a, req.rdnwr, d, l);
                v.rep.berr  := (others => '0');
                v.rep.valid := '1';
