@@ -75,7 +75,7 @@ architecture rtl of Lan9254ESC is
 
    type ESCStreamType is (
       PDO,
-      COE
+      EOE
    );
 
    constant RB0 : EcRegType := ( addr=> x"3064", bena => HBI_BE_B0_C );
@@ -1115,6 +1115,16 @@ end if;
                   )
                );
             else
+
+report  "RX-MBX Header: len "
+       & toString(r.program.seq(1).val(15 downto 0))
+       & ", cnt "
+       & toString(r.program.seq(3).val(15 downto 12))
+       & ", typ "
+       & toString(r.program.seq(3).val(11 downto  8))
+       & ", pri/channel "
+       & toString(r.program.seq(3).val( 7 downto  0))
+;
                v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
                v.rxMBXCnt := unsigned(r.program.seq(3).val(15 downto 12));
                if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
@@ -1125,20 +1135,11 @@ end if;
                   -- redundant  transmission; drop
                   v.rxStrmSmEndAddr := resize(unsigned(EC_REG_RXMBX_L_C.addr), v.rxStrmSmEndAddr'length);
                   v.state           := SM_RX_RELEASE;
-               elsif (     streamIsEnabled( COE )
-                       and ( MBX_TYP_COE_C = r.program.seq(3).val(11 downto 8) )
+               elsif (     streamIsEnabled( EOE )
+                       and ( MBX_TYP_EOE_C = r.program.seq(3).val(11 downto 8) )
                      ) then
-                  rxStreamSetup( v, ESC_SM0_SMA_C, std_logic_vector(v.rxMBXLen), ESC_SM0_LEN_C, COE );
+                  rxStreamSetup( v, ESC_SM0_SMA_C, std_logic_vector(v.rxMBXLen), ESC_SM0_LEN_C, EOE );
                else
-report  "RX-MBX Header: len "
-       & toString(r.program.seq(1).val(15 downto 0))
-       & ", cnt "
-       & toString(r.program.seq(3).val(15 downto 12))
-       & ", typ "
-       & toString(r.program.seq(3).val(11 downto  8))
-       & ", pri/channel "
-       & toString(r.program.seq(3).val( 7 downto  0))
-;
                   v.state    := MBOX_RXERR;
                   v.rxMBXErr := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
                end if;
