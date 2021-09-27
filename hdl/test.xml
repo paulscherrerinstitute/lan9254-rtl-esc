@@ -645,8 +645,8 @@
         <Fmmu>Inputs</Fmmu>
         <Sm ControlByte="#x26" DefaultSize="128" Enable="1" StartAddress="#x1000">MBoxOut</Sm>
         <Sm ControlByte="#x22" DefaultSize="128" Enable="1" StartAddress="#x1080">MBoxIn</Sm>
-        <Sm ControlByte="#x64" DefaultSize="3"   Enable="1" StartAddress="#x1100">Outputs</Sm>
-        <Sm ControlByte="#x50" DefaultSize="4"   Enable="1" StartAddress="#x1180">Inputs</Sm>
+        <Sm ControlByte="#x24" DefaultSize="3"   Enable="1" StartAddress="#x1100">Outputs</Sm>
+        <Sm ControlByte="#x10" DefaultSize="4"   Enable="1" StartAddress="#x1180">Inputs</Sm>
         <RxPdo Fixed="true" Mandatory="true" Sm="2">
           <Index>#x1600</Index>
           <Name>LEDs</Name>
@@ -684,6 +684,7 @@
 Enable VoE; SOES does not accept an empty mbox config
 -->
           <VoE/>
+          <EoE/>
         </Mailbox>
         <Eeprom>
           <ByteSize>2048</ByteSize>

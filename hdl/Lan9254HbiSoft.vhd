@@ -99,7 +99,7 @@ begin
                if ( req.rdnwr = '1' ) then
                   d := 12345;
                else
-                  d := to_integer(signed(req.wdata));
+                  d := to_integer(signed(req.data));
                end if;
                l := 0;
                for i in req.be'range loop

@@ -139,12 +139,14 @@ architecture rtl of Lan9254ESC is
       reg      : EcRegType;
       val      : std_logic_vector(31 downto 0);
       rdnwr    : boolean;
+      dis      : std_logic;
    end record RWXactType;
 
    constant RWXACT_INIT_C : RWXactType := (
       reg      => ( addr => (others => '0'), bena => (others => '0') ),
       val      => ( others => '0' ),
-      rdnwr    => true
+      rdnwr    => true,
+      dis      => '0'
    );
 
    function toSL(constant x : boolean) return std_logic is
@@ -154,7 +156,8 @@ architecture rtl of Lan9254ESC is
 
    function RWXACT(
       constant reg : EcRegType;
-      constant val : std_logic_vector := ""
+      constant val : std_logic_vector := "";
+      constant dis : std_logic        := '0'
    )
    return RWXactType is
       variable rv    : RWXactType;
@@ -162,6 +165,7 @@ architecture rtl of Lan9254ESC is
       rv.reg   := reg;
       rv.rdnwr := (val'length = 0);
       rv.val   := (others => '0');
+      rv.dis   := dis;
       if ( not rv.rdnwr ) then
          rv.val( val'length - 1 downto 0 ) := val;
       end if;
@@ -171,7 +175,8 @@ architecture rtl of Lan9254ESC is
    function RWXACT(
       constant addr: unsigned;
       constant bena: std_logic_vector( 3 downto 0);
-      constant val : std_logic_vector := ""
+      constant val : std_logic_vector := "";
+      constant dis : std_logic        := '0'
    )
    return RWXactType is
       variable rv    : RWXactType;
@@ -180,7 +185,7 @@ architecture rtl of Lan9254ESC is
       reg.addr                          := (others => '0');
       reg.addr(addr'length -1 downto 0) := std_logic_vector(addr);
       reg.bena                          := bena;
-      return RWXACT( reg, val );
+      return RWXACT( reg, val, dis );
    end function RWXACT;
 
    type RWXactArray is array (natural range <>) of RWXactType;
@@ -466,23 +471,34 @@ architecture rtl of Lan9254ESC is
 
    procedure rxStreamSetup(
       variable v : inout RegType;
-      constant a : in    std_logic_vector;
-      constant l : in    std_logic_vector;
-      constant s : in    std_logic_vector;
+      constant a : in    unsigned;
+      constant l : in    unsigned;
+      constant s : in    unsigned;
       constant t : in    ESCStreamType
    ) is
       variable a_u : Lan9254ByteAddrType;
       variable l_u : Lan9254ByteAddrType;
       variable s_u : Lan9254ByteAddrType;
    begin
-      a_u := resize( unsigned(a), a_u'length );
-      l_u := resize( unsigned(l), l_u'length );
-      s_u := resize( unsigned(s), s_u'length );
+      a_u := resize( a, a_u'length );
+      l_u := resize( l, l_u'length );
+      s_u := resize( s, s_u'length );
       v.rxStrm.wrdAddr    := a_u(a_u'left downto 1);
       v.rxStrmEndAddr     := a_u + l_u - 1;
       v.rxStrmSmEndAddr   := a_u + s_u - 1;
       v.rxStrmSel         := t;
       v.state             := STREAM_RX;
+   end procedure rxStreamSetup;
+
+   procedure rxStreamSetup(
+      variable v : inout RegType;
+      constant a : in    std_logic_vector;
+      constant l : in    std_logic_vector;
+      constant s : in    std_logic_vector;
+      constant t : in    ESCStreamType
+   ) is
+   begin
+      rxStreamSetup(v, unsigned(a), unsigned(l), unsigned(s), t);
    end procedure rxStreamSetup;
 
    function rxStreamEnd(constant r : RegType)
@@ -727,16 +743,18 @@ report "starting SM23";
 
          when XACT =>
             xct := r.program.seq(to_integer(r.program.idx));
-            if ( xct.rdnwr ) then
-               readReg( v.ctlReq, rep, xct.reg );
-               if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-                  v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.wdata;
-               end if;
-            else
+            if ( xct.dis = '0' ) then
+               if ( xct.rdnwr ) then
+                  readReg( v.ctlReq, rep, xct.reg );
+                  if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+                     v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.data;
+                  end if;
+               else
 --report "WRITE " & integer'image(to_integer(unsigned(xct.reg.addr))) & " " & integer'image(to_integer(signed(xct.val)));
-               writeReg( v.ctlReq, rep, xct.reg, xct.val );
+                  writeReg( v.ctlReq, rep, xct.reg, xct.val );
+               end if;
             end if;
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+            if ( ( ( r.ctlReq.valid and rep.valid ) or xct.dis  ) = '1' ) then
                v.ctlReq.valid := '0';
                if ( r.program.idx = r.program.num ) then
                   v.state        := r.program.ret;
@@ -782,6 +800,9 @@ report "entering UPDATE_AS " & toString( val );
                );
             else
                v.state             := CHECK_MBOX;
+               v.rptAck(2)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+               v.rptAck(3)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
+
                if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
                    or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
@@ -834,6 +855,9 @@ severity warning;
                );
             else
                v.state             := EN_DIS_SM;
+               v.rptAck(0)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+               -- FIXME handle repeat req.
+               v.rptAck(1)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
                if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
                    or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '1' )
                        and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
@@ -910,11 +934,17 @@ severity warning;
                for i in 0 to 7 loop
                   report "SM " & integer'image(i) & " active: " & std_logic'image(r.program.seq(i).val(0));
                end loop;
-               v.state := HANDLE_AL_EVENT;
-               if ( r.curState = SAFEOP or r.curState = OP ) then
-                  v.state := CHECK_SM;
-               elsif ( r.curState = PREOP ) then
-                  v.state := CHECK_MBOX;
+               if (    ( r.program.seq(0).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(0) )
+                    or ( r.program.seq(1).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(1) )
+                    or ( r.program.seq(2).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(2) )
+                    or ( r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(3) )
+                  ) then
+                  v.state := HANDLE_AL_EVENT;
+                  if ( r.curState = SAFEOP or r.curState = OP ) then
+                     v.state := CHECK_SM;
+                  elsif ( r.curState = PREOP ) then
+                     v.state := CHECK_MBOX;
+                  end if;
                end if;
             end if;
 
@@ -1013,7 +1043,7 @@ end if;
                end if;
             elsif ( '1' = r.program.don ) then
                -- read from lan9254 complete; initiate write to RXPDO interface
-               v.rxStrm.data  := rep.rdata(15 downto  0);
+               v.rxStrm.data  := r.ctlReq.data(15 downto 0);
                v.rxStrm.valid := '1';
             else
                -- RXPDO write not onging and lan9254 register read not done
@@ -1052,9 +1082,9 @@ v.decim := r.decim - 1;
 end if;
 
                   if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
-                     v.ctlReq.addr  := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
-                     v.ctlReq.wdata := ( x"0000" & txPDOMst.data );
-                     v.ctlReq.be    := HBI_BE_W0_C;
+                     v.ctlReq.addr := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
+                     v.ctlReq.data := ( x"0000" & txPDOMst.data );
+                     v.ctlReq.be   := HBI_BE_W0_C;
 
                      if ( txPDOMst.ben(0) = '0' ) then
                         v.ctlReq.be(0) := not HBI_BE_ACT_C;
@@ -1100,7 +1130,7 @@ end if;
             else
                -- => initiate lan9254 register write operation
 
-               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.wdata ) ) );
+               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.data ) ) );
 
             end if;
 
@@ -1131,14 +1161,15 @@ report  "RX-MBX Header: len "
                     or v.rxMBXLen < MBX_HDR_SIZE_C ) then
                   v.state    := MBOX_RXERR;
                   v.rxMBXErr := MBX_ERR_CODE_INVALIDSIZE_C;
-               elsif ( v.rxMBXCnt = r.rxMBXCnt ) then
+               elsif ( ( v.rxMBXCnt /= x"0" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
                   -- redundant  transmission; drop
                   v.rxStrmSmEndAddr := resize(unsigned(EC_REG_RXMBX_L_C.addr), v.rxStrmSmEndAddr'length);
                   v.state           := SM_RX_RELEASE;
                elsif (     streamIsEnabled( EOE )
                        and ( MBX_TYP_EOE_C = r.program.seq(3).val(11 downto 8) )
                      ) then
-                  rxStreamSetup( v, ESC_SM0_SMA_C, std_logic_vector(v.rxMBXLen), ESC_SM0_LEN_C, EOE );
+                  rxStreamSetup(
+                     v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, EOE );
                else
                   v.state    := MBOX_RXERR;
                   v.rxMBXErr := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
@@ -1247,7 +1278,7 @@ debug(23)           <= rep.valid;
    probe0(29          ) <= r.program.don;
    probe0(30 downto 30) <= (others => '0');
    probe0(31          ) <= irq;
-   probe0(63 downto 32) <= r.ctlReq.wdata;
+   probe0(63 downto 32) <= r.ctlReq.data;
 
    probe1(31 downto  0) <= rep.rdata;
    probe1(63 downto 32) <= r.lastAL;

@@ -46,7 +46,7 @@ begin
             if ( req.rdnwr = '1' ) then
                rep.rdata <= al;
             else
-               as        <= req.wdata;
+               as        <= req.data;
             end if;
          end if;
          if ( al = as ) then

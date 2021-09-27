@@ -29,6 +29,14 @@ architecture rtl of Lan9254ESCrun is
    signal rxPDOMst : Lan9254PDOMstType;
    signal rxPDORdy : std_logic;
 
+   signal eoeMstIb : Lan9254PDOMstType;
+   signal eoeRdyIb : std_logic;
+
+   signal eoeMstOb : Lan9254PDOMstType;
+   signal eoeRdyOb : std_logic := '1';
+   signal eoeTEnOb : std_logic;
+   signal eoeErrOb : std_logic;
+
    signal rxStmMst : Lan9254PDOMstArray;
    signal rxStmRdy : std_logic_vector(ESCStreamIndexType);
 
@@ -52,6 +60,7 @@ architecture rtl of Lan9254ESCrun is
 
    constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
       ESCStreamType'pos( PDO ) => '1',
+      ESCStreamType'pos( EOE ) => '1',
       others                   => '0'
    );
 
@@ -133,7 +142,13 @@ begin
       );
 
    rxPDOMst <= rxStmMst( ESCStreamType'pos( PDO ) );
-   rxStmRdy <= ( ESCStreamType'pos( PDO ) => rxPdoRdy, others => '0' );
+   eoeMstIb <= rxStmMst( ESCStreamType'pos( EOE ) );
+
+   rxStmRdy <= (
+      ESCStreamType'pos( PDO ) => rxPdoRdy,
+      ESCStreamType'pos( EOE ) => eoeRdyIb,
+      others => '1'
+   );
 
    U_HBI : entity work.Lan9254Hbi
       generic map (
@@ -155,5 +170,32 @@ begin
          rxPdoRdy    => rxPDORdy
 
       );
+
+   U_EOE   : entity work.ESCEoERx
+      port map (
+         clk         => clk,
+         rst         => rst,
+
+         mbxMstIb    => eoeMstIb,
+         mbxRdyIb    => eoeRdyIb,
+
+
+         eoeMstOb    => eoeMstOb,
+         eoeRdyOb    => eoeRdyOb,
+         eoeErrOb    => eoeErrOb,
+         eoeTEnOb    => eoeTEnOb
+      );
+
+   P_MON_EOE : process ( clk ) is
+   begin
+      if ( rising_edge( clk ) ) then
+         if ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
+            report  "EOE: " & toString(eoeMstOb.data)
+                  & " L " & std_logic'image(eoeMstOb.last)
+                  & " E " & std_logic'image(eoeErrOb)
+                  & " T " & std_logic'image(eoeTenOb);
+         end if;
+      end if;
+   end process P_MON_EOE;
 
 end architecture rtl;

@@ -147,6 +147,9 @@ package Lan9254ESCPkg is
    function EC_REG_SM_ACT_F(constant sm : natural range 0 to 7)
    return EcRegType;
 
+   constant EC_SM_ACT_DIS_IDX_C          : natural :=  0;
+   constant EC_SM_ACT_RPT_IDX_C          : natural :=  1;
+
    function EC_REG_SM_PDI_F(constant sm : natural range 0 to 7)
    return EcRegType;
 
@@ -172,14 +175,14 @@ package Lan9254ESCPkg is
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1100";
-   constant ESC_SM2_SMC_C                               : ESCVal08Type :=   x"64";
+   constant ESC_SM2_SMC_C                               : ESCVal08Type :=   x"24";
    constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
    constant ESC_SM2_HACK_LEN_C                          : ESCVal16Type := x"0003";
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
-   constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"50";
+   constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"10";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
    constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";
    constant ESC_SM3_ACT_C                               : std_logic    := '1';

@@ -15,7 +15,7 @@ package Lan9254Pkg is
 
    type Lan9254ReqType is record
       addr    : Lan9254ByteAddrType;
-      wdata   : std_logic_vector(31 downto 0);
+      data    : std_logic_vector(31 downto 0);
       be      : std_logic_vector( 3 downto 0);
       valid   : std_logic;
       rdnwr   : std_logic;
@@ -24,7 +24,7 @@ package Lan9254Pkg is
 
    constant LAN9254REQ_INIT_C : Lan9254ReqType := (
       addr    => (others => '0'),
-      wdata   => (others => '0'),
+      data    => (others => '0'),
       be      => (others => '0'),
       valid   => '0',
       rdnwr   => '1',
@@ -61,7 +61,7 @@ package Lan9254Pkg is
 
    type ESCStreamType is (
       PDO,
-      COE
+      EOE
    );
 
    subtype ESCStreamIndexType is natural range
@@ -222,19 +222,19 @@ package body Lan9254Pkg is
       rv       := LAN9254REQ_INIT_C;
       rv.addr  := unsigned(rdAdr(rv.addr'high downto 2)) & "00";
       rv.be    := bena;
-      rv.wdata := data;
+      rv.data  := data;
       rv.rdnwr := rdnwr;
       rv.valid := '1';
       if    ( rdAdr(1 downto 0) = "11" ) then
-         rv.be    := ( 3 => bena(0), others => not HBI_BE_ACT_C );
-         rv.wdata := data  ( 7 downto 0) & x"00_0000";
+         rv.be   := ( 3 => bena(0), others => not HBI_BE_ACT_C );
+         rv.data := data  ( 7 downto 0) & x"00_0000";
       elsif ( rdAdr(1 downto 0) = "10" ) then
          rv.be( 3 downto 2 ) := bena(1 downto 0);
          rv.be( 1 downto 0)  := (others => not HBI_BE_ACT_C);
-         rv.wdata := data  (15 downto 0) & x"0000";
+         rv.data := data  (15 downto 0) & x"0000";
       elsif ( rdAdr(1 downto 0) = "01" ) then
-         rv.be    := bena  ( 2 downto 0) & not HBI_BE_ACT_C;
-         rv.wdata := data  (23 downto 0) & x"00";
+         rv.be   := bena  ( 2 downto 0) & not HBI_BE_ACT_C;
+         rv.data := data  (23 downto 0) & x"00";
       end if;
       return rv;
    end function adjReq;
@@ -270,8 +270,8 @@ package body Lan9254Pkg is
       else
          if ( rdInp.valid = '1' ) then
             rdOut.valid := '0';
-            rdOut.wdata := adjRep( rdOut, rdInp );
---report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.wdata) & " (rdata " & toString(rdInp.rdata) &")";
+            rdOut.data  := adjRep( rdOut, rdInp );
+--report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
          end if;
       end if;
    end procedure lan9254HBIRead;

@@ -13,7 +13,7 @@ SIITOOL=siitool
 -include config.local.mk
 
 PROG=lan9254escrun lan9254esctb
-OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o
+OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCEoERx.o
 
 TOPS=Lan9254ESCTb.o  #Lan9254ESCrun.o 
 
@@ -71,12 +71,13 @@ eeprom.bin: test.xml
 # Files dependences
 Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o
 EEEmulPkg.o: EEPROMContentPkg.o Lan9254Pkg.o Lan9254ESCPkg.o
-Lan9254Hbi.o:  Lan9254Pkg.o Lan9254Pkg.o Lan9254ESCPkg.o
+Lan9254Hbi.o:  Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
 Lan9254ESCTb.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o Lan9254ESCPkg.o
-Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o Lan9254ESCPkg.o
+Lan9254ESCrun.o:  Lan9254Pkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254Hbi.o Lan9254ESCPkg.o ESCEoERx.o
 RxPDOSoft.o: Lan9254ESCPkg.o Lan9254Pkg.o
 Lan9254ESCPkg.o: Lan9254Pkg.o
+ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd eeprom.bin
