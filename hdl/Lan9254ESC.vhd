@@ -36,6 +36,9 @@ entity Lan9254ESC is
       rxStrmMst   : out Lan9254PDOMstArray := (others => LAN9254PDO_MST_INIT_C);
       rxStrmRdy   : in  std_logic_vector(ESCStreamIndexType) := (others => '1');
 
+      txMBXMst    : in  LAN9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      txMBXRdy    : out std_logic;
+
       irq         : in  std_logic := EC_IRQ_ACT_C; -- defaults to polling mode
 
       testFailed  : out std_logic_vector(4 downto 0)
@@ -46,7 +49,7 @@ architecture rtl of Lan9254ESC is
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
-   type ControllerState is (
+   type ControllerStateType is (
       TEST,
       INIT,
       POLL_IRQ,
@@ -70,7 +73,9 @@ architecture rtl of Lan9254ESC is
       MBOX_READ,
       MBOX_RXERR,
       SM_RX_RELEASE,
-      MBOX_SM1
+      MBOX_SM1,
+      TXMBX_SEND,
+      TXMBX_REPLAY
    );
 
    type ESCStreamType is (
@@ -115,11 +120,15 @@ architecture rtl of Lan9254ESC is
       EC_AL_EREQ_EEP_IDX_C  => '1',
       EC_AL_EREQ_SMA_IDX_C  => '1',
       EC_AL_EREQ_SM0_IDX_C  => '1',
-      EC_AL_EREQ_SM1_IDX_C  => '1',
+      EC_AL_EREQ_SM1_IDX_C  => toSl( (ESC_SM1_ACT_C = '1') and (unsigned(ESC_SM1_LEN_C) > 0) ),
       EC_AL_EREQ_SM2_IDX_C  => toSl( (ESC_SM2_ACT_C = '1') and (unsigned(ESC_SM2_LEN_C) > 0) ),
       EC_AL_EREQ_WDG_IDX_C  => '1',
       others                => '0'
    );
+
+   constant TXMBX_MAXWORDS_C         : natural := to_integer( unsigned( ESC_SM1_LEN_C ) )/2;
+   constant TXMBX_PAYLOAD_MAXWORDS_C : natural := TXMBX_MAXWORDS_C - ( MBX_HDR_SIZE_C / 2 );
+
 
    function toESCState(constant x : std_logic_vector)
    return EscStateType is
@@ -201,7 +210,7 @@ architecture rtl of Lan9254ESC is
       num      : unsigned(LD_XACT_MAX_C - 1 downto 0);
       dly      : unsigned(                3 downto 0); -- FIXME
       don      : std_logic;
-      ret      : ControllerState;
+      ret      : ControllerStateType;
    end record RWXactSeqType;
 
    constant RWXACT_SEQ_INIT_C : RWXactSeqType := (
@@ -228,7 +237,7 @@ architecture rtl of Lan9254ESC is
    );
 
    type RegType is record
-      state                : ControllerState;
+      state                : ControllerStateType;
       testPhas             : natural range 0 to 3;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
@@ -249,8 +258,19 @@ architecture rtl of Lan9254ESC is
       txPDOBst             : natural range 0 to TXPDO_BURST_MAX_C;
       txPDOSnt             : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
       txPDODcm             : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
+      txMBXLEna            : std_logic;
+      txMBXTEna            : std_logic;
+      txMBXLen             : unsigned(15 downto 0);
+      txMBXWAddr           : natural range 0 to TXMBX_MAXWORDS_C - 1;
+      txMBXRdy             : std_logic;
+      txMBXMAck            : std_logic;
+      txMBXMRep            : std_logic;
+      txMBXReplay          : boolean;
+      txMBXLast            : std_logic;
+      txMBXOverrun         : std_logic;
+      txMBXRst             : std_logic;
       txMBXCnt             : unsigned(3 downto 0);
-      rxMBXCnt             : unsigned(3 downto 0);
+      rxMBXCnt             : unsigned(2 downto 0);
       rxMBXErr             : ESCVal16Type;
       rxMBXLen             : unsigned(15 downto 0);
       decim                : natural;
@@ -278,6 +298,17 @@ architecture rtl of Lan9254ESC is
       txPDOBst             => 0,
       txPDOSnt             => 0,
       txPDODcm             => 0,
+      txMBXLEna            => '0',
+      txMBXTEna            => '0',
+      txMBXLen             => (others => '0'),
+      txMBXWAddr           =>  0,
+      txMBXRdy             => '0',
+      txMBXRst             => '1',
+      txMBXMAck            => '0',
+      txMBXMRep            => '0',
+      txMBXReplay          => false,
+      txMBXLast            => '0',
+      txMBXOverrun         => '0',
       txMBXCnt             => "0001",
       rxMBXCnt             => (others => '0'),
       rxMBXErr             => (others => '0'),
@@ -519,8 +550,16 @@ architecture rtl of Lan9254ESC is
 
    signal     rxStrmRdyMux    : std_logic := '0';
 
+   signal     txMBXBufWBEh    : std_logic;
+   signal     txMBXBufWEna    : std_logic;
+   signal     txMBXBufWRdy    : std_logic;
+   signal     txMBXBufRDat    : std_logic_vector(15 downto 0);
+   signal     txMBXBufHaveBup : boolean;
+
 begin
 
+   assert ESC_SM1_SMA_C(0) = '0' report "TXMBX address must be word aligned" severity failure;
+   assert ESC_SM1_LEN_C(0) = '0' report "TXMBX length  must be word aligned" severity failure;
    assert ESC_SM2_SMA_C(0) = '0' report "RXPDO address must be word aligned" severity failure;
    assert ESC_SM3_SMA_C(0) = '0' report "TXPDO address must be word aligned" severity failure;
 
@@ -533,6 +572,10 @@ begin
       v.program.don := '0';
       val           := (others => '0');
       xct           := RWXACT_INIT_C;
+      v.txMBXMAck   := '0';
+      v.txMBXMRep   := '0';
+      v.txMBXLEna   := '0';
+      v.txMBXTEna   := '0';
 
       if ( r.txPDODcm > 0 ) then
          v.txPDODcm := r.txPDODcm - 1;
@@ -574,6 +617,21 @@ begin
                   v.txPDOBst :=  TXPDO_BURST_MAX_C;
                   v.txPDORdy := '1';
                   v.state    := UPDATE_TXPDO;
+               elsif ( ( txMBXMst.valid and txMBXBufWRdy ) = '1' ) then
+                  v.txMBXLEna    := '1';
+                  v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
+                  v.txMBXTEna    := '1';
+                  v.txMBXRdy     := '1';
+                  v.txMBXWAddr   := MBX_HDR_SIZE_C / 2;
+                  v.txMBXLast    := '0';
+                  v.txMBXOverrun := '0';
+                  -- set header; 
+                  --   txMBXMst.usr(3 downto 0) => mailbox type
+                  --   TXMBX_PAYLOAD_MAXWORDS_C => mailbox message length;
+                  -- note: the message length is dynamically reduced if we
+                  --       find that 'txMBXMst.last' is asserted before
+                  --       the maxwords are reached.
+                  v.state        := TXMBX_SEND;
                end if;
             end if;
 
@@ -934,17 +992,25 @@ severity warning;
                for i in 0 to 7 loop
                   report "SM " & integer'image(i) & " active: " & std_logic'image(r.program.seq(i).val(0));
                end loop;
+               v.state      := HANDLE_AL_EVENT;
+               v.rptAck(0)  := r.program.seq(0).val(EC_SM_ACT_RPT_IDX_C);
+               if ( r.curState = INIT ) then
+                  v.rptAck(1)  := r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C);
+               end if;
+               v.rptAck(2)  := r.program.seq(2).val(EC_SM_ACT_RPT_IDX_C);
+               v.rptAck(3)  := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
                if (    ( r.program.seq(0).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(0) )
                     or ( r.program.seq(1).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(1) )
                     or ( r.program.seq(2).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(2) )
                     or ( r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) /= r.smDis(3) )
                   ) then
-                  v.state := HANDLE_AL_EVENT;
                   if ( r.curState = SAFEOP or r.curState = OP ) then
                      v.state := CHECK_SM;
                   elsif ( r.curState = PREOP ) then
                      v.state := CHECK_MBOX;
                   end if;
+               elsif ( r.curState /= INIT and ( r.rptAck(1) /= r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C) ) ) then
+                  -- FIXME ? ; send REPEAT REQ.
                end if;
             end if;
 
@@ -1069,10 +1135,9 @@ end if;
          when UPDATE_TXPDO =>
             if ( r.txPDORdy = '1' ) then
 
-               v.txPDORdy := '0';
-
                -- write to RXPDO pending
                if ( txPDOMst.valid  = '1' ) then
+                  v.txPDORdy := '0';
 
 if ( r.decim = 0 ) then
 report "UPDATE_TXPDO " & toString(std_logic_vector(txPDOMst.wrdAddr)) & " LST: " & std_logic'image(txPDOMst.last) & " BEN " & toString(txPDOMst.ben) & " DAT " & toString(txPDOMst.data);
@@ -1156,12 +1221,12 @@ report  "RX-MBX Header: len "
        & toString(r.program.seq(3).val( 7 downto  0))
 ;
                v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
-               v.rxMBXCnt := unsigned(r.program.seq(3).val(15 downto 12));
+               v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
                if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
                     or v.rxMBXLen < MBX_HDR_SIZE_C ) then
                   v.state    := MBOX_RXERR;
                   v.rxMBXErr := MBX_ERR_CODE_INVALIDSIZE_C;
-               elsif ( ( v.rxMBXCnt /= x"0" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
+               elsif ( ( v.rxMBXCnt /= "000" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
                   -- redundant  transmission; drop
                   v.rxStrmSmEndAddr := resize(unsigned(EC_REG_RXMBX_L_C.addr), v.rxStrmSmEndAddr'length);
                   v.state           := SM_RX_RELEASE;
@@ -1221,10 +1286,81 @@ report  "RX-MBX Header: len "
                      1 => RWXACT( EC_WORD_REG_F(ESC_SM1_SMA_C, x"0000"), x"fafa" )
                   )
                );
+               v.txMBXMAck := '1';
             else
 report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                v.state := HANDLE_AL_EVENT;
             end if;
+
+         when TXMBX_SEND =>
+            if ( r.txMBXRdy = '1' ) then
+               if ( txMBXMst.valid = '1' ) then
+                  if ( r.txMBXOverrun = '0' ) then
+                     v.txMBXRdy    := '0';
+                     v.txMBXLast   := txMBXMst.last;
+                     v.ctlReq.be   := HBI_BE_W0_C;
+                     if ( txMBXMst.ben(1) = '0' ) then
+                        v.ctlReq.be(1) := not HBI_BE_ACT_C;
+                     end if;
+                  elsif ( txMBXMst.last = '1' ) then
+                     -- ERROR RETURN (overrun drained)
+                     v.state := POLL_IRQ;
+                     v.txMBXRdy := '0';
+                  end if;
+               end if;
+            elsif ( r.program.don = '1' ) then
+               v.ctlReq.be := HBI_BE_W0_C;
+               if ( r.txMBXLast = '1' ) then
+                  if ( ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) and ( r.ctlReq.be(1) = HBI_BE_ACT_C ) ) then
+                        -- ALL DONE
+                        v.state := POLL_IRQ;
+                  else
+                     if ( r.txMBXWAddr = 0 ) then
+                        v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
+                     else
+                        v.txMBXWAddr := 0;
+                        if ( r.ctlReq.be(1) = HBI_BE_ACT_C ) then
+                           v.txMBXLen   :=  to_unsigned(r.txMBXWAddr, v.txMBXLen'length - 1 ) & "1";
+                        else
+                           v.txMBXLen   :=  (to_unsigned(r.txMBXWAddr, v.txMBXLen'length - 1 ) + 1) & "0";
+                        end if;
+                        v.txMBXLEna     := '1';
+                     end if;
+                  end if;
+               elsif ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) then
+                  -- message too long -> DRAIN
+                  v.txMBXOverrun := '1';
+                  v.txMBXRdy     := '1';
+               else
+                  if ( r.txMBXWAddr = 0 ) then
+                     -- remember length when doing a replay
+                     v.txMBXLen := unsigned( txMBXBufRDat );
+                  end if;
+                  if ( r.txMBXReplay and ( r.txMBXLen +  MBX_HDR_SIZE_C - 4 ) <= ( to_unsigned(r.txMBXWAddr, r.txMBXLen'length - 1) & "0" ) ) then
+                     v.txMBXLast := '1';
+                  end if;
+                  v.txMBXWAddr   := r.txMBXWAddr + 1;
+                  if ( ( r.txMBXWAddr >= MBX_HDR_SIZE_C/2 - 1 ) and ( not r.txMBXReplay ) ) then
+                     v.txMBXRdy := '1';
+                  end if;
+               end if;
+            elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written
+               scheduleRegXact( v, (
+                  0 => RWXACT(
+                         unsigned(ESC_SM1_SMA_C) + (to_unsigned(r.txMBXWAddr, ESC_SM1_SMA_C'length - 1) & "0"),
+                         v.ctlReq.be, 
+                         txMBXBufRDat
+                       )
+                  )
+               );
+            end if;
+
+         when TXMBX_REPLAY =>
+            v.ctlReq.be    := HBI_BE_W0_C;
+            v.txMBXWAddr   := 0;
+            v.txMBXLast    := '0';
+            v.txMBXOverrun := '0';
+ 
  
       end case C_STATE;
 
@@ -1254,13 +1390,43 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       end if;
    end process P_SEQ;
 
+   txMBXBufWEna <= txMBXMst.valid and r.txMBXRdy and not r.txMBXOverrun;
+   txMBXBufWBEh <= ( not r.txMBXRdy ) or txMBXMst.ben(1);
+
+   U_MBX_BUF : entity work.ESCTxMbx
+      generic map (
+         MBX_NUM_PAYLOAD_WORDS_G => TXMBX_PAYLOAD_MAXWORDS_C
+      )
+      port map (
+         clk         => clk,
+         rst         => r.txMBXRst,
+
+         raddr       => r.txMBXWAddr,
+         rdat        => txMBXBufRDat,
+
+         tena        => r.txMBXTEna,
+         htyp        => txMBXMst.usr(3 downto 0),
+         lena        => r.txMBXLEna,
+         mlen        => r.txMBXLen,
+
+         wena        => txMBXBufWEna,
+         wdat        => txMBXMst.data,
+         wrdy        => txMBXBufWRdy,
+         waddr       => r.txMBXWAddr,
+         wbeh        => txMBXBufWBEh,
+
+         ecMstAck    => r.txMBXMAck,
+         ecMstRep    => r.txMBXMRep,
+         haveBackup  => txMBXBufHaveBup
+      );
+
    req      <= r.ctlReq;
    escState <= r.curState;
    txPDORdy <= r.txPDORdy;
 
-debug(4  downto 0) <= std_logic_vector( to_unsigned( ControllerState'pos( r.state ), 5) );
+debug(4  downto 0) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
 debug(7 downto 5)  <= r.program.seq(2).val(10 downto 8);
-debug(12 downto 8) <= std_logic_vector( to_unsigned( ControllerState'pos( rin.state ), 5) );
+debug(12 downto 8) <= std_logic_vector( to_unsigned( ControllerStateType'pos( rin.state ), 5) );
 debug(15 downto 13) <= std_logic_vector(r.program.idx);
 debug(20 downto 16) <= r.program.seq(0).val(8 downto 4);
 debug(21)           <= r.program.don;
@@ -1270,11 +1436,11 @@ debug(23)           <= rep.valid;
 
    probe0(13 downto  0) <= std_logic_vector(r.ctlReq.addr);
    probe0(15 downto 14) <= (others => '0');
-   probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerState'pos( r.state ), 5) );
+   probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
    probe0(21          ) <= r.ctlReq.rdnwr;
    probe0(22          ) <= r.ctlReq.valid;
    probe0(23          ) <= rep.valid;
-   probe0(28 downto 24) <= std_logic_vector( to_unsigned( ControllerState'pos( rin.state ), 5) );
+   probe0(28 downto 24) <= std_logic_vector( to_unsigned( ControllerStateType'pos( rin.state ), 5) );
    probe0(29          ) <= r.program.don;
    probe0(30 downto 30) <= (others => '0');
    probe0(31          ) <= irq;

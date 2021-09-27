@@ -177,6 +177,7 @@ package Lan9254ESCPkg is
    constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1100";
    constant ESC_SM2_SMC_C                               : ESCVal08Type :=   x"24";
    constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
+   -- HACK_LEN is used for testing (reduce and make sure PDO is not updated)
    constant ESC_SM2_HACK_LEN_C                          : ESCVal16Type := x"0003";
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
@@ -184,6 +185,7 @@ package Lan9254ESCPkg is
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
    constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"10";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
+   -- HACK_LEN is used for testing (reduce and make sure PDO is not posted)
    constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";
    constant ESC_SM3_ACT_C                               : std_logic    := '1';
 

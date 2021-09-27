@@ -47,7 +47,7 @@ package Lan9254Pkg is
       wrdAddr : Lan9254WordAddrType;
       data    : std_logic_vector(15 downto 0);
       valid   : std_logic;
-      ben     : std_logic_vector(1 downto 0);
+      ben     : std_logic_vector( 1 downto 0);
       last    : std_logic;
    end record Lan9254PDOMstType;
 
@@ -56,6 +56,22 @@ package Lan9254Pkg is
       data    => (others => 'X'),
       valid   => '0',
       ben     => (others => '0'),
+      last    => '0'
+   );
+
+   type Lan9254StrmMstType is record
+      data    : std_logic_vector(15 downto 0);
+      valid   : std_logic;
+      ben     : std_logic_vector(1 downto 0);
+      usr     : std_logic_vector(3 downto 0);
+      last    : std_logic;
+   end record Lan9254StrmMstType;
+
+   constant LAN9254STRM_MST_INIT_C : Lan9254StrmMstType := (
+      data    => (others => 'X'),
+      valid   => '0',
+      ben     => (others => '0'),
+      usr     => (others => '0'),
       last    => '0'
    );
 
