@@ -127,9 +127,9 @@ architecture rtl of Lan9254ESC is
       EC_AL_EREQ_CTL_IDX_C  => '1',
       EC_AL_EREQ_EEP_IDX_C  => '1',
       EC_AL_EREQ_SMA_IDX_C  => '1',
-      EC_AL_EREQ_SM0_IDX_C  => toSl( (ESC_SM0_ACT_C = '1') and (unsigned(ESC_SM0_LEN_C) > 0) ),
-      EC_AL_EREQ_SM1_IDX_C  => toSl( (ESC_SM1_ACT_C = '1') and (unsigned(ESC_SM1_LEN_C) > 0) ),
-      EC_AL_EREQ_SM2_IDX_C  => toSl( (ESC_SM2_ACT_C = '1') and (unsigned(ESC_SM2_LEN_C) > 0) ),
+      EC_AL_EREQ_SM0_IDX_C  => '0',
+      EC_AL_EREQ_SM1_IDX_C  => '0',
+      EC_AL_EREQ_SM2_IDX_C  => '0',
       EC_AL_EREQ_WDG_IDX_C  => '1',
       others                => '0'
    );
@@ -258,6 +258,7 @@ architecture rtl of Lan9254ESC is
       smDis                : std_logic_vector( 3 downto 0);
       rptAck               : std_logic_vector( 3 downto 0);
       lastAL               : std_logic_vector(31 downto 0);
+      emask                : std_logic_vector(31 downto 0);
       rxStrm               : Lan9254PDOMstType;
       rxStrmSel            : ESCStreamType;
       rxStrmEndAddr        : Lan9254ByteAddrType;
@@ -299,6 +300,7 @@ architecture rtl of Lan9254ESC is
       smDis                => (others => '1'),
       rptAck               => (others => '0'),
       lastAL               => (others => '0'),
+      emask                => EC_AL_EMSK_INIT_C,
       rxStrm               => LAN9254PDO_MST_INIT_C,
       rxStrmSel            => PDO,
       rxStrmEndAddr        => (others => '0'),
@@ -596,7 +598,7 @@ begin
                scheduleRegXact(
                   v,
                   (
-                     0 => RWXACT( EC_REG_AL_EMSK_C, EC_AL_EMSK_INIT_C ),
+                     0 => RWXACT( EC_REG_AL_EMSK_C, r.emask           ),
                      1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
                      2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
                   )
@@ -616,7 +618,7 @@ begin
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
             else
                v.lastAL := r.program.seq(0).val;
-               if ( (r.program.seq(0).val and EC_AL_EMSK_INIT_C) = x"0000_0000" ) then
+               if ( (r.program.seq(0).val and r.emask) = x"0000_0000" ) then
                   -- no more events pending; wait for an IRQ
                   v.state  := POLL_IRQ;
                   -- maybe the TXPDO or MBX needs to be updated ?
@@ -862,10 +864,12 @@ report "entering UPDATE_AS " & toString( val );
             else
                v.state             := CHECK_MBOX;
                v.rptAck(2)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+               v.smDis (2)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
                v.rptAck(3)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
+               v.smDis (3)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
 
-               if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '1' )
+               if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                   or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
                        and ( ESC_SM2_LEN_C     =  r.program.seq(1).val(ESC_SM2_LEN_C'range) )
                        and ( ESC_SM2_SMC_C     =  r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
@@ -882,8 +886,8 @@ severity warning;
                   v.errSta            := '1';
                   v.alErr             := EC_ALER_INVALIDOUTPUTSM_C;
                end if;
-               if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_IDX_C)) = '1' )
+               if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                   or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
                        and ( ESC_SM3_LEN_C     =  r.program.seq(5).val(ESC_SM3_LEN_C'range) )
                        and ( ESC_SM3_SMC_C     =  r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
@@ -917,10 +921,11 @@ severity warning;
             else
                v.state             := EN_DIS_SM;
                v.rptAck(0)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
-               -- FIXME handle repeat req.
+               v.smDis (0)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
                v.rptAck(1)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
-               if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_IDX_C)) = '1' )
+               v.smDis (1)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
+               if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                   or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
                        and ( ESC_SM0_LEN_C     =  r.program.seq(1).val(ESC_SM0_LEN_C'range) )
                        and ( ESC_SM0_SMC_C     =  r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
@@ -937,8 +942,8 @@ severity warning;
                   v.errSta            := '1';
                   v.alErr             := EC_ALER_INVALIDMBXCONFIG_C;
                end if;
-               if (   ( (ESC_SM1_ACT_C or  r.program.seq(7).val(EC_SM_ACT_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM1_ACT_C and r.program.seq(7).val(EC_SM_ACT_IDX_C)) = '1' )
+               if (   ( (ESC_SM1_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                   or (    ( (ESC_SM1_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM1_SMA_C     =  r.program.seq(4).val(ESC_SM1_SMA_C'range) )
                        and ( ESC_SM1_LEN_C     =  r.program.seq(5).val(ESC_SM1_LEN_C'range) )
                        and ( ESC_SM1_SMC_C     =  r.program.seq(6).val(ESC_SM1_SMC_C'range) ) )
@@ -956,16 +961,19 @@ severity warning;
 
          when EN_DIS_SM =>
             if ( '0' = r.program.don ) then
+               v.emask( EC_AL_EREQ_SM0_IDX_C ) := not r.smDis(0);
+               v.emask( EC_AL_EREQ_SM1_IDX_C ) := not r.smDis(1);
+               v.emask( EC_AL_EREQ_SM2_IDX_C ) := not r.smDis(2);
                scheduleRegXact(
                   v,
                   (
-                     0 => RWXACT( EC_REG_SM_PDI_F(0), r.rptAck(0) & r.smDis(0) ),
-                     1 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) ),
-                     2 => RWXACT( EC_REG_SM_PDI_F(2), r.rptAck(2) & r.smDis(2) ),
-                     3 => RWXACT( EC_REG_SM_PDI_F(3), r.rptAck(3) & r.smDis(3) )
+                     0 => RWXACT( EC_REG_AL_EMSK_C  , v.emask                  ),
+                     1 => RWXACT( EC_REG_SM_PDI_F(0), r.rptAck(0) & r.smDis(0) ),
+                     2 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) ),
+                     3 => RWXACT( EC_REG_SM_PDI_F(2), r.rptAck(2) & r.smDis(2) ),
+                     4 => RWXACT( EC_REG_SM_PDI_F(3), r.rptAck(3) & r.smDis(3) )
                   )
                );
-               -- start input if enabled  # NOT IMPLEMENTED
             else
                v.state := UPDATE_AS;               
             end if;
