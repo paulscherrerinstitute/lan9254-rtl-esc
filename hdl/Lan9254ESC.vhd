@@ -127,7 +127,7 @@ architecture rtl of Lan9254ESC is
       EC_AL_EREQ_CTL_IDX_C  => '1',
       EC_AL_EREQ_EEP_IDX_C  => '1',
       EC_AL_EREQ_SMA_IDX_C  => '1',
-      EC_AL_EREQ_SM0_IDX_C  => '1',
+      EC_AL_EREQ_SM0_IDX_C  => toSl( (ESC_SM0_ACT_C = '1') and (unsigned(ESC_SM0_LEN_C) > 0) ),
       EC_AL_EREQ_SM1_IDX_C  => toSl( (ESC_SM1_ACT_C = '1') and (unsigned(ESC_SM1_LEN_C) > 0) ),
       EC_AL_EREQ_SM2_IDX_C  => toSl( (ESC_SM2_ACT_C = '1') and (unsigned(ESC_SM2_LEN_C) > 0) ),
       EC_AL_EREQ_WDG_IDX_C  => '1',
@@ -313,7 +313,7 @@ architecture rtl of Lan9254ESC is
       txMBXLen             => (others => '0'),
       txMBXWAddr           =>  0,
       txMBXRdy             => '0',
-      txMBXRst             => '0',
+      txMBXRst             => '1',
       txMBXMAck            => '0',
       txMBXMRep            => '0',
       txMBXReplay          => NONE,
@@ -771,7 +771,7 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
                   v.alErr     := EC_ALER_INVALIDSTATECHANGE_C;
             elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >= 0 ) then
                if ( ( r.reqState = PREOP ) and ( r.curState /= PREOP ) ) then
-                  -- start mailbox           # NOT IMPLEMENTED
+                  v.txMBXRst := '0';
                   v.smDis(1) := '0';
                   v.smDis(0) := '0';
                   v.state    := CHECK_MBOX;
@@ -795,7 +795,7 @@ report "starting SM23";
                   v.smDis(3) := '1';
                end if;
                if ( ( r.reqState < PREOP  ) and ( r.curState >= PREOP  ) ) then
-                  -- stop mailbox            # NOT IMPLEMENTED
+                  v.txMBXRst := '1';
                   v.smDis(1) := '1';
                   v.smDis(0) := '1';
                end if;
