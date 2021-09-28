@@ -122,6 +122,7 @@ begin
       if ( ( ecMstRep = '1' ) and r.haveBackup ) then
          -- restore buffer
          v.wrBuf := 1 - r.wrBuf;
+         v.rdy   := '0';
       elsif ( v.rdy = '1' ) then
          if ( tena  = '1' ) then
             if ( ( r.cnt = 7 ) or ( r.cnt = 0 ) ) then
@@ -134,6 +135,7 @@ begin
             if ( ( waddr = MBX_WSIZ_C - 1 ) and ( wbeh = '1' ) ) then
                v.rdy := '0';
             end if;
+report integer'image(MBX_WSIZ_C - 1) & " => " & std_logic'image(v.rdy);
          end if;
       end if;
 

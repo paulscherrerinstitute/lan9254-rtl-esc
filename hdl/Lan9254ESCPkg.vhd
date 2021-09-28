@@ -203,6 +203,8 @@ package Lan9254ESCPkg is
    constant EC_REG_RXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM2_SMA_C, ESC_SM2_LEN_C, -1 );
    constant EC_REG_TXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM3_SMA_C, ESC_SM3_LEN_C, -1 );
 
+   function toSlv(constant arg : ESCStateType) return std_logic_vector;
+
 end package LAN9254ESCPkg;
 
 package body LAN9254ESCPkg is
@@ -297,5 +299,19 @@ package body LAN9254ESCPkg is
       return EC_REG_F(addr, off, adj, HBI_BE_W0_C);
    end function EC_WORD_REG_F;
   
+   function toSlv(constant arg : ESCStateType) return std_logic_vector is
+      variable ret : std_logic_vector(3 downto 0);
+   begin
+      case arg is
+         when UNKNOWN => ret := "0001";
+         when INIT    => ret := "0001";
+         when PREOP   => ret := "0010";
+         when BOOT    => ret := "0011";
+         when SAFEOP  => ret := "0100";
+         when OP      => ret := "1000";
+      end case;
+      return ret;
+   end function toSlv;
+
 
 end package body LAN9254ESCPkg;
