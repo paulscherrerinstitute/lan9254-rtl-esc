@@ -73,6 +73,7 @@ architecture rtl of Lan9254ESC is
       CHECK_MBOX,
       EN_DIS_SM,
       SM_ACTIVATION_CHANGED,
+      CHECK_TX_WORK,
       STREAM_RX,
       DROP_RXPDO,
       UPDATE_TXPDO,
@@ -611,6 +612,11 @@ begin
             -- wait for an interrupt; this leaves the lan9254 HBI alone
             if ( irq = EC_IRQ_ACT_C ) then
                v.state := POLL_AL_EVENT;
+            else
+               -- if we operate in fully polled mode (IRQ permanently asserted)
+               -- then we never get here; CHECK_TX_WORK is also entered if
+               -- polling the event status yields no work
+               v.state := CHECK_TX_WORK;
             end if;
 
          when POLL_AL_EVENT =>
@@ -621,46 +627,8 @@ begin
                -- cache AL readback value
                v.lastAL := r.program.seq(0).val;
                if ( (r.program.seq(0).val and r.emask) = x"0000_0000" ) then
-                  -- no more events pending; wait for an IRQ
-                  v.state  := POLL_IRQ;
-                  -- maybe the TXPDO or MBX needs to be updated ?
-                  if (    ( r.curState = SAFEOP or r.curState = OP )
-                      and ( ESC_SM3_ACT_C  = '1'                      )
-                      and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
-                      and ( r.txPDODcm     = 0                        )
-                      and ( txPDOMst.valid = '1'                      )
-                     ) then
-                     v.txPDOBst :=  TXPDO_BURST_MAX_C;
-                     v.txPDORdy := '1';
-                     v.state    := UPDATE_TXPDO;
-                  elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
-                     -- master has data, mailbox buffer can accept data and is running
-                     -- => start mailbox TX
-
-                     -- enable latching the payload length into the buffer memory
-                     v.txMBXLEna    := '1';
-                     -- initially, we assume the message covers the full length of the mailbox
-                     -- so that if this is indeed true when the last word is written (which triggers
-                     -- the SM) everything is fine. If OTOH, it turns out that the message is shorter
-                     -- then we can re-adjust the length in the header later since writing the last
-                     -- byte has not triggered the SM yet.
-                     v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
-                     -- cannot accept data yet (write header first)
-                     v.txMBXRdy     := '0';
-                     -- reset address pointer, last and overrun flags
-                     v.txMBXWAddr   :=  0 ;
-                     v.txMBXLast    := '0';
-                     v.txMBXOverrun := '0';
-                     -- byte-enables are computed on the fly; almost always the full width
-                     -- is used; only if the last payload byte is the second-last byte of
-                     -- the mailbox then we have to be careful to avoid triggering the SM
-                     -- (so the correct length can be re-written). Only in that special case
-                     -- is the 'be' reduced to a single lane.
-                     v.ctlReq.be    := HBI_BE_W0_C;
-                     -- enable latching the mailbox type (from the master interface)
-                     v.txMBXTEna    := '1';
-                     v.state        := TXMBX_SEND;
-                  end if;
+                  -- no more events pending; maybe there is TX work to do?
+                  v.state  := CHECK_TX_WORK;
                else
                   v.state  := HANDLE_AL_EVENT;
                end if;
@@ -1102,6 +1070,50 @@ severity warning;
                );
             else
                v.state := HANDLE_AL_EVENT;
+            end if;
+
+
+         when CHECK_TX_WORK =>
+
+            v.state := POLL_IRQ;
+            -- maybe the TXPDO or MBX needs to be updated ?
+            if (    ( r.curState = SAFEOP or r.curState = OP )
+                and ( ESC_SM3_ACT_C  = '1'                      )
+                and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
+                and ( r.txPDODcm     = 0                        )
+                and ( txPDOMst.valid = '1'                      )
+               ) then
+               v.txPDOBst :=  TXPDO_BURST_MAX_C;
+               v.txPDORdy := '1';
+               v.state    := UPDATE_TXPDO;
+            elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
+report "post MBOX";
+               -- master has data, mailbox buffer can accept data and is running
+               -- => start mailbox TX
+
+               -- enable latching the payload length into the buffer memory
+               v.txMBXLEna    := '1';
+               -- initially, we assume the message covers the full length of the mailbox
+               -- so that if this is indeed true when the last word is written (which triggers
+               -- the SM) everything is fine. If OTOH, it turns out that the message is shorter
+               -- then we can re-adjust the length in the header later since writing the last
+               -- byte has not triggered the SM yet.
+               v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
+               -- cannot accept data yet (write header first)
+               v.txMBXRdy     := '0';
+               -- reset address pointer, last and overrun flags
+               v.txMBXWAddr   :=  0 ;
+               v.txMBXLast    := '0';
+               v.txMBXOverrun := '0';
+               -- byte-enables are computed on the fly; almost always the full width
+               -- is used; only if the last payload byte is the second-last byte of
+               -- the mailbox then we have to be careful to avoid triggering the SM
+               -- (so the correct length can be re-written). Only in that special case
+               -- is the 'be' reduced to a single lane.
+               v.ctlReq.be    := HBI_BE_W0_C;
+               -- enable latching the mailbox type (from the master interface)
+               v.txMBXTEna    := '1';
+               v.state        := TXMBX_SEND;
             end if;
 
          when DROP_RXPDO =>
