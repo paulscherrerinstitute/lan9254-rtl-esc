@@ -44,7 +44,7 @@ architecture rtl of Lan9254ESCrun is
    signal eoeMstIb : Lan9254PDOMstType;
    signal eoeRdyIb : std_logic;
 
-   signal eoeMstOb : Lan9254PDOMstType;
+   signal eoeMstOb : Lan9254StrmMstType;
    signal eoeRdyOb : std_logic := '1';
    signal eoeTEnOb : std_logic;
    signal eoeErrOb : std_logic;

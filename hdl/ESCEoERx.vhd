@@ -12,10 +12,10 @@ entity ESCEoERx is
       clk         : in  std_logic;
       rst         : in  std_logic;
 
-      mbxMstIb    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+      mbxMstIb    : in  Lan9254PDOMstType  := LAN9254PDO_MST_INIT_C;
       mbxRdyIb    : out std_logic;
 
-      eoeMstOb    : out Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+      eoeMstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       eoeErrOb    : out std_logic;
       eoeTEnOb    : out std_logic; -- frame contains time-stamp
       eoeRdyOb    : in  std_logic := '1'
@@ -23,17 +23,6 @@ entity ESCEoERx is
 end entity ESCEoERx;
 
 architecture rtl of ESCEoERx is
-
-   constant EOE_TYPE_FRAG_C               : std_logic_vector(3 downto 0) := x"0";
-   constant EOE_TYPE_INIT_RESP_TS_C       : std_logic_vector(3 downto 0) := x"1";
-   constant EOE_TYPE_INIT_REQ_C           : std_logic_vector(3 downto 0) := x"2";
-   constant EOE_TYPE_INIT_RSP_C           : std_logic_vector(3 downto 0) := x"3";
-   constant EOE_TYPE_SET_ADDR_FILT_REQ_C  : std_logic_vector(3 downto 0) := x"4";
-   constant EOE_TYPE_SET_ADDR_FILT_RSP_C  : std_logic_vector(3 downto 0) := x"5";
-   constant EOE_TYPE_GET_IP_PARAM_REQ_C   : std_logic_vector(3 downto 0) := x"6";
-   constant EOE_TYPE_GET_IP_PARAM_RSP_C   : std_logic_vector(3 downto 0) := x"7";
-   constant EOE_TYPE_GET_ADDR_FILT_REQ_C  : std_logic_vector(3 downto 0) := x"8";
-   constant EOE_TYPE_GET_ADDR_FILT_RSP_C  : std_logic_vector(3 downto 0) := x"9";
 
    type StateType is (IDLE, HDR, FWD, DROP);
 
@@ -72,11 +61,15 @@ begin
 
    P_COMB : process ( r, mbxMstIb, eoeRdyOb ) is
       variable v   : RegType;
-      variable m   : Lan9254PDOMstType;
+      variable m   : Lan9254StrmMstType;
       variable rdy : std_logic;
    begin
       v       := r;
-      m       := mbxMstIb;
+      m       := LAN9254STRM_MST_INIT_C;
+      m.data  := mbxMstIb.data;
+      m.ben   := mbxMstIb.ben;
+      m.last  := mbxMstIb.last;
+      m.usr(MBX_TYP_EOE_C'range) := MBX_TYP_EOE_C;
       m.valid := '0';
       rdy     := '1';
 
