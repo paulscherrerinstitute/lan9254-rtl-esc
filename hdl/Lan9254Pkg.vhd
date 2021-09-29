@@ -79,7 +79,8 @@ package Lan9254Pkg is
 
    type ESCStreamType is (
       PDO,
-      EOE
+      EOE,
+      VOE
    );
 
    subtype ESCStreamIndexType is natural range

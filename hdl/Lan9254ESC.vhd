@@ -86,11 +86,6 @@ architecture rtl of Lan9254ESC is
 
    type TxMbxReplayType is ( NONE, NORMAL, SAVE_BUF, RESEND_BUF );
 
-   type ESCStreamType is (
-      PDO,
-      EOE
-   );
-
    constant RB0 : EcRegType := ( addr=> x"3064", bena => HBI_BE_B0_C );
    constant RB1 : EcRegType := ( addr=> x"3065", bena => HBI_BE_B0_C );
    constant RB2 : EcRegType := ( addr=> x"3066", bena => HBI_BE_B0_C );
@@ -1283,6 +1278,11 @@ report  "RX-MBX Header: len "
                      ) then
                   rxStreamSetup(
                      v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, EOE );
+               elsif (     streamIsEnabled( VOE )
+                       and ( MBX_TYP_VOE_C = r.program.seq(3).val(11 downto 8) )
+                     ) then
+                  rxStreamSetup(
+                     v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, VOE );
                else
                   v.state    := HANDLE_AL_EVENT;
                   if ( v.mbxErr.vld = '0' ) then
