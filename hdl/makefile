@@ -13,9 +13,9 @@ SIITOOL=siitool
 -include config.local.mk
 
 PROG=lan9254escrun lan9254esctb txmbxtb
-OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o TxMBXTb.o
+OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCTxMbxMux.o ESCTxMbxErr.o
 
-TOPS=Lan9254ESCTb.o  #Lan9254ESCrun.o 
+TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o
 
 # Default target
 all: $(PROG)
@@ -84,6 +84,8 @@ Lan9254ESCPkg.o: Lan9254Pkg.o
 ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
+ESCTxMbxMux.o: Lan9254Pkg.o
+ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf e~$(PROG).o $(TOPS) EEPROMContentPkg.vhd eeprom.bin

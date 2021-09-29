@@ -75,6 +75,8 @@ package Lan9254Pkg is
       last    => '0'
    );
 
+   type Lan9254StrmMstArray is array (natural range <>) of Lan9254StrmMstType;
+
    type ESCStreamType is (
       PDO,
       EOE
