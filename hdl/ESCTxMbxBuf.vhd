@@ -66,7 +66,15 @@ architecture rtl of ESCTxMbxBuf is
       cnt          => "001"
    );
 
-   signal  mbx     : MbxBufArray;
+   -- initialize, mainly to avoid simulation warnings about
+   -- undefined values which may be read when we read dummy
+   -- values to trigger the SM.
+   signal  mbx     : MbxBufArray := (
+      others => (
+           hdr => (others => (others => '0')),
+           buf => (others => (others => '0'))
+      )
+   );
 
    signal  r       : RegType := REG_INIT_C;
    signal  rin     : RegType;

@@ -54,12 +54,15 @@ begin
       case ( r.state ) is
          when ARBITRATE =>
             FOR_SEL : for i in 0 to NUM_STREAMS_G - 1 loop
-               if ( ( mbxIb(i).valid and rdyOb ) = '1' ) then
-                  m     := mbxIb(i);
-                  y(i)  := rdyOb;
-                  if ( mbxIb(i).last = '0' ) then
-                     v.sel   := i;
-                     v.state := FORWARD;
+               if ( mbxIb(i).valid = '1' ) then
+                  v.sel   := i;
+                  v.state := FORWARD;
+                  if ( rdyOb = '1' ) then
+                     m     := mbxIb(i);
+                     y(i)  := rdyOb;
+                     if ( mbxIb(i).last = '1' ) then
+                        v.state := ARBITRATE;
+                     end if;
                   end if;
                   exit FOR_SEL;
                end if;

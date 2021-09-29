@@ -5,6 +5,7 @@ use ieee.math_real.all;
 
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
+use work.ESCMbxPkg.all;
 
 entity Lan9254ESCrun is
 end entity Lan9254ESCrun;
@@ -14,6 +15,17 @@ end entity Lan9254ESCrun;
 -- from a ZYNQ CPU).
 
 architecture rtl of Lan9254ESCrun is
+
+   constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
+      ESCStreamType'pos( PDO ) => '1',
+      ESCStreamType'pos( EOE ) => '0',
+      others                   => '0'
+   );
+
+   constant NUM_ERRS_C        : natural := 1;
+
+   constant NUM_TXMBX_PROTO_C : natural := 1;
+
    signal clk      : std_logic := '0';
    signal rst      : std_logic := '0';
    signal run      : boolean   := true;
@@ -43,6 +55,9 @@ architecture rtl of Lan9254ESCrun is
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
 
+   signal txStmMst : Lan9254StrmMstArray(NUM_TXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
+   signal txStmRdy : std_logic_vector(NUM_TXMBX_PROTO_C - 1 downto 0);
+
    signal decim    : natural := 1000;
 
    signal irq      : std_logic := not EC_IRQ_ACT_C;
@@ -58,11 +73,11 @@ architecture rtl of Lan9254ESCrun is
       assert false report "pollIRQ_C should be foreign" severity failure;
    end function pollIRQ_C;
 
-   constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
-      ESCStreamType'pos( PDO ) => '1',
-      ESCStreamType'pos( EOE ) => '1',
-      others                   => '0'
-   );
+   signal   errMst          : MbxErrorArray   (NUM_ERRS_C - 1 downto 0) := (others => MBX_ERROR_INIT_C );
+   signal   errRdy          : std_logic_vector(NUM_ERRS_C - 1 downto 0);
+
+   signal   txMbxMst        : Lan9254StrmMstType;
+   signal   txMbxRdy        : std_logic;
 
 begin
 
@@ -138,6 +153,12 @@ begin
          txPDOMst    => txPDOMst,
          txPDORdy    => txPDORdy,
 
+         txMBXMst    => txMbxMst,
+         txMBXRdy    => txMbxRdy,
+
+         mbxErrMst   => errMst(0),
+         mbxErrRdy   => errRdy(0),
+
          irq         => irq
       );
 
@@ -184,6 +205,36 @@ begin
          eoeRdyOb    => eoeRdyOb,
          eoeErrOb    => eoeErrOb,
          eoeTEnOb    => eoeTEnOb
+      );
+
+   U_TXMBX_MUX : entity work.ESCTxMbxMux
+      generic map (
+         NUM_STREAMS_G    => NUM_TXMBX_PROTO_C
+      )
+      port map (
+         clk              => clk,
+         rst              => rst,
+
+         mbxIb            => txStmMst,
+         rdyIb            => txStmRdy,
+
+         mbxOb            => txMbxMst,
+         rdyOb            => txMbxRdy
+      );
+
+   U_ERR : entity work.ESCTxMbxErr
+      generic map (
+         NUM_ERROR_SRCS_G => NUM_ERRS_C
+      )
+      port map (
+         clk              => clk,
+         rst              => rst,
+
+         errIb            => errMst,
+         rdyIb            => errRdy,
+
+         mbxOb            => txStmMst(0),
+         rdyOb            => txStmRdy(0)
       );
 
    P_MON_EOE : process ( clk ) is

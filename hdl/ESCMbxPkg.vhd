@@ -10,6 +10,9 @@ package ESCMbxPkg is
    constant MBX_TYP_ERR_C                         : std_logic_vector( 3 downto 0)  := x"0";
    constant MBX_TYP_EOE_C                         : std_logic_vector( 3 downto 0)  := x"2";
    constant MBX_TYP_COE_C                         : std_logic_vector( 3 downto 0)  := x"3";
+   constant MBX_TYP_VOE_C                         : std_logic_vector( 3 downto 0)  := x"F";
+
+   constant EC_VENDOR_ID_PSI_C                    : std_logic_vector(31 downto 0)  := x"0050_5349";
 
    subtype  MBX_TYP_RNG_T is natural range 11 downto  8;
    subtype  MBX_CNT_RNG_T is natural range 14 downto 12;
@@ -26,6 +29,18 @@ package ESCMbxPkg is
    constant MBX_ERR_CODE_NOMOREMEMORY_C           : std_logic_vector(15 downto  0) := x"0007";
    constant MBX_ERR_CODE_INVALIDSIZE_C            : std_logic_vector(15 downto  0) := x"0008";
    constant MBX_ERR_CODE_SERVICEINWORK_C          : std_logic_vector(15 downto  0) := x"0009";
+
+   type MbxErrorType is record
+      code : std_logic_vector(15 downto 0);
+      vld  : std_logic;
+   end record MbxErrorType;
+
+   constant MBX_ERROR_INIT_C : MbxErrorType := (
+      code => (others => '0'),
+      vld  => '0'
+   );
+
+   type MbxErrorArray is array (natural range <>) of MbxErrorType;
 
 end package ESCMbxPkg;
 

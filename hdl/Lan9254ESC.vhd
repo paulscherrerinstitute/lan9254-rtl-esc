@@ -43,8 +43,7 @@ entity Lan9254ESC is
 
       irq         : in  std_logic := EC_IRQ_ACT_C; -- defaults to polling mode
 
-      mbxErr      : out std_logic_vector(15 downto 0);
-      mbxErrVld   : out std_logic;
+      mbxErrMst   : out MbxErrorType;
       mbxErrRdy   : in  std_logic := '1';
 
       testFailed  : out std_logic_vector(4 downto 0)
@@ -282,8 +281,7 @@ architecture rtl of Lan9254ESC is
       txMBXRst             : std_logic;
       rxMBXCnt             : unsigned(2 downto 0);
       rxMBXLen             : unsigned(15 downto 0);
-      mbxErr               : ESCVal16Type;
-      mbxErrVld            : std_logic;
+      mbxErr               : MbxErrorType;
       decim                : natural;
    end record RegType;
 
@@ -324,8 +322,7 @@ architecture rtl of Lan9254ESC is
       txMBXOverrun         => '0',
       rxMBXCnt             => (others => '0'),
       rxMBXLen             => (others => '0'),
-      mbxErr               => (others => '0'),
-      mbxErrVld            => '0',
+      mbxErr               => MBX_ERROR_INIT_C,
       decim                => 0
    );
 
@@ -581,8 +578,8 @@ begin
          v.txPDODcm := r.txPDODcm - 1;
       end if;
 
-      if ( ( mbxErrRdy and r.mbxErrVld ) = '1' ) then
-         v.mbxErrVld := '0';
+      if ( ( mbxErrRdy and r.mbxErr.vld ) = '1' ) then
+         v.mbxErr.vld := '0';
       end if;
 
       C_STATE : case r.state is
@@ -1273,9 +1270,9 @@ report  "RX-MBX Header: len "
                if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
                     or v.rxMBXLen < MBX_HDR_SIZE_C ) then
                   v.state    := HANDLE_AL_EVENT;
-                  if ( v.mbxErrVld = '0' ) then
-                     v.mbxErr    := MBX_ERR_CODE_INVALIDSIZE_C;
-                     v.mbxErrVld := '1';
+                  if ( v.mbxErr.vld = '0' ) then
+                     v.mbxErr.code := MBX_ERR_CODE_INVALIDSIZE_C;
+                     v.mbxErr.vld  := '1';
                   end if;
                elsif ( ( v.rxMBXCnt /= "000" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
                   -- redundant  transmission; drop
@@ -1288,9 +1285,9 @@ report  "RX-MBX Header: len "
                      v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, EOE );
                else
                   v.state    := HANDLE_AL_EVENT;
-                  if ( v.mbxErrVld = '0' ) then
-                     v.mbxErr    := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
-                     v.mbxErrVld := '1';
+                  if ( v.mbxErr.vld = '0' ) then
+                     v.mbxErr.code := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
+                     v.mbxErr.vld  := '1';
                   end if;
                end if;
             end if;
@@ -1563,8 +1560,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    txMBXRdy  <= r.txMBXRdy;
 
-   mbxErr    <= r.mbxErr;
-   mbxErrVld <= r.mbxErrVld;
+   mbxErrMst <= r.mbxErr;
 
 debug(4  downto 0) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
 debug(7 downto 5)  <= r.program.seq(2).val(10 downto 8);
