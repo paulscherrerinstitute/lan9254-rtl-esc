@@ -9,7 +9,7 @@ use work.ESCMbxPkg.all;
 
 -- TX mailbox buffer (holding copy for repeat request)
 
-entity ESCTxMbx is
+entity ESCTxMbxBuf is
    generic (
       MBX_NUM_PAYLOAD_WORDS_G : natural
    );
@@ -32,9 +32,9 @@ entity ESCTxMbx is
       ecMstRep                : in  std_logic;
       haveBackup              : out boolean
    );
-end entity ESCTxMbx;
+end entity ESCTxMbxBuf;
 
-architecture rtl of ESCTxMbx is
+architecture rtl of ESCTxMbxBuf is
 
    constant MBX_HDR_WSIZ_C : natural := MBX_HDR_SIZE_C / 2;
    constant MBX_WSIZ_C     : natural := MBX_NUM_PAYLOAD_WORDS_G + MBX_HDR_WSIZ_C;

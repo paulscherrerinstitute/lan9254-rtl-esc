@@ -1313,7 +1313,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          when TXMBX_SEND =>
             HANDLE_TXMBX : if ( r.txMBXRdy = '1' ) then
                -- this case handles reading the txMBXMst stream into 
-               -- the ESCTxMbx buffer memory
+               -- the ESCTxMbxBuf buffer memory
                if ( txMBXMst.valid = '1' ) then
                   if ( r.txMBXOverrun = '0' ) then
                      -- stop the input stream until the current word
@@ -1395,8 +1395,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                         v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
                         if ( r.txMBXReplay = NONE ) then
                            -- if we are doing a 'normal' send then issue a write to the last
-                           -- word of the ESCTxMbx which will cause it to swap buffers and clear the 'rdy' flag.
-                           -- If we are in replay mode then the ESCTxMbx is already in 'not rdy' mode.
+                           -- word of the ESCTxMbxBuf which will cause it to swap buffers and clear the 'rdy' flag.
+                           -- If we are in replay mode then the ESCTxMbxBuf is already in 'not rdy' mode.
                            v.txMBXStrb  := '1';
                         end if;
                      end if;
@@ -1426,7 +1426,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                end if;
             elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written to the buffer
                -- schedule next write to the LAN9254. Note that we always 'write-through' the 
-               -- ESCTxMbx buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
+               -- ESCTxMbxBuf buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
                -- statement.
                scheduleRegXact( v, (
                   0 => RWXACT(
@@ -1474,7 +1474,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                   v.txMBXReplay := NONE;
                else
                   -- there was an unacked buffer (x) when we received the repeat request.
-                  -- the ESCTxMbx had been 'rewound' to the previous message (prior to
+                  -- the ESCTxMbxBuf had been 'rewound' to the previous message (prior to
                   -- the unacked buffer) and that previous message has just been sent
                   -- with toggling the repeat-ack flag as the final step.
                   -- Once this resent message is ACKed we reach MBOX_SM1 state and
@@ -1518,7 +1518,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
    txMBXBufWEna <= ( txMBXMst.valid and r.txMBXRdy and not r.txMBXOverrun ) or r.txMBXStrb;
    txMBXBufWBEh <= ( not r.txMBXRdy ) or txMBXMst.ben(1);
 
-   U_MBX_BUF : entity work.ESCTxMbx
+   U_MBX_BUF : entity work.ESCTxMbxBuf
       generic map (
          MBX_NUM_PAYLOAD_WORDS_G => TXMBX_PAYLOAD_MAXWORDS_C
       )
