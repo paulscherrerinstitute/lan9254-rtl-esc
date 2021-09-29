@@ -86,10 +86,9 @@ begin
                   v.lastFrag       := mbxMstIb.data( 8          );
                   v.timeAppend     := mbxMstIb.data( 9          );
                   v.timeRequest    := mbxMstIb.data(10          );
-                  v.fragNo         := to_unsigned(0, v.fragNo'length);
                   if ( EOE_TYPE_FRAG_C = v.frameType ) then
                      v.state       := HDR;
-report "FRAME TYPE FRAG" & toString(v.frameType);
+report "FRAME TYPE FRAG " & toString(v.frameType);
                   else
 -- FIXME: handle sending response!
 report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
@@ -130,12 +129,19 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
             rdy     := eoeRdyOb;
             m.last  := r.lastFrag and mbxMstIb.last;
             if ( ( mbxMstIb.valid and eoeRdyOb and mbxMstIb.last ) = '1' ) then
-               v.state := IDLE;
+               v.state  := IDLE;
+               if ( r.lastFrag = '1' ) then
+                  v.fragNo  := to_unsigned(0, v.fragNo'length);
+                  v.frameNo := r.frameNo + 1;
+               else
+                  v.fragNo  := r.fragNo + 1;
+               end if;
             end if;
 
          when DROP =>
-            m.valid := r.eoeErr;
-            m.last  := r.eoeErr;
+            m.valid  := r.eoeErr;
+            m.last   := r.eoeErr;
+            v.fragNo := (others => '0');
             if ( (r.eoeErr and eoeRdyOb ) = '1' ) then
                v.eoeErr := '0';
             end if;

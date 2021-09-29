@@ -18,7 +18,7 @@ architecture rtl of Lan9254ESCrun is
 
    constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
       ESCStreamType'pos( PDO ) => '1',
-      ESCStreamType'pos( EOE ) => '0',
+      ESCStreamType'pos( EOE ) => '1',
       others                   => '0'
    );
 

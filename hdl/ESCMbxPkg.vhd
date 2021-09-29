@@ -30,16 +30,19 @@ package ESCMbxPkg is
    constant MBX_ERR_CODE_INVALIDSIZE_C            : std_logic_vector(15 downto  0) := x"0008";
    constant MBX_ERR_CODE_SERVICEINWORK_C          : std_logic_vector(15 downto  0) := x"0009";
 
-   constant EOE_TYPE_FRAG_C                       : std_logic_vector(3 downto 0) := x"0";
-   constant EOE_TYPE_INIT_RESP_TS_C               : std_logic_vector(3 downto 0) := x"1";
-   constant EOE_TYPE_INIT_REQ_C                   : std_logic_vector(3 downto 0) := x"2";
-   constant EOE_TYPE_INIT_RSP_C                   : std_logic_vector(3 downto 0) := x"3";
-   constant EOE_TYPE_SET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0) := x"4";
-   constant EOE_TYPE_SET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0) := x"5";
-   constant EOE_TYPE_GET_IP_PARAM_REQ_C           : std_logic_vector(3 downto 0) := x"6";
-   constant EOE_TYPE_GET_IP_PARAM_RSP_C           : std_logic_vector(3 downto 0) := x"7";
-   constant EOE_TYPE_GET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0) := x"8";
-   constant EOE_TYPE_GET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0) := x"9";
+   constant EOE_TYPE_FRAG_C                       : std_logic_vector(3 downto 0)   := x"0";
+   constant EOE_TYPE_INIT_RESP_TS_C               : std_logic_vector(3 downto 0)   := x"1";
+   constant EOE_TYPE_INIT_REQ_C                   : std_logic_vector(3 downto 0)   := x"2";
+   constant EOE_TYPE_INIT_RSP_C                   : std_logic_vector(3 downto 0)   := x"3";
+   constant EOE_TYPE_SET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0)   := x"4";
+   constant EOE_TYPE_SET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0)   := x"5";
+   constant EOE_TYPE_GET_IP_PARAM_REQ_C           : std_logic_vector(3 downto 0)   := x"6";
+   constant EOE_TYPE_GET_IP_PARAM_RSP_C           : std_logic_vector(3 downto 0)   := x"7";
+   constant EOE_TYPE_GET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0)   := x"8";
+   constant EOE_TYPE_GET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0)   := x"9";
+
+   constant EOE_HDR_SIZE_C                        : natural                        := 4;
+   constant EOE_MAX_FRAME_SIZE_C                  : natural                        := 1472;
 
 
    type MbxErrorType is record

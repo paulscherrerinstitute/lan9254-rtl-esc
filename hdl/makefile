@@ -12,10 +12,13 @@ SIITOOL=siitool
 
 -include config.local.mk
 
-PROG=lan9254escrun lan9254esctb txmbxtb
-OBJS=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCTxMbxMux.o ESCTxMbxErr.o
+PROG=lan9254escrun lan9254esctb txmbxtb eoetb
+OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
+OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
+OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCTxMbxMux.o ESCTxMbxErr.o
+OBJS+=ESCEoETx.o
 
-TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o
+TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o
 
 # Default target
 all: $(PROG)
@@ -33,6 +36,10 @@ txmbxtb: $(OBJS) TxMBXTb.o
 
 readWriteSim.o: readWriteSim.c
 	$(CXX) -c -o $@ $^ -Wall
+
+eoetb: $(OBJS) EoETb.o
+	$(GHDL) -e $(GHDLFLAGS) $@
+
 
 # Run target
 run: $(PROG)
@@ -79,9 +86,11 @@ Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
 Lan9254ESCTb.o:  $(OBJS)
 Lan9254ESCrun.o: $(OBJS)
 TxMBXTb.o:       $(OBJS)
+EoETb.o:         $(OBJS)
 RxPDOSoft.o: Lan9254ESCPkg.o Lan9254Pkg.o
 Lan9254ESCPkg.o: Lan9254Pkg.o
 ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
+ESCEoETx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
 ESCTxMbxMux.o: Lan9254Pkg.o
