@@ -67,7 +67,7 @@ begin
             end if;
       end case;
 
-      rin <= r;
+      rin <= v;
    end process P_COMB;
 
    P_SEQ : process ( clk ) is
