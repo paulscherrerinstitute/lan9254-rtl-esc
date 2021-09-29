@@ -608,15 +608,17 @@ begin
             end if;
 
          when POLL_IRQ =>
+            -- wait for an interrupt; this leaves the lan9254 HBI alone
             if ( irq = EC_IRQ_ACT_C ) then
                v.state := POLL_AL_EVENT;
-            else
             end if;
 
          when POLL_AL_EVENT =>
             if ( '0' = r.program.don ) then
+               -- read AL register
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
             else
+               -- cache AL readback value
                v.lastAL := r.program.seq(0).val;
                if ( (r.program.seq(0).val and r.emask) = x"0000_0000" ) then
                   -- no more events pending; wait for an IRQ
@@ -631,21 +633,32 @@ begin
                      v.txPDOBst :=  TXPDO_BURST_MAX_C;
                      v.txPDORdy := '1';
                      v.state    := UPDATE_TXPDO;
-                  elsif ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) then
+                  elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
+                     -- master has data, mailbox buffer can accept data and is running
+                     -- => start mailbox TX
+
+                     -- enable latching the payload length into the buffer memory
                      v.txMBXLEna    := '1';
+                     -- initially, we assume the message covers the full length of the mailbox
+                     -- so that if this is indeed true when the last word is written (which triggers
+                     -- the SM) everything is fine. If OTOH, it turns out that the message is shorter
+                     -- then we can re-adjust the length in the header later since writing the last
+                     -- byte has not triggered the SM yet.
                      v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
-                     v.txMBXTEna    := '1';
+                     -- cannot accept data yet (write header first)
                      v.txMBXRdy     := '0';
+                     -- reset address pointer, last and overrun flags
                      v.txMBXWAddr   :=  0 ;
                      v.txMBXLast    := '0';
                      v.txMBXOverrun := '0';
+                     -- byte-enables are computed on the fly; almost always the full width
+                     -- is used; only if the last payload byte is the second-last byte of
+                     -- the mailbox then we have to be careful to avoid triggering the SM
+                     -- (so the correct length can be re-written). Only in that special case
+                     -- is the 'be' reduced to a single lane.
                      v.ctlReq.be    := HBI_BE_W0_C;
-                     -- set header; 
-                     --   txMBXMst.usr(3 downto 0) => mailbox type
-                     --   TXMBX_PAYLOAD_MAXWORDS_C => mailbox message length;
-                     -- note: the message length is dynamically reduced if we
-                     --       find that 'txMBXMst.last' is asserted before
-                     --       the maxwords are reached.
+                     -- enable latching the mailbox type (from the master interface)
+                     v.txMBXTEna    := '1';
                      v.state        := TXMBX_SEND;
                   end if;
                else
@@ -764,42 +777,43 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
                   -- stop boot mailbox       # NOT IMPLEMENTED
                else
                   -- stop boot mailbox       # SOES doesn't do that -- should we?
-                  v.errSta    := '1';
-                  v.reqState := PREOP;
-                  v.alErr     := EC_ALER_INVALIDSTATECHANGE_C;
+                  v.errSta      := '1';
+                  v.reqState    := PREOP;
+                  v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
                end if;
             elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >  1 ) then
-                  v.errSta    := '1';
-                  v.alErr     := EC_ALER_INVALIDSTATECHANGE_C;
+                  v.errSta      := '1';
+                  v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
             elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >= 0 ) then
                if ( ( r.reqState = PREOP ) and ( r.curState /= PREOP ) ) then
-                  v.txMBXRst := '0';
-                  v.smDis(1) := '0';
-                  v.smDis(0) := '0';
-                  v.state    := CHECK_MBOX;
+                  v.txMBXRst    := '0';
+                  v.txMBXReplay := NONE;
+                  v.smDis(1)    := '0';
+                  v.smDis(0)    := '0';
+                  v.state       := CHECK_MBOX;
 report "starting MBOX";
                elsif ( ( r.reqState = SAFEOP ) ) then
-                  v.smDis(3) := '0';
-                  v.state    := CHECK_SM;
+                  v.smDis(3)    := '0';
+                  v.state       := CHECK_SM;
 report "starting SM23";
                elsif ( ( r.reqState = OP ) and ( r.curState /= OP ) ) then
                   -- start output            # NOT IMPLEMENTED
-                  v.smDis(2) := '0';
-                  v.state    := EN_DIS_SM;
+                  v.smDis(2)    := '0';
+                  v.state       := EN_DIS_SM;
                end if;
             else -- state downshift
                if ( ( r.reqState < OP ) and ( r.curState = OP ) ) then
                   -- stop output             # NOT IMPLEMENTED
-                  v.smDis(2) := '1';
+                  v.smDis(2)    := '1';
                end if;
                if ( ( r.reqState < SAFEOP ) and ( r.curState >= SAFEOP ) ) then
                   -- stop input              # NOT IMPLEMENTED
-                  v.smDis(3) := '1';
+                  v.smDis(3)    := '1';
                end if;
                if ( ( r.reqState < PREOP  ) and ( r.curState >= PREOP  ) ) then
-                  v.txMBXRst := '1';
-                  v.smDis(1) := '1';
-                  v.smDis(0) := '1';
+                  v.txMBXRst    := '1';
+                  v.smDis(1)    := '1';
+                  v.smDis(0)    := '1';
                end if;
                v.state := EN_DIS_SM;
             end if;
@@ -1022,16 +1036,16 @@ severity warning;
                   -- send REPEAT REQ.
                   if ( txMBXBufHaveBup ) then
                      -- reset; we toggle after we are done resending
-                     v.rptAck(1)     := r.rptAck(1);
+                     v.rptAck(1)       := r.rptAck(1);
 
-                     v.state        := TXMBX_REPLAY;
+                     v.state           := TXMBX_REPLAY;
                      if ( txMBXBufWRdy = '0' ) then
                         -- last buffer send has not been ACKed yet
                         v.txMBXReplay  := SAVE_BUF;
                      else
                         v.txMBXReplay  := NORMAL;
                      end if;
-                     v.txMBXMRep    := '1';
+                     v.txMBXMRep       := '1';
                   end if;
                end if;
             end if;
@@ -1290,19 +1304,34 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                if ( r.txMBXReplay = RESEND_BUF ) then
                   -- txMBXAck restores the buffer that has been previously written
                   -- but had not been acked by the master when we received a repeat request
-                  v.state       := TXMBX_REPLAY;
+                  v.state := TXMBX_REPLAY;
                else
                   v.state := HANDLE_AL_EVENT;
                end if;
             end if;
 
          when TXMBX_SEND =>
-            if ( r.txMBXRdy = '1' ) then
+            HANDLE_TXMBX : if ( r.txMBXRdy = '1' ) then
+               -- this case handles reading the txMBXMst stream into 
+               -- the ESCTxMbx buffer memory
                if ( txMBXMst.valid = '1' ) then
                   if ( r.txMBXOverrun = '0' ) then
+                     -- stop the input stream until the current word
+                     -- has also been written into the LAN9254
                      v.txMBXRdy    := '0';
+                     -- remember the 'last' flag
                      v.txMBXLast   := txMBXMst.last;
                      v.ctlReq.be   := HBI_BE_W0_C;
+                     -- honor the byte-enable (we look at the hi-byte only)
+                     -- this is only relevant for the very last byte. If the
+                     -- message is just one byte short of the full mailbox
+                     -- capacity then writing one byte beyond the message length
+                     -- would trigger the sync-manager and we don't want that
+                     -- to happen since we first must write the correct length
+                     -- to the message header.
+                     -- It also doesn't matter if we write the high-byte to the
+                     -- buffer memory -- but the 'be' we set here is later
+                     -- used by the HBI write-cycle where it matters (A).
                      if ( txMBXMst.ben(1) = '0' ) then
                         v.ctlReq.be(1) := not HBI_BE_ACT_C;
                      end if;
@@ -1313,31 +1342,63 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                   end if;
                end if;
             elsif ( r.program.don = '1' ) then
+               -- this case is reached after a word has been written to the LAN9254
                v.ctlReq.be := HBI_BE_W0_C;
                if ( r.txMBXLast = '1' ) then
+                  -- the last word has just been written; first we handle the special
+                  -- case when the message length is identical with the mailbox capacity.
+                  -- If this is true then the sync-manager has just been triggered. Since
+                  -- we initially wrote the full-capacity to the header's length field the
+                  -- everything is fine and we are left with no more work to do.
+                  -- If, OTOH, the message length is just one byte short of the capacity
+                  -- then the SM has not been triggered yet and we must proceed like with
+                  -- any other message length (write correct length to the header and trigger
+                  -- SM by writing the last byte).
+                  -- We find out whether the last byte was part of the message or not by
+                  -- inspecting the byte-enable in the program (note that r.ctlReq.be() has
+                  -- been modified for word-aligned access, see lan9254HBIWrite()).
+                  -- This is where the information set at point (A) above matters...
                   if ( ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) and ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) ) then
-                        -- ALL DONE
+                        -- message spans full mailbox capacity => ALL DONE
                         if ( r.txMBXReplay = NONE or r.txMBXReplay = RESEND_BUF ) then
+                           -- we have either the normal case or the case when an un-acknowledged
+                           -- message has been re-sent after a repeated message.
                            v.state       := POLL_IRQ;
                            v.txMBXReplay := NONE;
                         else
+                           -- a repeated message has been sent. We must toggle the repeat-ack bit
+                           -- in the SM PDI register.
                            v.state := TXMBX_REP_ACK;
                         end if;
                   else
-                     if ( ( r.txMBXWAddr = 0 ) or ( r.txMBXReplay /= NONE ) ) then
-                        v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
-                        if ( r.txMBXReplay = NONE ) then
-                           -- trigger a write to the last word of the MBX buffer
-                           v.txMBXStrb  := '1';
-                        end if;
-                     else
+                     -- message was shorter than the full capacity. We must write the true
+                     -- length to the header and eventually kick the sync-manager
+                     if ( ( r.txMBXWAddr /= 0 ) and ( r.txMBXReplay = NONE ) ) then
+                        -- we get here after the last message word was written to the lan9254
+                        -- r.txMBXWAddr therefore contains the correct length of the message
+                        -- (in words). We must write twice this value (plus info about the last byte)
+                        -- to the message header (nothing to do during a replay since the correct value
+                        -- is already in buffer memory). Schedule that for next cycle:
+                        -- target address is 0
                         v.txMBXWAddr := 0;
+                        -- compute the length
                         if ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) then
                            v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2) + 1, v.txMBXLen'length - 1 ) & "0";
                         else
                            v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2)    , v.txMBXLen'length - 1 ) & "1";
                         end if;
+                        -- enable writing txMBXLen to the header.
                         v.txMBXLEna     := '1';
+                     else
+                        -- header has been written or we are in a replay (in which case we skip directly here)
+                        -- must kick the SM by writing to the last address
+                        v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
+                        if ( r.txMBXReplay = NONE ) then
+                           -- if we are doing a 'normal' send then issue a write to the last
+                           -- word of the ESCTxMbx which will cause it to swap buffers and clear the 'rdy' flag.
+                           -- If we are in replay mode then the ESCTxMbx is already in 'not rdy' mode.
+                           v.txMBXStrb  := '1';
+                        end if;
                      end if;
                   end if;
                elsif ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) then
@@ -1345,19 +1406,28 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                   v.txMBXOverrun := '1';
                   v.txMBXRdy     := '1';
                else
+                  -- 'normal' write (i.e., not last word) to the LAN9254 has finished; compute the next memory address
                   if ( r.txMBXWAddr = 0 ) then
                      -- remember length when doing a replay
                      v.txMBXLen := unsigned( txMBXBufRDat );
                   end if;
                   if ( ( r.txMBXReplay /= NONE ) and ( r.txMBXLen +  MBX_HDR_SIZE_C - 4 ) <= ( to_unsigned(r.txMBXWAddr, r.txMBXLen'length - 1) & "0" ) ) then
+                     -- if we are in replay mode then use the length information from the header (stored in txMBXLen)
+                     -- to raise the 'last' flag.
                      v.txMBXLast := '1';
                   end if;
                   v.txMBXWAddr   := r.txMBXWAddr + 1;
                   if ( ( r.txMBXWAddr >= MBX_HDR_SIZE_C/2 - 1 ) and ( r.txMBXReplay = NONE ) ) then
+                     -- if we are not in replay mode and beyond the header then
+                     -- we are ready to read the next word from the txMBXMst stream
+                     -- (and we'll end up in the first branch of this big 'if' statement).
                      v.txMBXRdy := '1';
                   end if;
                end if;
-            elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written
+            elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written to the buffer
+               -- schedule next write to the LAN9254. Note that we always 'write-through' the 
+               -- ESCTxMbx buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
+               -- statement.
                scheduleRegXact( v, (
                   0 => RWXACT(
                          unsigned(ESC_SM1_SMA_C) + (to_unsigned(r.txMBXWAddr, ESC_SM1_SMA_C'length - 1) & "0"),
@@ -1366,7 +1436,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                        )
                   )
                );
-            end if;
+            end if HANDLE_TXMBX;
 
          when TXMBX_REPLAY =>
             if ( '0' = r.program.don and ( r.txMBXReplay = SAVE_BUF ) ) then
@@ -1379,6 +1449,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                   )
                );
             else
+               -- trigger sending the current buffer (ESCTxMBX) again
                v.state        := TXMBX_SEND;
                v.ctlReq.be    := HBI_BE_W0_C;
                v.txMBXWAddr   := 0;
@@ -1387,6 +1458,9 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
             end if;
 
          when TXMBX_REP_ACK =>
+            -- after a repeat request has ben honored (last unacked message re-sent)
+            -- we must toggle the repeat-ack flag in the SM PDI register. This
+            -- state takes care of that.
             if ( '0' = r.program.don ) then
                scheduleRegXact(
                   v,
@@ -1399,6 +1473,12 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                if ( r.txMBXReplay = NORMAL ) then
                   v.txMBXReplay := NONE;
                else
+                  -- there was an unacked buffer (x) when we received the repeat request.
+                  -- the ESCTxMbx had been 'rewound' to the previous message (prior to
+                  -- the unacked buffer) and that previous message has just been sent
+                  -- with toggling the repeat-ack flag as the final step.
+                  -- Once this resent message is ACKed we reach MBOX_SM1 state and
+                  -- find that we can schedule the other (unacked) message (x).
                   v.txMBXReplay := RESEND_BUF;
                end if;
                v.state       := POLL_IRQ;
