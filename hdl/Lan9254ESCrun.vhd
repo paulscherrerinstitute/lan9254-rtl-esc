@@ -41,15 +41,12 @@ architecture rtl of Lan9254ESCrun is
    signal rxPDOMst : Lan9254PDOMstType;
    signal rxPDORdy : std_logic;
 
-   signal eoeMstIb : Lan9254PDOMstType;
+   signal eoeMstIb : Lan9254StrmMstType;
    signal eoeRdyIb : std_logic;
 
    signal eoeMstOb : Lan9254StrmMstType;
-   signal eoeRdyOb : std_logic := '1';
+   signal eoeRdyOb : std_logic := '0';
    signal eoeErrOb : std_logic;
-
-   signal rxStmMst : Lan9254PDOMstArray;
-   signal rxStmRdy : std_logic_vector(ESCStreamIndexType);
 
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
@@ -137,7 +134,7 @@ begin
    U_DUT : entity work.Lan9254ESC
       generic map (
          CLK_FREQ_G  => 10.0E4,
-         ENABLED_STREAMS_G => STREAM_CONFIG_C
+         ENABLE_EOE_G => true
       )
       port map (
          clk         => clk,
@@ -146,8 +143,8 @@ begin
          req         => req,
          rep         => rep,
 
-         rxStrmMst   => rxStmMst,
-         rxStrmRdy   => rxStmRdy,
+         rxPDOMst    => rxPDOMst,
+         rxPDORdy    => rxPDORdy,
 
          txPDOMst    => txPDOMst,
          txPDORdy    => txPDORdy,
@@ -155,20 +152,15 @@ begin
          txMBXMst    => txMbxMst,
          txMBXRdy    => txMbxRdy,
 
+         rxMBXMst    => eoeMstIb,
+         rxMBXRdy    => eoeRdyIb,
+
+     
          mbxErrMst   => errMst(0),
          mbxErrRdy   => errRdy(0),
 
          irq         => irq
       );
-
-   rxPDOMst <= rxStmMst( ESCStreamType'pos( PDO ) );
-   eoeMstIb <= rxStmMst( ESCStreamType'pos( EOE ) );
-
-   rxStmRdy <= (
-      ESCStreamType'pos( PDO ) => rxPdoRdy,
-      ESCStreamType'pos( EOE ) => eoeRdyIb,
-      others => '1'
-   );
 
    U_HBI : entity work.Lan9254Hbi
       generic map (

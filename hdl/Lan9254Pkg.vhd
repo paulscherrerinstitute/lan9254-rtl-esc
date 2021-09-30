@@ -48,6 +48,7 @@ package Lan9254Pkg is
       data    : std_logic_vector(15 downto 0);
       valid   : std_logic;
       ben     : std_logic_vector( 1 downto 0);
+      usr     : std_logic_vector( 3 downto 0);
       last    : std_logic;
    end record Lan9254PDOMstType;
 
@@ -56,6 +57,7 @@ package Lan9254Pkg is
       data    => (others => 'X'),
       valid   => '0',
       ben     => (others => '0'),
+      usr     => (others => '0'),
       last    => '0'
    );
 
@@ -74,6 +76,8 @@ package Lan9254Pkg is
       usr     => (others => '0'),
       last    => '0'
    );
+
+   function toStrmMst(constant x : Lan9254PDOMstType) return Lan9254StrmMstType;
 
    type Lan9254StrmMstArray is array (natural range <>) of Lan9254StrmMstType;
 
@@ -391,5 +395,17 @@ package body Lan9254Pkg is
    begin
       if ( a ) then return '1'; else return '0'; end if;
    end function toSl;
+
+   function toStrmMst(constant x : Lan9254PDOMstType)
+   return Lan9254StrmMstType is
+      variable v : Lan9254StrmMstType;
+   begin
+      v.data  := x.data;
+      v.valid := x.valid;
+      v.ben   := x.ben;
+      v.usr   := x.usr;
+      v.last  := x.last;
+      return v;
+   end function toStrmMst;
 
 end package body Lan9254Pkg;

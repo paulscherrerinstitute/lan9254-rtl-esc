@@ -683,8 +683,8 @@
 
 Enable VoE; SOES does not accept an empty mbox config
 -->
-          <VoE/>
           <EoE/>
+          <VoE/>
         </Mailbox>
         <Eeprom>
           <ByteSize>2048</ByteSize>

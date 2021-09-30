@@ -12,7 +12,7 @@ entity ESCEoERx is
       clk         : in  std_logic;
       rst         : in  std_logic;
 
-      mbxMstIb    : in  Lan9254PDOMstType  := LAN9254PDO_MST_INIT_C;
+      mbxMstIb    : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
       mbxRdyIb    : out std_logic;
 
       eoeMstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;

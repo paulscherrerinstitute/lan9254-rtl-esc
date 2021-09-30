@@ -16,9 +16,11 @@ use work.IlaWrappersPkg.all;
 entity Lan9254ESC is
    generic (
       CLK_FREQ_G              : real;
+      DISABLE_RXPDO_G         : boolean := false;
+      ENABLE_VOE_G            : boolean := false;
+      ENABLE_EOE_G            : boolean := false;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
-      ENABLED_STREAMS_G       : std_logic_vector(ESCStreamIndexType) := (others => '0');
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false
    );
@@ -35,11 +37,14 @@ entity Lan9254ESC is
       txPDOMst    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       txPDORdy    : out std_logic;
 
-      rxStrmMst   : out Lan9254PDOMstArray := (others => LAN9254PDO_MST_INIT_C);
-      rxStrmRdy   : in  std_logic_vector(ESCStreamIndexType) := (others => '1');
+      rxPDOMst    : out Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+      rxPDORdy    : in  std_logic         := '1';
 
       txMBXMst    : in  LAN9254StrmMstType := LAN9254STRM_MST_INIT_C;
       txMBXRdy    : out std_logic;
+
+      rxMBXMst    : out LAN9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      rxMBXRdy    : in  std_logic          := '1';
 
       irq         : in  std_logic := EC_IRQ_ACT_C; -- defaults to polling mode
 
@@ -73,11 +78,10 @@ architecture rtl of Lan9254ESC is
       EN_DIS_SM,
       SM_ACTIVATION_CHANGED,
       CHECK_TX_WORK,
-      STREAM_RX,
       DROP_RXPDO,
       UPDATE_TXPDO,
       MBOX_READ,
-      SM_RX_RELEASE,
+      SM0_RELEASE,
       MBOX_SM1,
       TXMBX_SEND,
       TXMBX_REPLAY,
@@ -225,20 +229,6 @@ architecture rtl of Lan9254ESC is
       ret      => POLL_IRQ
    );
 
-   type RxStreamType is record
-      mst                  : Lan9254PDOMstType;
-      sel                  : ESCStreamType;
-      endAddr              : Lan9254ByteAddrType;
-      smEndAddr            : Lan9254ByteAddrType;
-   end record RxStreamType;
-
-   constant RX_STREAM_INIT_C : RxStreamType := (
-      mst                  => LAN9254PDO_MST_INIT_C,
-      sel                  => PDO,
-      endAddr              => (others => '0'),
-      smEndAddr            => (others => '0')
-   );
-
    type RegType is record
       state                : ControllerStateType;
       testPhas             : natural range 0 to 3;
@@ -254,14 +244,12 @@ architecture rtl of Lan9254ESC is
       rptAck               : std_logic_vector( 3 downto 0);
       lastAL               : std_logic_vector(31 downto 0);
       emask                : std_logic_vector(31 downto 0);
-      rxStrm               : Lan9254PDOMstType;
-      rxStrmSel            : ESCStreamType;
-      rxStrmEndAddr        : Lan9254ByteAddrType;
-      rxStrmSmEndAddr      : Lan9254ByteAddrType;
       txPDORdy             : std_logic;
       txPDOBst             : natural range 0 to TXPDO_BURST_MAX_C;
       txPDOSnt             : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
       txPDODcm             : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
+      rxPDOTrg             : std_logic;
+      rxMBXTrg             : std_logic;
       txMBXStrb            : std_logic;
       txMBXLEna            : std_logic;
       txMBXTEna            : std_logic;
@@ -275,6 +263,7 @@ architecture rtl of Lan9254ESC is
       txMBXOverrun         : std_logic;
       txMBXRst             : std_logic;
       rxMBXCnt             : unsigned(2 downto 0);
+      rxMBXTyp             : std_logic_vector(3 downto 0);
       rxMBXLen             : unsigned(15 downto 0);
       mbxErr               : MbxErrorType;
       decim                : natural;
@@ -295,14 +284,12 @@ architecture rtl of Lan9254ESC is
       rptAck               => (others => '0'),
       lastAL               => (others => '0'),
       emask                => EC_AL_EMSK_INIT_C,
-      rxStrm               => LAN9254PDO_MST_INIT_C,
-      rxStrmSel            => PDO,
-      rxStrmEndAddr        => (others => '0'),
-      rxStrmSmEndAddr      => (others => '0'),
       txPDORdy             => '0',
       txPDOBst             => 0,
       txPDOSnt             => 0,
       txPDODcm             => 0,
+      rxPDOTrg             => '0',
+      rxMBXTrg             => '0',
       txMBXStrb            => '0',
       txMBXLEna            => '0',
       txMBXTEna            => '0',
@@ -317,6 +304,7 @@ architecture rtl of Lan9254ESC is
       txMBXOverrun         => '0',
       rxMBXCnt             => (others => '0'),
       rxMBXLen             => (others => '0'),
+      rxMBXTyp             => (others => '0'),
       mbxErr               => MBX_ERROR_INIT_C,
       decim                => 0
    );
@@ -485,51 +473,7 @@ architecture rtl of Lan9254ESC is
       end case CASE_TEST;
    end procedure testRegisterIO;
 
-   function streamIsEnabled(constant x : ESCStreamType)
-   return boolean is
-   begin
-      return ( ENABLED_STREAMS_G( EscStreamType'pos(x) ) = '1' );
-   end function streamIsEnabled;
-
-   procedure rxStreamSetup(
-      variable v : inout RegType;
-      constant a : in    unsigned;
-      constant l : in    unsigned;
-      constant s : in    unsigned;
-      constant t : in    ESCStreamType
-   ) is
-      variable a_u : Lan9254ByteAddrType;
-      variable l_u : Lan9254ByteAddrType;
-      variable s_u : Lan9254ByteAddrType;
-   begin
-      a_u := resize( a, a_u'length );
-      l_u := resize( l, l_u'length );
-      s_u := resize( s, s_u'length );
-      v.rxStrm.wrdAddr    := a_u(a_u'left downto 1);
-      v.rxStrmEndAddr     := a_u + l_u - 1;
-      v.rxStrmSmEndAddr   := a_u + s_u - 1;
-      v.rxStrmSel         := t;
-      v.state             := STREAM_RX;
-   end procedure rxStreamSetup;
-
-   procedure rxStreamSetup(
-      variable v : inout RegType;
-      constant a : in    std_logic_vector;
-      constant l : in    std_logic_vector;
-      constant s : in    std_logic_vector;
-      constant t : in    ESCStreamType
-   ) is
-   begin
-      rxStreamSetup(v, unsigned(a), unsigned(l), unsigned(s), t);
-   end procedure rxStreamSetup;
-
-   function rxStreamEnd(constant r : RegType)
-   return boolean is
-   begin
-      return r.rxStrm.wrdAddr = r.rxStrmEndAddr(r.rxStrmEndAddr'left downto 1);
-   end function rxStreamEnd;
-
-   signal eeprom              : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
+   signal     eeprom          : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
 
    signal     r               : RegType := REG_INIT_C;
    signal     rin             : RegType; 
@@ -539,13 +483,25 @@ architecture rtl of Lan9254ESC is
    signal     probe2          : std_logic_vector(63 downto 0) := (others => '0');
    signal     probe3          : std_logic_vector(63 downto 0) := (others => '0');
 
-   signal     rxStrmRdyMux    : std_logic := '0';
-
    signal     txMBXBufWBEh    : std_logic;
    signal     txMBXBufWEna    : std_logic;
    signal     txMBXBufWRdy    : std_logic;
    signal     txMBXBufRDat    : std_logic_vector(15 downto 0);
    signal     txMBXBufHaveBup : boolean;
+
+   signal     rxPDOAck        : std_logic := '1';
+   signal     rxPDOTrg        : std_logic := '0';
+   signal     rxPDOReq        : Lan9254ReqType := LAN9254REQ_INIT_C;
+   signal     rxPDORep        : Lan9254RepType := LAN9254REP_INIT_C;
+
+   signal     rxMBXAck        : std_logic         := '1';
+   signal     rxMBXTrg        : std_logic         := '0';
+   signal     rxMBXReq        : Lan9254ReqType    := LAN9254REQ_INIT_C;
+   signal     rxMBXRep        : Lan9254RepType    := LAN9254REP_INIT_C;
+   signal     rxMBXPDO        : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+   signal     rxMBXLen        : unsigned(15 downto 0);
+   signal     rxMBXTyp        : std_logic_vector(3 downto 0);
+
 
 begin
 
@@ -554,10 +510,20 @@ begin
    assert ESC_SM2_SMA_C(0) = '0' report "RXPDO address must be word aligned" severity failure;
    assert ESC_SM3_SMA_C(0) = '0' report "TXPDO address must be word aligned" severity failure;
 
-   P_COMB : process (r, rep, rxStrmRdyMux, txPDOMst, eeprom, irq, mbxErrRdy, txMBXMst, txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup) is
-      variable v   : RegType;
-      variable val : std_logic_vector(31 downto 0);
-      variable xct : RWXactType;
+   P_COMB : process (
+         r, rep, eeprom, irq,
+         mbxErrRdy, 
+         txPDOMst,
+         rxPDORdy,
+         txMBXMst,
+         rxMBXRdy,
+         rxPDOTrg, rxPDOAck, rxPDOReq,
+         rxMBXTrg, rxMBXAck, rxMBXReq,
+         txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup
+   ) is
+      variable v         : RegType;
+      variable val       : std_logic_vector(31 downto 0);
+      variable xct       : RWXactType;
    begin
       v             := r;
       v.program.don := '0';
@@ -568,6 +534,11 @@ begin
       v.txMBXLEna   := '0';
       v.txMBXTEna   := '0';
       v.txMBXStrb   := '0';
+      rxPDORep      <= LAN9254REP_INIT_C;
+      rxMBXRep      <= LAN9254REP_INIT_C;
+      req           <= r.ctlReq;
+      rxPDOTrg      <= r.rxPDOTrg;
+      rxMBXTrg      <= r.rxMBXTrg;
 
       if ( r.txPDODcm > 0 ) then
          v.txPDODcm := r.txPDODcm - 1;
@@ -601,14 +572,24 @@ begin
             end if;
 
          when POLL_IRQ =>
-            -- wait for an interrupt; this leaves the lan9254 HBI alone
-            if ( irq = EC_IRQ_ACT_C ) then
-               v.state := POLL_AL_EVENT;
+            if    ( rxPDOReq.valid = '1' ) then 
+               -- bypass HBI and mux to RXPDO
+               req      <= rxPDOReq;
+               rxPDORep <= rep;
+            elsif ( rxMBXReq.valid = '1' ) then
+               -- bypass HBI and mux to RXMBX
+               req      <= rxMBXReq;
+               rxMBXRep <= rep;
             else
-               -- if we operate in fully polled mode (IRQ permanently asserted)
-               -- then we never get here; CHECK_TX_WORK is also entered if
-               -- polling the event status yields no work
-               v.state := CHECK_TX_WORK;
+               -- wait for an interrupt; this leaves the lan9254 HBI alone
+               if ( irq = EC_IRQ_ACT_C ) then
+                  v.state := POLL_AL_EVENT;
+               else
+                  -- if we operate in fully polled mode (IRQ permanently asserted)
+                  -- then we never get here; CHECK_TX_WORK is also entered if
+                  -- polling the event status yields no work
+                  v.state := CHECK_TX_WORK;
+               end if;
             end if;
 
          when POLL_AL_EVENT =>
@@ -631,8 +612,14 @@ begin
          -- enabled in EC_REG_AL_EMSK_C
          -- ******************************
          when HANDLE_AL_EVENT =>
-            v.state := POLL_AL_EVENT; -- keep polling AL until nothing is pending
-            if    ( r.lastAL(EC_AL_EREQ_CTL_IDX_C) = '1' ) then
+            if ( r.rxPDOTrg = '1' ) then
+               -- wait for ack 
+               if ( rxPDOAck = '1' ) then
+                  v.rxPDOTrg := '0';
+                  -- POLL_IRQ checks for first register read of the ESCSmRx module
+                  v.state    := POLL_IRQ;
+               end if;
+            elsif ( r.lastAL(EC_AL_EREQ_CTL_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_CTL_IDX_C) := '0';
                v.state                        := READ_AL;
 report "AL  EVENT";
@@ -653,8 +640,14 @@ report "SMA EVENT";
 report "SM1 EVENT";
             elsif ( r.lastAL(EC_AL_EREQ_SM2_IDX_C) = '1' ) then
                v.lastAL(EC_AL_EREQ_SM2_IDX_C) := '0';
-               if ( ( r.curState = OP ) and ( ENABLED_STREAMS_G( ESCStreamType'pos( PDO ) ) = '1' ) ) then
-                  rxStreamSetup( v, ESC_SM2_SMA_C, ESC_SM2_LEN_C, ESC_SM2_LEN_C, PDO );
+               if ( ( r.curState = OP ) and ( not DISABLE_RXPDO_G ) ) then
+                  rxPDOTrg <= '1';
+                  if ( (rxPDOTrg and rxPDOAck ) = '1' ) then
+                     v.rxPDOTrg := '0';
+                     v.state    := POLL_IRQ;
+                  else
+                     v.rxPDOTrg := '1';
+                  end if;
                else
                   v.state                     := DROP_RXPDO;
                end if;
@@ -668,6 +661,8 @@ report "SM1 EVENT";
                --       never get an event.
                v.lastAL(EC_AL_EREQ_WDG_IDX_C) := '0';
                v.state                        := HANDLE_WD_EVENT;
+            else
+               v.state := POLL_AL_EVENT; -- keep polling AL until nothing is pending
             end if;
 
          when HANDLE_WD_EVENT =>
@@ -1120,58 +1115,6 @@ report "post MBOX";
                v.state := HANDLE_AL_EVENT;
             end if;
 
-         when STREAM_RX =>
-
-            if ( r.rxStrm.valid = '1' ) then
-               -- write to RXPDO pending
-               if ( rxStrmRdyMux  = '1' ) then
-if ( r.decim = 0 ) then
-report "STREAM_RX " & toString(std_logic_vector(r.rxStrm.wrdAddr)) & " LST: " & std_logic'image(r.rxStrm.last) & " BEN " & toString(r.rxStrm.ben) & " DAT " & toString(r.rxStrm.data);
-v.decim := 200;
-else
-v.decim := r.decim - 1;
-end if;
-                  -- write to RXPDO complete
-                  v.rxStrm.valid := '0';
-                  if ( r.rxStrm.last = '1' ) then
-                     -- last write completed; we are done
-                     if ( r.rxStrmEndAddr /= r.rxStrmSmEndAddr ) then
-                        -- if we read less than the SM-covered area then
-                        -- we must read the last byte to release the SM.
-                        v.state  := SM_RX_RELEASE;
-                     else
-                        v.state  := HANDLE_AL_EVENT;
-                     end if;
-                  else
-                     -- next word
-                     v.rxStrm.wrdAddr := r.rxStrm.wrdAddr + 1;
-                  end if;
-               end if;
-            elsif ( '1' = r.program.don ) then
-               -- read from lan9254 complete; initiate write to RXPDO interface
-               v.rxStrm.data  := r.ctlReq.data(15 downto 0);
-               v.rxStrm.valid := '1';
-            else
-               -- RXPDO write not onging and lan9254 register read not done
-               -- => initiate next lan9254 register read operation
-
-               v.ctlReq.addr  := r.rxStrm.wrdAddr & "0";
-               v.rxStrm.ben   := "11";
-               v.rxStrm.last  := '0';
-               v.ctlReq.be    := HBI_BE_W0_C;
-              
-               if ( rxStreamEnd( r ) ) then
-                  v.rxStrm.last := '1';
-                  if ( r.rxStrmEndAddr(0) = '0' ) then
-                     v.rxStrm.ben(1) := '0';
-                     v.ctlReq.be(1)  := not HBI_BE_ACT_C;
-                  end if;
-               end if;
-
-               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be ) ) );
-
-            end if;
-
          when UPDATE_TXPDO =>
             if ( r.txPDORdy = '1' ) then
 
@@ -1240,7 +1183,12 @@ end if;
             end if;
 
          when MBOX_READ =>
-            if ( '0' = r.program.don ) then
+            if ( r.rxMBXTrg = '1' ) then
+               if ( rxMBXAck = '1' ) then
+                  v.rxMBXTrg := '0';
+                  v.state    := POLL_IRQ;
+               end if;
+            elsif ( '0' = r.program.don ) then
                scheduleRegXact( v,
                   (
                      0 => RWXACT( EC_REG_SM_STA_F( 0 )                  ),
@@ -1262,6 +1210,7 @@ report  "RX-MBX Header: len "
 ;
                v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
                v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
+               v.rxMBXTyp := r.program.seq(3).val(11 downto 8);
                if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
                     or v.rxMBXLen < MBX_HDR_SIZE_C ) then
                   v.state    := HANDLE_AL_EVENT;
@@ -1271,20 +1220,19 @@ report  "RX-MBX Header: len "
                   end if;
                elsif ( ( v.rxMBXCnt /= "000" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
                   -- redundant  transmission; drop
-                  v.rxStrmSmEndAddr := resize(unsigned(EC_REG_RXMBX_L_C.addr), v.rxStrmSmEndAddr'length);
-                  v.state           := SM_RX_RELEASE;
-               elsif (     streamIsEnabled( EOE )
-                       and ( MBX_TYP_EOE_C = r.program.seq(3).val(11 downto 8) )
+                  v.state           := SM0_RELEASE;
+               elsif (    ( ENABLE_EOE_G and ( MBX_TYP_EOE_C = v.rxMBXTyp ) )
+                       or ( ENABLE_VOE_G and ( MBX_TYP_VOE_C = v.rxMBXTyp ) )
                      ) then
-                  rxStreamSetup(
-                     v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, EOE );
-               elsif (     streamIsEnabled( VOE )
-                       and ( MBX_TYP_VOE_C = r.program.seq(3).val(11 downto 8) )
-                     ) then
-                  rxStreamSetup(
-                     v, unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C , v.rxMBXLen, unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C, VOE );
+                  rxMBXTrg <= '1';
+                  if ( ( rxMBXTrg and rxMBXAck ) = '1' ) then
+                     v.rxMBXTrg := '0';
+                     v.state    := POLL_IRQ;
+                  else
+                     v.rxMBXTrg := '1';
+                  end if;
                else
-                  v.state    := HANDLE_AL_EVENT;
+                  v.state    := SM0_RELEASE;
                   if ( v.mbxErr.vld = '0' ) then
                      v.mbxErr.code := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
                      v.mbxErr.vld  := '1';
@@ -1292,9 +1240,9 @@ report  "RX-MBX Header: len "
                end if;
             end if;
 
-         when SM_RX_RELEASE =>
+         when SM0_RELEASE =>
             if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( r.rxStrmSmEndAddr, HBI_BE_B0_C ) ) );
+               scheduleRegXact( v, ( 0 => RWXACT( unsigned(EC_REG_RXMBX_L_C.addr), HBI_BE_B0_C ) ) );
             else
                v.state := HANDLE_AL_EVENT;
             end if;
@@ -1498,20 +1446,12 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
  
       end case C_STATE;
 
-      rin <= v;
+      rxMBXLen      <= v.rxMBXLen;
+      rxMBXTyp      <= v.rxMBXTyp;
+
+      rin           <= v;
 
    end process P_COMB;
-
-   P_RX_STREAM_MUX : process ( r, rxStrmRdy ) is
-      variable v : Lan9254PDOMstType;
-   begin
-      v            := r.rxStrm;
-      v.valid      := '0';
-      rxStrmMst    <= (others => v);
-      rxStrmRdyMux <= '0';
-      rxStrmMst( ESCStreamType'pos( r.rxStrmSel ) ).valid <= r.rxStrm.valid;
-      rxStrmRdyMux <= rxStrmRdy( ESCStreamType'pos( r.rxStrmSel ) );
-   end process P_RX_STREAM_MUX;
 
    P_SEQ : process ( clk ) is
    begin
@@ -1554,7 +1494,62 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          haveBackup  => txMBXBufHaveBup
       );
 
-   req       <= r.ctlReq;
+   GEN_RX_MBX : if ( ENABLE_EOE_G or ENABLE_VOE_G ) generate
+
+   U_SM_RX  : entity work.ESCSmRx
+      generic map (
+         SM_SMA_G    => unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C,
+         SM_LEN_G    => unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C
+      )
+      port map (
+         clk         => clk,
+         rst         => rst,
+
+         trg         => rxMBXTrg,
+         ack         => rxMBXAck,
+         len         => rxMBXLen,
+         typ         => rxMBXTyp,
+
+         rxPDOMst    => rxMBXPDO,
+         rxPDORdy    => rxMBXRdy,
+
+         req         => rxMBXReq,
+         rep         => rxMBXRep
+      );
+
+      P_REFORMAT : process ( rxMBXPDO ) is
+      begin
+         rxMBXMst <= toStrmMst( rxMBXPDO );
+      end process P_REFORMAT;
+
+   end generate GEN_RX_MBX;
+
+   GEN_RX_PDO : if ( not DISABLE_RXPDO_G ) generate
+
+   U_SM_RX   : entity work.ESCSmRx
+      generic map (
+         SM_SMA_G    => unsigned(ESC_SM2_SMA_C),
+         SM_LEN_G    => unsigned(ESC_SM2_LEN_C)
+      )
+      port map (
+         clk         => clk,
+         rst         => rst,
+
+         trg         => rxPDOTrg,
+         ack         => rxPDOAck,
+         len         => unsigned(ESC_SM2_LEN_C),
+         typ         => x"0",
+
+         rxPDOMst    => rxPDOMst,
+         rxPDORdy    => rxPDORdy,
+
+         req         => rxPDOReq,
+         rep         => rxPDORep
+      );
+
+   end generate GEN_RX_PDO;
+
+
    escState  <= r.curState;
    txPDORdy  <= r.txPDORdy;
 

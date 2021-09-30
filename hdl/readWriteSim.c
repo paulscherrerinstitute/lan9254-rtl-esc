@@ -147,7 +147,7 @@ int      i;
 void writeRxPDO_C(int wrdAddr, int val, int ben)
 {
 /*printf("writeRxPDO_C: %d %d %d\n", wrdAddr, val, ben); */
-	if ( 0x1100/2 == wrdAddr && (ben & 1) ) {
+	if ( 0x0000/2 == wrdAddr && (ben & 1) ) {
 		*(dev->a8 + 0x3001) = (val & 0xff);
     }
 }

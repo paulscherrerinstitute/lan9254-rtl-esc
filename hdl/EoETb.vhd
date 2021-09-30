@@ -20,7 +20,7 @@ architecture sim of EoETb is
    signal eoeRdyOb : std_logic          := '1';
 
    signal mbxMstOb : Lan9254StrmMstType;
-   signal mbxMstIb : Lan9254PDOMstType;
+   signal mbxMstIb : Lan9254StrmMstType;
    signal mbxRdy   : std_logic;
 
    signal frameSz  : unsigned(10 downto 0) := to_unsigned(59, 11);
