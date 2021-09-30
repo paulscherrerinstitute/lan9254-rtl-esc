@@ -16,15 +16,11 @@ end entity Lan9254ESCrun;
 
 architecture rtl of Lan9254ESCrun is
 
-   constant STREAM_CONFIG_C : std_logic_vector(ESCStreamIndexType) := (
-      ESCStreamType'pos( PDO ) => '1',
-      ESCStreamType'pos( EOE ) => '1',
-      others                   => '0'
-   );
-
    constant NUM_ERRS_C        : natural := 1;
 
    constant NUM_TXMBX_PROTO_C : natural := 1;
+
+   constant EOE_RX_STRM_IDX_C : natural := 0;
 
    signal clk      : std_logic := '0';
    signal rst      : std_logic := '0';
@@ -41,11 +37,8 @@ architecture rtl of Lan9254ESCrun is
    signal rxPDOMst : Lan9254PDOMstType;
    signal rxPDORdy : std_logic;
 
-   signal eoeMstIb : Lan9254StrmMstType;
-   signal eoeRdyIb : std_logic;
-
    signal eoeMstOb : Lan9254StrmMstType;
-   signal eoeRdyOb : std_logic := '0';
+   signal eoeRdyOb : std_logic := '1';
    signal eoeErrOb : std_logic;
 
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
@@ -53,6 +46,9 @@ architecture rtl of Lan9254ESCrun is
 
    signal txStmMst : Lan9254StrmMstArray(NUM_TXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
    signal txStmRdy : std_logic_vector(NUM_TXMBX_PROTO_C - 1 downto 0);
+
+   signal rxStmMst : Lan9254StrmMstArray(NUM_TXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
+   signal rxStmRdy : std_logic_vector(NUM_TXMBX_PROTO_C - 1 downto 0)    := (others => '1');
 
    signal decim    : natural := 1000;
 
@@ -74,6 +70,8 @@ architecture rtl of Lan9254ESCrun is
 
    signal   txMbxMst        : Lan9254StrmMstType;
    signal   txMbxRdy        : std_logic;
+   signal   rxMbxMst        : Lan9254StrmMstType;
+   signal   rxMbxRdy        : std_logic;
 
 begin
 
@@ -152,8 +150,8 @@ begin
          txMBXMst    => txMbxMst,
          txMBXRdy    => txMbxRdy,
 
-         rxMBXMst    => eoeMstIb,
-         rxMBXRdy    => eoeRdyIb,
+         rxMBXMst    => rxMBXMst,
+         rxMBXRdy    => rxMBXRdy,
 
      
          mbxErrMst   => errMst(0),
@@ -188,8 +186,8 @@ begin
          clk         => clk,
          rst         => rst,
 
-         mbxMstIb    => eoeMstIb,
-         mbxRdyIb    => eoeRdyIb,
+         mbxMstIb    => rxStmMst(EOE_RX_STRM_IDX_C),
+         mbxRdyIb    => rxStmRdy(EOE_RX_STRM_IDX_C),
 
 
          eoeMstOb    => eoeMstOb,
@@ -211,6 +209,22 @@ begin
          mbxOb            => txMbxMst,
          rdyOb            => txMbxRdy
       );
+
+   U_RXMBX_MUX : entity work.ESCRxMbxMux
+      generic map (
+         STREAM_CONFIG_G  => (EOE_RX_STRM_IDX_C => MBX_TYP_EOE_C)
+      )
+      port map (
+         clk              => clk,
+         rst              => rst,
+
+         mbxIb            => rxMbxMst,
+         rdyIb            => rxMbxRdy,
+
+         mbxOb            => rxStmMst,
+         rdyOb            => rxStmRdy
+      );
+
 
    U_ERR : entity work.ESCTxMbxErr
       generic map (

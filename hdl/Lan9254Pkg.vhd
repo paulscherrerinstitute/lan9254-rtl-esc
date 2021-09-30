@@ -82,7 +82,6 @@ package Lan9254Pkg is
    type Lan9254StrmMstArray is array (natural range <>) of Lan9254StrmMstType;
 
    type ESCStreamType is (
-      PDO,
       EOE,
       VOE
    );

@@ -7,10 +7,14 @@ use ieee.math_real.all;
 
 package ESCMbxPkg is
 
-   constant MBX_TYP_ERR_C                         : std_logic_vector( 3 downto 0)  := x"0";
-   constant MBX_TYP_EOE_C                         : std_logic_vector( 3 downto 0)  := x"2";
-   constant MBX_TYP_COE_C                         : std_logic_vector( 3 downto 0)  := x"3";
-   constant MBX_TYP_VOE_C                         : std_logic_vector( 3 downto 0)  := x"F";
+   subtype  ESCMbxType                            is std_logic_vector( 3 downto 0 );
+
+   type     ESCMbxArray is array( natural range <>) of ESCMbxType;
+
+   constant MBX_TYP_ERR_C                         : ESCMbxType := x"0";
+   constant MBX_TYP_EOE_C                         : ESCMbxType := x"2";
+   constant MBX_TYP_COE_C                         : ESCMbxType := x"3";
+   constant MBX_TYP_VOE_C                         : ESCMbxType := x"F";
 
    constant EC_VENDOR_ID_PSI_C                    : std_logic_vector(31 downto 0)  := x"0050_5349";
 
