@@ -77,7 +77,7 @@ begin
    U_DUT_TX : entity work.ESCEoETx
       generic map (
          MAX_FRAGMENT_SIZE_G => 40,
-         STORE_AND_FWD_G     => false,
+         STORE_AND_FWD_G     => true,
          TEST_TIME_APPEND_G  => '1'
       )
       port map (
