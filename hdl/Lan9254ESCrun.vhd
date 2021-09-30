@@ -46,7 +46,6 @@ architecture rtl of Lan9254ESCrun is
 
    signal eoeMstOb : Lan9254StrmMstType;
    signal eoeRdyOb : std_logic := '1';
-   signal eoeTEnOb : std_logic;
    signal eoeErrOb : std_logic;
 
    signal rxStmMst : Lan9254PDOMstArray;
@@ -203,8 +202,7 @@ begin
 
          eoeMstOb    => eoeMstOb,
          eoeRdyOb    => eoeRdyOb,
-         eoeErrOb    => eoeErrOb,
-         eoeTEnOb    => eoeTEnOb
+         eoeErrOb    => eoeErrOb
       );
 
    U_TXMBX_MUX : entity work.ESCTxMbxMux
@@ -243,8 +241,7 @@ begin
          if ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
             report  "EOE: " & toString(eoeMstOb.data)
                   & " L " & std_logic'image(eoeMstOb.last)
-                  & " E " & std_logic'image(eoeErrOb)
-                  & " T " & std_logic'image(eoeTenOb);
+                  & " E " & std_logic'image(eoeErrOb);
          end if;
       end if;
    end process P_MON_EOE;

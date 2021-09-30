@@ -15,7 +15,12 @@ entity ESCEoETx is
       -- unfortunately, EoE requires the frame size to
       -- be sent in the header; if this information is unknown
       -- then we must store and forward...
-      STORE_AND_FWD_G     : boolean
+      STORE_AND_FWD_G     : boolean;
+      -- just for testing the time-stamp stripping of the receiver
+      -- NOTE: this doesn't handle the case correctly when adding
+      --       the timestamp requires an additional fragmentation!
+      --       FOR TESTING ONLY
+      TEST_TIME_APPEND_G  : std_logic := '0'
    );
    port (
       clk         : in  std_logic;
@@ -39,7 +44,7 @@ architecture rtl of ESCEoETx is
    constant NUM_CHUNKS_C     : natural := (MAX_FRAGMENT_SIZE_G - EOE_HDR_SIZE_C)/32;
    constant CHUNK_SIZE_C     : natural := 32*NUM_CHUNKS_C;
 
-   type StateType is ( IDLE, H1, H2, PLD );
+   type StateType is ( IDLE, H1, H2, PLD, TS1, TS2 );
 
    subtype FrameSizeType is unsigned(10 downto 0);
    constant FRAME_SIZE_ZERO_C : FrameSizeType := (others => '0');
@@ -50,6 +55,7 @@ architecture rtl of ESCEoETx is
       fragOff  : unsigned( 5 downto 0);
       frameNo  : unsigned( 3 downto 0);
       frameSz  : FrameSizeType;
+      lstBen   : std_logic_vector(1 downto 0);
       pldCnt   : natural range 0 to CHUNK_SIZE_C - 2;
    end record RegType;
 
@@ -64,6 +70,7 @@ architecture rtl of ESCEoETx is
       fragOff  => (others => '0'),
       frameNo  => (others => '0'),
       frameSz  => FRAME_SIZE_ZERO_C,
+      lstBen   => (others => '1'),
       pldCnt   => 0
    );
 
@@ -151,9 +158,10 @@ begin
    end generate G_STORE;
 
    P_COMB : process (r, eoeMst, frameSz, mbxRdyOb) is
-      variable v   : RegType;
-      variable m   : Lan9254StrmMstType;
-      variable rdy : std_logic;
+      variable v        : RegType;
+      variable m        : Lan9254StrmMstType;
+      variable rdy      : std_logic;
+      constant TS_LEN_C : FrameSizeType := ( 2 => TEST_TIME_APPEND_G, others => '0' );
    begin
       v   := r;
       m   := LAN9254STRM_MST_INIT_C;
@@ -167,7 +175,7 @@ begin
          when IDLE =>
             v.pldCnt   := 0;
             if ( eoeMst.valid = '1' ) then
-               v.frameSz := frameSz;
+               v.frameSz := frameSz + TS_LEN_C;
                v.state   := H1;
             end if;
 
@@ -179,7 +187,8 @@ begin
             else
                m.data(8)           := '0';
             end if;
-            m.data(15 downto 9)    := (others => '0'); -- time related flags
+            m.data(9)              := TEST_TIME_APPEND_G;
+            m.data(15 downto 10)   := (others => '0'); -- other time related flags
             m.valid                := '1';
             m.ben                  := "11";
             if ( mbxRdyOb = '1' ) then
@@ -209,12 +218,21 @@ begin
             m.ben   := eoeMst.ben;
 
             if ( ( mbxRdyOb and eoeMst.valid) = '1' ) then
-               if ( ( r.fragOff & "00000" ) + r.pldCnt + 2 >= r.frameSz ) then
-                  m.last    := '1';
+               if ( ( r.fragOff & "00000" ) + r.pldCnt + 2 >= r.frameSz - TS_LEN_C ) then
                   v.frameNo := r.frameNo + 1;
                   v.fragNo  := (others => '0');
                   v.fragOff := (others => '0');
-                  v.state   := IDLE;
+                  if ( TEST_TIME_APPEND_G = '0' ) then
+                     m.last    := '1';
+                     v.state   := IDLE;
+                  else
+                     v.lstBen  := eoeMst.ben;
+                     m.ben     := "11";
+                     v.state   := TS1;
+                     if ( eoeMst.ben(1) = '0' ) then
+                        m.data(15 downto 8) := x"EF";
+                     end if;
+                  end if;
                elsif ( r.pldCnt = CHUNK_SIZE_C - 2 ) then
                   m.last    := '1';
                   v.fragNo  := r.fragNo + 1;
@@ -224,6 +242,36 @@ begin
                   v.pldCnt  := r.pldCnt + 2;
                end if;
             end if;
+
+         when TS1 =>
+            if ( TEST_TIME_APPEND_G = '1' ) then
+               if ( r.lstBen(1) = '0' ) then
+                  m.data := x"ADBE";
+               else
+                  m.data := x"BEEF";
+               end if;
+               m.valid := '1';
+               m.ben   := "11";
+               if ( mbxRdyOb = '1' ) then
+                  v.state := TS2;
+               end if;
+            end if;
+
+         when TS2 =>
+            if ( TEST_TIME_APPEND_G = '1' ) then
+               if ( r.lstBen(1) = '0' ) then
+                  m.data := x"00DE";
+               else
+                  m.data := x"DEAD";
+               end if;
+               m.valid := '1';
+               m.ben   := r.lstBen;
+               m.last  := '1';
+               if ( mbxRdyOb = '1' ) then
+                  v.state := TS2;
+               end if;
+            end if;
+
 
       end case;
 

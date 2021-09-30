@@ -23,7 +23,7 @@ architecture sim of EoETb is
    signal mbxMstIb : Lan9254PDOMstType;
    signal mbxRdy   : std_logic;
 
-   signal frameSz  : unsigned(10 downto 0) := to_unsigned(63, 11);
+   signal frameSz  : unsigned(10 downto 0) := to_unsigned(59, 11);
 
    signal cnt      : unsigned(10 downto 0) := (others => '0');
    signal run      : boolean               := true;
@@ -77,7 +77,8 @@ begin
    U_DUT_TX : entity work.ESCEoETx
       generic map (
          MAX_FRAGMENT_SIZE_G => 40,
-         STORE_AND_FWD_G     => false
+         STORE_AND_FWD_G     => false,
+         TEST_TIME_APPEND_G  => '1'
       )
       port map (
          clk                 => clk,
@@ -112,7 +113,11 @@ begin
    begin
       if ( rising_edge( clk ) ) then
          if ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
-            assert got = unsigned(eoeMstOb.data) report "Data mismatch " & toString(eoeMstOb.data) severity failure;
+            if ( eoeMstOb.last = '1' and eoeMstOb.ben(1) = '0' ) then
+               assert got(7 downto 0) = unsigned(eoeMstOb.data(7 downto 0)) report "Data mismatch " & toString(eoeMstOb.data) severity failure;
+            else
+               assert got = unsigned(eoeMstOb.data) report "Data mismatch " & toString(eoeMstOb.data) severity failure;
+            end if;
             if ( eoeMstOb.last = '1' ) then
                len := got;
                if ( eoeMstOb.ben(0) = '1' ) then

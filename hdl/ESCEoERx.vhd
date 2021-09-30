@@ -17,7 +17,6 @@ entity ESCEoERx is
 
       eoeMstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       eoeErrOb    : out std_logic;
-      eoeTEnOb    : out std_logic; -- frame contains time-stamp
       eoeRdyOb    : in  std_logic := '1'
    );
 end entity ESCEoERx;
@@ -26,6 +25,8 @@ architecture rtl of ESCEoERx is
 
    type StateType is (IDLE, HDR, FWD, DROP);
 
+   type DelayArray is array (natural range 1 downto 0) of std_logic_vector(15 downto 0);
+
    type RegType is record
       state                   : StateType;
       frameType               : std_logic_vector(3 downto 0);
@@ -33,6 +34,8 @@ architecture rtl of ESCEoERx is
       lastFrag                : std_logic;
       timeAppend              : std_logic;
       timeRequest             : std_logic;
+      delayedData             : DelayArray;
+      delayedValid            : std_logic_vector(1 downto 0);
       fragNo                  : unsigned(5 downto 0);
       frameOff                : unsigned(5 downto 0);
       frameNo                 : unsigned(3 downto 0);
@@ -47,6 +50,8 @@ architecture rtl of ESCEoERx is
       lastFrag                => '0',
       timeAppend              => '0',
       timeRequest             => '0',
+      delayedData             => (others => (others => '0')),
+      delayedValid            => (others => '0'),
       fragNo                  => (others => '0'),
       frameOff                => (others => '0'),
       frameNo                 => (others => '0'),
@@ -96,6 +101,7 @@ report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
                      v.drained     := '0';
                   end if;
                end if;
+               v.delayedValid := (others => '0');
             end if;
 
          when HDR =>
@@ -125,9 +131,21 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
             end if;
  
          when FWD =>
-            m.valid := mbxMstIb.valid;
             rdy     := eoeRdyOb;
             m.last  := r.lastFrag and mbxMstIb.last;
+            if ( r.timeAppend = '0' or r.lastFrag = '0' ) then
+               m.valid := mbxMstIb.valid;
+            else
+               -- delay output data by two words in order to strip the time-stamp
+               -- note that we can use the un-delayed 'ben' directly (assuming
+               -- only the last 'ben' is relevant)
+               m.valid := r.delayedValid(1);
+               m.data  := r.delayedData (1);
+               if ( ( mbxMstIb.valid and eoeRdyOb ) = '1' ) then
+                  v.delayedValid := r.delayedValid(r.delayedValid'left - 1 downto 0) & mbxMstIb.valid;
+                  v.delayedData  := r.delayedData (r.delayedData'left  - 1 downto 0) & mbxMstIb.data;
+               end if;
+            end if;
             if ( ( mbxMstIb.valid and eoeRdyOb and mbxMstIb.last ) = '1' ) then
                v.state  := IDLE;
                if ( r.lastFrag = '1' ) then
@@ -171,6 +189,5 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
    end process P_SEQ;
 
    eoeErrOb <= r.eoeErr;
-   eoeTEnOb <= r.timeAppend;
 
 end architecture rtl;
