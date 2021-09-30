@@ -6,6 +6,14 @@ use ieee.math_real.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 
+-- state machine to receive data from a SM
+
+-- NOTES:
+-- * on the cycle after ACK the read request 'req.valid' becomes pending
+--   and the first read will remove the interrupt condition.
+-- * This module assumes the user muxes the HBI interface directly to
+--   us. I.e., we take care of byte-lane adjustment for word-aligned access.
+
 entity ESCSmRx is
    generic (
       SM_SMA_G       : unsigned(15 downto 0);
