@@ -16,7 +16,7 @@ PROG=lan9254escrun lan9254esctb txmbxtb eoetb
 OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
-OBJS+=ESCEoETx.o ESCSmRx.o
+OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
 
 TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o
 
@@ -95,6 +95,7 @@ ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
 ESCTxMbxMux.o: Lan9254Pkg.o
 ESCRxMBXMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
+MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
 
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin

@@ -76,6 +76,7 @@ begin
       variable d : integer;
       variable a : integer;
       variable l : integer;
+      variable s : integer;
    begin
       v := r;
 
@@ -96,24 +97,25 @@ begin
             when DELAY =>
                -- req.valid = '1' at this point
                a := to_integer(unsigned(req.addr));
-               if ( req.rdnwr = '1' ) then
-                  d := 12345;
-               else
-                  d := to_integer(signed(req.data));
-               end if;
                l := 0;
                for i in req.be'range loop
                   if ( req.be(i) = HBI_BE_ACT_C ) then
                      l := l + 1;
                   end if;
                end loop;
+               s := 0;
                L_RSHFT : for i in req.be'low to req.be'high loop
                   if ( req.be(i) = HBI_BE_ACT_C ) then
                      exit L_RSHFT;
                   end if;
                   a := a + 1;
-                  d := d / 256;
+                  s := s + 1;
                end loop L_RSHFT;
+               if ( req.rdnwr = '1' ) then
+                  d := 12345;
+               else
+                  d := to_integer(signed(req.data(8*(l + s) - 1 downto 8*s)));
+               end if;
 --report "calling C: " & toString(std_logic_vector(to_unsigned(a,16))) & " " & toString(std_logic_vector(to_signed(d,32))) & " " & integer'image(l);
                readWrite_C(a, req.rdnwr, d, l);
                v.rep.berr  := (others => '0');

@@ -6,6 +6,7 @@ use ieee.math_real.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
+use work.MicroUDPPkg.all;
 
 entity Lan9254ESCrun is
 end entity Lan9254ESCrun;
@@ -18,7 +19,8 @@ architecture rtl of Lan9254ESCrun is
 
    constant NUM_ERRS_C        : natural := 1;
 
-   constant NUM_TXMBX_PROTO_C : natural := 1;
+   constant NUM_TXMBX_PROTO_C : natural := 2;
+   constant NUM_RXMBX_PROTO_C : natural := 1;
 
    constant EOE_RX_STRM_IDX_C : natural := 0;
 
@@ -40,6 +42,8 @@ architecture rtl of Lan9254ESCrun is
    signal eoeMstOb : Lan9254StrmMstType;
    signal eoeRdyOb : std_logic := '1';
    signal eoeErrOb : std_logic;
+   signal eoeMstIb : Lan9254StrmMstType;
+   signal eoeRdyIb : std_logic := '1';
 
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
@@ -47,8 +51,8 @@ architecture rtl of Lan9254ESCrun is
    signal txStmMst : Lan9254StrmMstArray(NUM_TXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
    signal txStmRdy : std_logic_vector(NUM_TXMBX_PROTO_C - 1 downto 0);
 
-   signal rxStmMst : Lan9254StrmMstArray(NUM_TXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
-   signal rxStmRdy : std_logic_vector(NUM_TXMBX_PROTO_C - 1 downto 0)    := (others => '1');
+   signal rxStmMst : Lan9254StrmMstArray(NUM_RXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
+   signal rxStmRdy : std_logic_vector(NUM_RXMBX_PROTO_C - 1 downto 0)    := (others => '1');
 
    signal decim    : natural := 1000;
 
@@ -72,6 +76,11 @@ architecture rtl of Lan9254ESCrun is
    signal   txMbxRdy        : std_logic;
    signal   rxMbxMst        : Lan9254StrmMstType;
    signal   rxMbxRdy        : std_logic;
+   signal   ipPldMst        : Lan9254StrmMstType;
+   signal   ipPldRdy        : std_logic;
+
+   signal   txReq           : EthTxReqType;
+   signal   txRdy           : std_logic;
 
 begin
 
@@ -181,7 +190,7 @@ begin
 
       );
 
-   U_EOE   : entity work.ESCEoERx
+   U_EOE_RX: entity work.ESCEoERx
       port map (
          clk         => clk,
          rst         => rst,
@@ -193,6 +202,22 @@ begin
          eoeMstOb    => eoeMstOb,
          eoeRdyOb    => eoeRdyOb,
          eoeErrOb    => eoeErrOb
+      );
+
+   U_EOE_TX: entity work.ESCEoETx
+      generic map (
+         MAX_FRAGMENT_SIZE_G => to_integer(unsigned(ESC_SM1_LEN_C) - MBX_HDR_SIZE_C),
+         STORE_AND_FWD_G     => true
+      )
+      port map (
+         clk         => clk,
+         rst         => rst,
+
+         eoeMstIb    => eoeMstIb,
+         eoeRdyIb    => eoeRdyIb,
+
+         mbxMstOb    => txStmMst(1),
+         mbxRdyOb    => txStmRdy(1)
       );
 
    U_TXMBX_MUX : entity work.ESCTxMbxMux
@@ -241,10 +266,42 @@ begin
          rdyOb            => txStmRdy(0)
       );
 
+   U_IP_RX : entity work.MicroUDPRx
+      port map (
+         clk              => clk,
+         rst              => rst,
+
+         mstIb            => eoeMstOb,
+         errIb            => eoeErrOb,
+         rdyIb            => eoeRdyOb,
+
+         txReq            => txReq,
+         txRdy            => txRdy,
+
+         pldMstOb         => ipPldMst,
+         pldRdyOb         => ipPldRdy
+      );
+
+   U_IP_TX : entity work.MicroUDPTx
+      port map (
+         clk              => clk,
+         rst              => rst,
+
+         mstOb            => eoeMstIb,
+         rdyOb            => eoeRdyIb,
+
+         txReq            => txReq,
+         txRdy            => txRdy,
+
+         pldMstIb         => ipPldMst,
+         pldRdyIb         => ipPldRdy
+      );
+
+
    P_MON_EOE : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-         if ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
+         if ( ( eoeMstOb.valid and eoeRdyOb and '0' ) = '1' ) then
             report  "EOE: " & toString(eoeMstOb.data)
                   & " L " & std_logic'image(eoeMstOb.last)
                   & " E " & std_logic'image(eoeErrOb);

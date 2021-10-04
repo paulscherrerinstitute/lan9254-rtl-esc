@@ -143,7 +143,6 @@ begin
             if ( ( waddr = MBX_WSIZ_C - 1 ) and ( wbeh = '1' ) ) then
                v.rdy := '0';
             end if;
-report integer'image(MBX_WSIZ_C - 1) & " => " & std_logic'image(v.rdy);
          end if;
       end if;
 

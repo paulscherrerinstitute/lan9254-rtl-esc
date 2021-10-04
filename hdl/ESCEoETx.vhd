@@ -96,7 +96,7 @@ begin
 
       type MemArray is array (0 to (EOE_MAX_FRAME_SIZE_C + 1)/2 - 1) of std_logic_vector(15 downto 0);      
 
-      signal mem : MemArray;
+      signal mem : MemArray      := (others => (others => '0'));
 
       signal rdp : FrameSizeType := FRAME_SIZE_ZERO_C;
       signal nrp : FrameSizeType := FRAME_SIZE_ZERO_C;
@@ -181,8 +181,8 @@ begin
 
          when H1  =>
             m.data( 3 downto  0)   := EOE_TYPE_FRAG_C;
-            m.data( 7 downto  0)   := (others => '0'); -- port
-            if ( ( r.frameSz - (r.fragOff & "00000") ) <= MAX_FRAGMENT_SIZE_G - EOE_HDR_SIZE_C ) then
+            m.data( 7 downto  4)   := (others => '0'); -- port
+            if ( ( r.frameSz - (r.fragOff & "00000") ) <= CHUNK_SIZE_C ) then
                m.data(8)           := '1';
             else
                m.data(8)           := '0';
@@ -268,7 +268,7 @@ begin
                m.ben   := r.lstBen;
                m.last  := '1';
                if ( mbxRdyOb = '1' ) then
-                  v.state := TS2;
+                  v.state := IDLE;
                end if;
             end if;
 
