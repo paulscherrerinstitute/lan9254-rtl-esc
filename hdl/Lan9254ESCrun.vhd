@@ -215,6 +215,7 @@ begin
 
          eoeMstIb    => eoeMstIb,
          eoeRdyIb    => eoeRdyIb,
+         eoeFrameSz  => txReq.length(10 downto 0),
 
          mbxMstOb    => txStmMst(1),
          mbxRdyOb    => txStmRdy(1)
