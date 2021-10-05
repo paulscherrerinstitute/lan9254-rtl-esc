@@ -59,6 +59,8 @@ architecture rtl of Lan9254ESC is
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
+   type HBIBypassStateType is ( NONE, SM0, SM2 );
+
    type ControllerStateType is (
       TEST,
       INIT,
@@ -231,6 +233,7 @@ architecture rtl of Lan9254ESC is
 
    type RegType is record
       state                : ControllerStateType;
+      hbiState             : HBIBypassStateType;
       testPhas             : natural range 0 to 3;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
@@ -248,8 +251,7 @@ architecture rtl of Lan9254ESC is
       txPDOBst             : natural range 0 to TXPDO_BURST_MAX_C;
       txPDOSnt             : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
       txPDODcm             : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
-      rxPDOTrg             : std_logic;
-      rxMBXTrg             : std_logic;
+      rxPDORst             : std_logic;
       txMBXStrb            : std_logic;
       txMBXLEna            : std_logic;
       txMBXTEna            : std_logic;
@@ -271,6 +273,7 @@ architecture rtl of Lan9254ESC is
 
    constant REG_INIT_C : RegType := (
       state                => TEST,
+      hbiState             => NONE,
       testPhas             => 0,
       testFail             => 0,
       reqState             => INIT,
@@ -288,8 +291,7 @@ architecture rtl of Lan9254ESC is
       txPDOBst             => 0,
       txPDOSnt             => 0,
       txPDODcm             => 0,
-      rxPDOTrg             => '0',
-      rxMBXTrg             => '0',
+      rxPDORst             => '1',
       txMBXStrb            => '0',
       txMBXLEna            => '0',
       txMBXTEna            => '0',
@@ -489,7 +491,6 @@ architecture rtl of Lan9254ESC is
    signal     txMBXBufRDat    : std_logic_vector(15 downto 0);
    signal     txMBXBufHaveBup : boolean;
 
-   signal     rxPDOAck        : std_logic := '1';
    signal     rxPDOTrg        : std_logic := '0';
    signal     rxPDOReq        : Lan9254ReqType := LAN9254REQ_INIT_C;
    signal     rxPDORep        : Lan9254RepType := LAN9254REP_INIT_C;
@@ -517,8 +518,8 @@ begin
          rxPDORdy,
          txMBXMst,
          rxMBXRdy,
-         rxPDOTrg, rxPDOAck, rxPDOReq,
-         rxMBXTrg, rxMBXAck, rxMBXReq,
+         rxPDOReq,
+         rxMBXReq,
          txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup
    ) is
       variable v         : RegType;
@@ -537,8 +538,8 @@ begin
       rxPDORep      <= LAN9254REP_INIT_C;
       rxMBXRep      <= LAN9254REP_INIT_C;
       req           <= r.ctlReq;
-      rxPDOTrg      <= r.rxPDOTrg;
-      rxMBXTrg      <= r.rxMBXTrg;
+      rxPDOTrg      <= '0';
+      rxMBXTrg      <= '0';
 
       if ( r.txPDODcm > 0 ) then
          v.txPDODcm := r.txPDODcm - 1;
@@ -548,579 +549,586 @@ begin
          v.mbxErr.vld := '0';
       end if;
 
-      C_STATE : case r.state is
+      if ( v.hbiState = NONE ) then
+         if    ( rxPDOReq.valid = '1' ) then
+            v.hbiState := SM2;
+         elsif ( rxMBXReq.valid = '1' ) then
+            v.hbiState := SM0;
+         end if;
+      end if;
 
-         when TEST =>
-            if ( REG_IO_TEST_ENABLE_G ) then
-               testRegisterIO(v, r);
-            else
-               v.state := INIT;
+      C_HBI_STATE : case ( v.hbiState ) is
+
+         when SM2 =>
+            req      <= rxPDOReq;
+            rxPDORep <= rep;
+            if ( rep.valid = '1' ) then
+               v.hbiState := NONE;
             end if;
 
-         when INIT =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_AL_EMSK_C, r.emask           ),
-                     1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
-                     2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
-                  )
-               );
-            else
-               v.state := UPDATE_AS;
+         when SM0 =>
+            req      <= rxMBXReq;
+            rxMBXRep <= rep;
+            if ( rep.valid = '1' ) then
+               v.hbiState := NONE;
             end if;
 
-         when POLL_IRQ =>
-            if    ( rxPDOReq.valid = '1' ) then 
-               -- bypass HBI and mux to RXPDO
-               req      <= rxPDOReq;
-               rxPDORep <= rep;
-            elsif ( rxMBXReq.valid = '1' ) then
-               -- bypass HBI and mux to RXMBX
-               req      <= rxMBXReq;
-               rxMBXRep <= rep;
-            else
-               -- wait for an interrupt; this leaves the lan9254 HBI alone
-               if ( irq = EC_IRQ_ACT_C ) then
-                  v.state := POLL_AL_EVENT;
-               else
-                  -- if we operate in fully polled mode (IRQ permanently asserted)
-                  -- then we never get here; CHECK_TX_WORK is also entered if
-                  -- polling the event status yields no work
-                  v.state := CHECK_TX_WORK;
-               end if;
-            end if;
+         when others =>
 
-         when POLL_AL_EVENT =>
-            if ( '0' = r.program.don ) then
-               -- read AL register
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
-            else
-               -- cache AL readback value
-               v.lastAL := r.program.seq(0).val;
-               if ( (r.program.seq(0).val and r.emask) = x"0000_0000" ) then
-                  -- no more events pending; maybe there is TX work to do?
-                  v.state  := CHECK_TX_WORK;
-               else
-                  v.state  := HANDLE_AL_EVENT;
-               end if;
-            end if;
+            C_STATE : case ( r.state ) is
 
-         -- ************ NOTE ************
-         -- All events handled here must be
-         -- enabled in EC_REG_AL_EMSK_C
-         -- ******************************
-         when HANDLE_AL_EVENT =>
-            if ( r.rxPDOTrg = '1' ) then
-               -- wait for ack 
-               if ( rxPDOAck = '1' ) then
-                  v.rxPDOTrg := '0';
-                  -- POLL_IRQ checks for first register read of the ESCSmRx module
-                  v.state    := POLL_IRQ;
-               end if;
-            elsif ( r.lastAL(EC_AL_EREQ_CTL_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_CTL_IDX_C) := '0';
-               v.state                        := READ_AL;
-report "AL  EVENT";
-            elsif ( r.lastAL(EC_AL_EREQ_EEP_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_EEP_IDX_C) := '0';
-               v.state                        := EEP_EMUL;
-report "EEP EVENT";
-            elsif ( r.lastAL(EC_AL_EREQ_SMA_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_SMA_IDX_C) := '0';
-               v.state                        := SM_ACTIVATION_CHANGED;
-report "SMA EVENT";
-            elsif ( r.lastAL(EC_AL_EREQ_SM0_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_SM0_IDX_C) := '0';
-               v.state                        := MBOX_READ;
-            elsif ( r.lastAL(EC_AL_EREQ_SM1_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_SM1_IDX_C) := '0';
-               v.state                        := MBOX_SM1;
-report "SM1 EVENT";
-            elsif ( r.lastAL(EC_AL_EREQ_SM2_IDX_C) = '1' ) then
-               v.lastAL(EC_AL_EREQ_SM2_IDX_C) := '0';
-               if ( ( r.curState = OP ) and ( not DISABLE_RXPDO_G ) ) then
-                  rxPDOTrg <= '1';
-                  if ( (rxPDOTrg and rxPDOAck ) = '1' ) then
-                     v.rxPDOTrg := '0';
-                     v.state    := POLL_IRQ;
+               when TEST =>
+                  if ( REG_IO_TEST_ENABLE_G ) then
+                     testRegisterIO(v, r);
                   else
-                     v.rxPDOTrg := '1';
+                     v.state := INIT;
                   end if;
-               else
-                  v.state                     := DROP_RXPDO;
-               end if;
-            elsif ( r.lastAL(EC_AL_EREQ_WDG_IDX_C) = '1' ) then
-               -- NOTE: we only detect if the watchdog expires if it has ever
-               --       been triggered (by the master) and subsequently expires.
-               --       We cannot clear the watchdog from the PDI interface and
-               --       thus cannot reset it when entering OP state.
-               --       Therefore, if we enter OP state and the watchdog is never petted
-               --       then it never expires (because it already is) and we'll
-               --       never get an event.
-               v.lastAL(EC_AL_EREQ_WDG_IDX_C) := '0';
-               v.state                        := HANDLE_WD_EVENT;
-            else
-               v.state := POLL_AL_EVENT; -- keep polling AL until nothing is pending
-            end if;
 
-         when HANDLE_WD_EVENT =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_WD_PDST_C ) ) );
-            else
-               if ( r.program.seq(0).val(0) = '0' ) then
+               when INIT =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_AL_EMSK_C, r.emask           ),
+                           1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
+                           2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
+                        )
+                     );
+                  else
+                     v.state := UPDATE_AS;
+                  end if;
+
+               when POLL_IRQ =>
+                  -- wait for an interrupt; this leaves the lan9254 HBI alone
+                  if ( irq = EC_IRQ_ACT_C ) then
+                     v.state := POLL_AL_EVENT;
+                  else
+                     -- if we operate in fully polled mode (IRQ permanently asserted)
+                     -- then we never get here; CHECK_TX_WORK is also entered if
+                     -- polling the event status yields no work
+                     v.state := CHECK_TX_WORK;
+                  end if;
+
+               when POLL_AL_EVENT =>
+                  if ( '0' = r.program.don ) then
+                     -- read AL register
+                     scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_EREQ_C ) ) );
+                  else
+                     -- cache AL readback value
+                     v.lastAL := r.program.seq(0).val;
+                     if ( (r.program.seq(0).val and r.emask) = x"0000_0000" ) then
+                        -- no more events pending; maybe there is TX work to do?
+                        v.state  := CHECK_TX_WORK;
+                     else
+                        v.state  := HANDLE_AL_EVENT;
+                     end if;
+                  end if;
+
+               -- ************ NOTE ************
+               -- All events handled here must be
+               -- enabled in EC_REG_AL_EMSK_C
+               -- ******************************
+               when HANDLE_AL_EVENT =>
+                  if    ( r.lastAL(EC_AL_EREQ_CTL_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_CTL_IDX_C) := '0';
+                     v.state                        := READ_AL;
+report "AL  EVENT";
+                  elsif ( r.lastAL(EC_AL_EREQ_EEP_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_EEP_IDX_C) := '0';
+                     v.state                        := EEP_EMUL;
+report "EEP EVENT";
+                  elsif ( r.lastAL(EC_AL_EREQ_SMA_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_SMA_IDX_C) := '0';
+                     v.state                        := SM_ACTIVATION_CHANGED;
+report "SMA EVENT";
+                  elsif ( r.lastAL(EC_AL_EREQ_SM0_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_SM0_IDX_C) := '0';
+                     v.state                        := MBOX_READ;
+                  elsif ( r.lastAL(EC_AL_EREQ_SM1_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_SM1_IDX_C) := '0';
+                     v.state                        := MBOX_SM1;
+report "SM1 EVENT";
+                  elsif ( r.lastAL(EC_AL_EREQ_SM2_IDX_C) = '1' ) then
+                     v.lastAL(EC_AL_EREQ_SM2_IDX_C) := '0';
+                     if ( ( r.curState = OP ) and ( not DISABLE_RXPDO_G ) ) then
+                        rxPDOTrg <= '1';
+                        v.state  := HANDLE_AL_EVENT;
+                     else
+                        v.state  := DROP_RXPDO;
+                     end if;
+                  elsif ( r.lastAL(EC_AL_EREQ_WDG_IDX_C) = '1' ) then
+                     -- NOTE: we only detect if the watchdog expires if it has ever
+                     --       been triggered (by the master) and subsequently expires.
+                     --       We cannot clear the watchdog from the PDI interface and
+                     --       thus cannot reset it when entering OP state.
+                     --       Therefore, if we enter OP state and the watchdog is never petted
+                     --       then it never expires (because it already is) and we'll
+                     --       never get an event.
+                     v.lastAL(EC_AL_EREQ_WDG_IDX_C) := '0';
+                     v.state                        := HANDLE_WD_EVENT;
+                  else
+                     v.state := POLL_AL_EVENT; -- keep polling AL until nothing is pending
+                  end if;
+
+               when HANDLE_WD_EVENT =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact( v, ( 0 => RWXACT( EC_REG_WD_PDST_C ) ) );
+                  else
+                     if ( r.program.seq(0).val(0) = '0' ) then
 report "WATCHDOG EVENT: " & std_logic'image( r.program.seq(0).val(0) );
-                  v.alErr    := EC_ALER_WATCHDOG_C;
-                  v.errSta   := '1';
-                  v.reqState := SAFEOP;
-                  v.state    := UPDATE_AS;
-               else
-                  v.state := HANDLE_AL_EVENT;
-               end if;
-            end if;
+                        v.alErr    := EC_ALER_WATCHDOG_C;
+                        v.errSta   := '1';
+                        v.reqState := SAFEOP;
+                        v.state    := UPDATE_AS;
+                     else
+                        v.state := HANDLE_AL_EVENT;
+                     end if;
+                  end if;
 
-         when READ_AL =>
-            -- read AL control reg
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_CTRL_C ) ) );
-            else
-               v.errAck       := r.program.seq(0).val(4);
-               if ( v.errAck = '1' ) then
-                  v.errSta := '0';
-                  v.errAck := '0';
-                  v.alErr  := EC_ALER_OK_C;
-               end if;
+               when READ_AL =>
+                  -- read AL control reg
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact( v, ( 0 => RWXACT( EC_REG_AL_CTRL_C ) ) );
+                  else
+                     v.errAck       := r.program.seq(0).val(4);
+                     if ( v.errAck = '1' ) then
+                        v.errSta := '0';
+                        v.errAck := '0';
+                        v.alErr  := EC_ALER_OK_C;
+                     end if;
 
-               v.reqState := toESCState(r.program.seq(0).val);
-               if ( v.reqState = INIT ) then
-                  v.errSta := '0'; v.errAck := '0';
-               elsif ( v.reqState = UNKNOWN ) then
-                  assert false report "Invalid state in AL_CTRL: " & integer'image(to_integer(unsigned(r.program.seq(0).val(3 downto 0)))) severity failure;
-                  v.reqState := INIT;
-                  v.errSta   := '1';
-                  v.alErr    := EC_ALER_UNKNOWNSTATE_C;
-               end if;
+                     v.reqState := toESCState(r.program.seq(0).val);
+                     if ( v.reqState = INIT ) then
+                        v.errSta := '0'; v.errAck := '0';
+                     elsif ( v.reqState = UNKNOWN ) then
+                        assert false report "Invalid state in AL_CTRL: " & integer'image(to_integer(unsigned(r.program.seq(0).val(3 downto 0)))) severity failure;
+                        v.reqState := INIT;
+                        v.errSta   := '1';
+                        v.alErr    := EC_ALER_UNKNOWNSTATE_C;
+                     end if;
 
 report "READ_AL " & toString( r.program.seq(0).val ) & " v.errSta " & std_logic'image(v.errSta) & " r.errSta " & std_logic'image(r.errSta);
 report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE " & integer'image(ESCStateType'pos(v.reqState));
-               if ( v.reqState /= r.reqState or v.errSta /= r.errSta ) then
-                  v.state := EVALUATE_TRANSITION;
-               else
-                  v.state := HANDLE_AL_EVENT;
-               end if;
-            end if;
-
-         when EVALUATE_TRANSITION =>
-
-            v.state := UPDATE_AS;
-
-            if ( r.reqState = BOOT ) then
-               if ( r.curState = INIT or r.curState = BOOT ) then
-                  -- retrieve station address # NOT IMPLEMENTED
-                  -- start boot mailbox       # NOT IMPLEMENTED
-               else
-                  if ( r.curState = OP ) then
-                     -- stop output           # FIXME
-                     v.reqState := SAFEOP;
+                     if ( v.reqState /= r.reqState or v.errSta /= r.errSta ) then
+                        v.state := EVALUATE_TRANSITION;
+                     else
+                        v.state := HANDLE_AL_EVENT;
+                     end if;
                   end if;
-                  v.errSta := '1';
-                  v.alErr  := EC_ALER_INVALIDSTATECHANGE_C;
-               end if;
-            elsif ( r.curState = BOOT ) then
-               if ( r.reqState = INIT ) then
-                  -- stop boot mailbox       # NOT IMPLEMENTED
-               else
-                  -- stop boot mailbox       # SOES doesn't do that -- should we?
-                  v.errSta      := '1';
-                  v.reqState    := PREOP;
-                  v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
-               end if;
-            elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >  1 ) then
-                  v.errSta      := '1';
-                  v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
-            elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >= 0 ) then
-               if ( ( r.reqState = PREOP ) and ( r.curState /= PREOP ) ) then
-                  v.txMBXRst    := '0';
-                  v.txMBXReplay := NONE;
-                  v.smDis(1)    := '0';
-                  v.smDis(0)    := '0';
-                  v.state       := CHECK_MBOX;
+
+               when EVALUATE_TRANSITION =>
+
+                  v.state := UPDATE_AS;
+
+                  if ( r.reqState = BOOT ) then
+                     if ( r.curState = INIT or r.curState = BOOT ) then
+                        -- retrieve station address # NOT IMPLEMENTED
+                        -- start boot mailbox       # NOT IMPLEMENTED
+                     else
+                        if ( r.curState = OP ) then
+                           -- stop output           # FIXME
+                           v.reqState := SAFEOP;
+                        end if;
+                        v.errSta := '1';
+                        v.alErr  := EC_ALER_INVALIDSTATECHANGE_C;
+                     end if;
+                  elsif ( r.curState = BOOT ) then
+                     if ( r.reqState = INIT ) then
+                        -- stop boot mailbox       # NOT IMPLEMENTED
+                     else
+                        -- stop boot mailbox       # SOES doesn't do that -- should we?
+                        v.errSta      := '1';
+                        v.reqState    := PREOP;
+                        v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
+                     end if;
+                  elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >  1 ) then
+                        v.errSta      := '1';
+                        v.alErr       := EC_ALER_INVALIDSTATECHANGE_C;
+                  elsif ( ESCStateType'pos( r.reqState ) - ESCStateType'pos( r.curState ) >= 0 ) then
+                     if ( ( r.reqState = PREOP ) and ( r.curState /= PREOP ) ) then
+                        v.txMBXRst    := '0';
+                        v.txMBXReplay := NONE;
+                        v.smDis(1)    := '0';
+                        v.smDis(0)    := '0';
+                        v.state       := CHECK_MBOX;
 report "starting MBOX";
-               elsif ( ( r.reqState = SAFEOP ) ) then
-                  v.smDis(3)    := '0';
-                  v.state       := CHECK_SM;
+                     elsif ( ( r.reqState = SAFEOP ) ) then
+                        v.smDis(3)    := '0';
+                        v.state       := CHECK_SM;
 report "starting SM23";
-               elsif ( ( r.reqState = OP ) and ( r.curState /= OP ) ) then
-                  -- start output            # NOT IMPLEMENTED
-                  v.smDis(2)    := '0';
-                  v.state       := EN_DIS_SM;
-               end if;
-            else -- state downshift
-               if ( ( r.reqState < OP ) and ( r.curState = OP ) ) then
-                  -- stop output             # NOT IMPLEMENTED
-                  v.smDis(2)    := '1';
-               end if;
-               if ( ( r.reqState < SAFEOP ) and ( r.curState >= SAFEOP ) ) then
-                  -- stop input              # NOT IMPLEMENTED
-                  v.smDis(3)    := '1';
-               end if;
-               if ( ( r.reqState < PREOP  ) and ( r.curState >= PREOP  ) ) then
-                  v.txMBXRst    := '1';
-                  v.smDis(1)    := '1';
-                  v.smDis(0)    := '1';
-               end if;
-               v.state := EN_DIS_SM;
-            end if;
-
-         when XACT =>
-            xct := r.program.seq(to_integer(r.program.idx));
-            if ( xct.dis = '0' ) then
-               if ( xct.rdnwr ) then
-                  readReg( v.ctlReq, rep, xct.reg );
-                  if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-                     v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.data;
+                     elsif ( ( r.reqState = OP ) and ( r.curState /= OP ) ) then
+                        -- start output            # NOT IMPLEMENTED
+                        v.smDis(2)    := '0';
+                        v.state       := EN_DIS_SM;
+                     end if;
+                  else -- state downshift
+                     if ( ( r.reqState < OP ) and ( r.curState = OP ) ) then
+                        -- stop output             # NOT IMPLEMENTED
+                        v.smDis(2)    := '1';
+                     end if;
+                     if ( ( r.reqState < SAFEOP ) and ( r.curState >= SAFEOP ) ) then
+                        -- stop input              # NOT IMPLEMENTED
+                        v.smDis(3)    := '1';
+                     end if;
+                     if ( ( r.reqState < PREOP  ) and ( r.curState >= PREOP  ) ) then
+                        v.txMBXRst    := '1';
+                        v.smDis(1)    := '1';
+                        v.smDis(0)    := '1';
+                        if ( r.hbiState = SM0 ) then
+                           v.hbiState := NONE;
+                        end if;
+                     end if;
+                     v.state := EN_DIS_SM;
                   end if;
-               else
+
+               when XACT =>
+                  xct := r.program.seq(to_integer(r.program.idx));
+                  if ( xct.dis = '0' ) then
+                     if ( xct.rdnwr ) then
+                        readReg( v.ctlReq, rep, xct.reg );
+                        if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+                           v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.data;
+                        end if;
+                     else
 --report "WRITE " & integer'image(to_integer(unsigned(xct.reg.addr))) & " " & integer'image(to_integer(signed(xct.val)));
-                  writeReg( v.ctlReq, rep, xct.reg, xct.val );
-               end if;
-            end if;
-            if ( ( ( r.ctlReq.valid and rep.valid ) or xct.dis  ) = '1' ) then
-               v.ctlReq.valid := '0';
-               if ( r.program.idx = r.program.num ) then
-                  v.state        := r.program.ret;
-                  v.program.don  := '1';
-               else
-                  v.program.idx  := r.program.idx + 1;
-               end if;
-            end if;
+                        writeReg( v.ctlReq, rep, xct.reg, xct.val );
+                     end if;
+                  end if;
+                  if ( ( ( r.ctlReq.valid and rep.valid ) or xct.dis  ) = '1' ) then
+                     v.ctlReq.valid := '0';
+                     if ( r.program.idx = r.program.num ) then
+                        v.state        := r.program.ret;
+                        v.program.don  := '1';
+                     else
+                        v.program.idx  := r.program.idx + 1;
+                     end if;
+                  end if;
 
-         when UPDATE_AS =>
-            if ( '0' = r.program.don ) then
-               val(4)          := r.errSta;
-               val(3 downto 0) := toSlv( r.reqState );
+               when UPDATE_AS =>
+                  if ( '0' = r.program.don ) then
+                     val(4)          := r.errSta;
+                     val(3 downto 0) := toSlv( r.reqState );
 report "entering UPDATE_AS " & toString( val );
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_AL_STAT_C, val     ),
-                     1 => RWXACT( EC_REG_AL_ERRO_C, r.alErr )
-                  )
-               );
-            else
-               -- handle state transitions
-               report "Transition from " & integer'image(ESCStateType'pos(r.curState)) & " => " & integer'image(ESCStateType'pos(r.reqState));
-               v.curState := r.reqState;
-               v.state    := POLL_IRQ;
-            end if;
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_AL_STAT_C, val     ),
+                           1 => RWXACT( EC_REG_AL_ERRO_C, r.alErr )
+                        )
+                     );
+                  else
+                     -- handle state transitions
+                     report "Transition from " & integer'image(ESCStateType'pos(r.curState)) & " => " & integer'image(ESCStateType'pos(r.reqState));
+                     v.curState := r.reqState;
+                     v.state    := POLL_IRQ;
+                  end if;
 
-         when CHECK_SM =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_SM_PSA_F(2) ),
-                     1 => RWXACT( EC_REG_SM_LEN_F(2) ),
-                     2 => RWXACT( EC_REG_SM_CTL_F(2) ),
-                     3 => RWXACT( EC_REG_SM_ACT_F(2) ),
-                     4 => RWXACT( EC_REG_SM_PSA_F(3) ),
-                     5 => RWXACT( EC_REG_SM_LEN_F(3) ),
-                     6 => RWXACT( EC_REG_SM_CTL_F(3) ),
-                     7 => RWXACT( EC_REG_SM_ACT_F(3) )
-                  )
-               );
-            else
-               v.state             := CHECK_MBOX;
-               v.rptAck(2)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
-               v.smDis (2)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
-               v.rptAck(3)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
-               v.smDis (3)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
+               when CHECK_SM =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_SM_PSA_F(2) ),
+                           1 => RWXACT( EC_REG_SM_LEN_F(2) ),
+                           2 => RWXACT( EC_REG_SM_CTL_F(2) ),
+                           3 => RWXACT( EC_REG_SM_ACT_F(2) ),
+                           4 => RWXACT( EC_REG_SM_PSA_F(3) ),
+                           5 => RWXACT( EC_REG_SM_LEN_F(3) ),
+                           6 => RWXACT( EC_REG_SM_CTL_F(3) ),
+                           7 => RWXACT( EC_REG_SM_ACT_F(3) )
+                        )
+                     );
+                  else
+                     v.state             := CHECK_MBOX;
+                     v.rptAck(2)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+                     v.smDis (2)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
+                     v.rptAck(3)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
+                     v.smDis (3)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
 
-               if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
-                       and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
-                       and ( ESC_SM2_LEN_C     =  r.program.seq(1).val(ESC_SM2_LEN_C'range) )
-                       and ( ESC_SM2_SMC_C     =  r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
-               ) then
-                  -- PASSED CHECK
-               else
+                     if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                         or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
+                             and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
+                             and ( ESC_SM2_LEN_C     =  r.program.seq(1).val(ESC_SM2_LEN_C'range) )
+                             and ( ESC_SM2_SMC_C     =  r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
+                     ) then
+                        -- PASSED CHECK
+                     else
 report "CHECK SM2 FAILED ACT: " & integer'image(to_integer( unsigned( r.program.seq(3).val ) ))
-       & " PSA " & integer'image(to_integer( unsigned( r.program.seq(0).val ) ))
-       & " LEN " & integer'image(to_integer( unsigned( r.program.seq(1).val ) ))
-       & " CTL " & integer'image(to_integer( unsigned( r.program.seq(2).val ) ))
+             & " PSA " & integer'image(to_integer( unsigned( r.program.seq(0).val ) ))
+             & " LEN " & integer'image(to_integer( unsigned( r.program.seq(1).val ) ))
+             & " CTL " & integer'image(to_integer( unsigned( r.program.seq(2).val ) ))
 severity warning;
-                  v.smDis(3 downto 2) := (others => '1');
-                  v.reqState          := PREOP;
-                  v.errSta            := '1';
-                  v.alErr             := EC_ALER_INVALIDOUTPUTSM_C;
-               end if;
-               if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
-                       and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
-                       and ( ESC_SM3_LEN_C     =  r.program.seq(5).val(ESC_SM3_LEN_C'range) )
-                       and ( ESC_SM3_SMC_C     =  r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
-               ) then
-                  -- PASSED CHECK
-               else
+                        v.smDis(3 downto 2) := (others => '1');
+                        v.reqState          := PREOP;
+                        v.errSta            := '1';
+                        v.alErr             := EC_ALER_INVALIDOUTPUTSM_C;
+                     end if;
+                     if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                         or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
+                             and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
+                             and ( ESC_SM3_LEN_C     =  r.program.seq(5).val(ESC_SM3_LEN_C'range) )
+                             and ( ESC_SM3_SMC_C     =  r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
+                     ) then
+                        -- PASSED CHECK
+                     else
 report "CHECK SM3 FAILED"
 severity warning;
-                  v.smDis(3 downto 2) := (others => '1');
-                  v.reqState          := PREOP;
-                  v.errSta            := '1';
-                  v.alErr             := EC_ALER_INVALIDINPUTSM_C;
-               end if;
-            end if;
+                        v.smDis(3 downto 2) := (others => '1');
+                        v.reqState          := PREOP;
+                        v.errSta            := '1';
+                        v.alErr             := EC_ALER_INVALIDINPUTSM_C;
+                     end if;
+                  end if;
 
-         when CHECK_MBOX =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_SM_PSA_F(0) ),
-                     1 => RWXACT( EC_REG_SM_LEN_F(0) ),
-                     2 => RWXACT( EC_REG_SM_CTL_F(0) ),
-                     3 => RWXACT( EC_REG_SM_ACT_F(0) ),
-                     4 => RWXACT( EC_REG_SM_PSA_F(1) ),
-                     5 => RWXACT( EC_REG_SM_LEN_F(1) ),
-                     6 => RWXACT( EC_REG_SM_CTL_F(1) ),
-                     7 => RWXACT( EC_REG_SM_ACT_F(1) )
-                  )
-               );
-            else
-               v.state             := EN_DIS_SM;
-               v.rptAck(0)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
-               v.smDis (0)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
-               v.rptAck(1)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
-               v.smDis (1)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
-               if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
-                       and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
-                       and ( ESC_SM0_LEN_C     =  r.program.seq(1).val(ESC_SM0_LEN_C'range) )
-                       and ( ESC_SM0_SMC_C     =  r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
-               ) then
-                  -- PASSED CHECK
-               else
+               when CHECK_MBOX =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_SM_PSA_F(0) ),
+                           1 => RWXACT( EC_REG_SM_LEN_F(0) ),
+                           2 => RWXACT( EC_REG_SM_CTL_F(0) ),
+                           3 => RWXACT( EC_REG_SM_ACT_F(0) ),
+                           4 => RWXACT( EC_REG_SM_PSA_F(1) ),
+                           5 => RWXACT( EC_REG_SM_LEN_F(1) ),
+                           6 => RWXACT( EC_REG_SM_CTL_F(1) ),
+                           7 => RWXACT( EC_REG_SM_ACT_F(1) )
+                        )
+                     );
+                  else
+                     v.state             := EN_DIS_SM;
+                     v.rptAck(0)         := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+                     v.smDis (0)         := not r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C);
+                     v.rptAck(1)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
+                     v.smDis (1)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
+                     if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                         or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
+                             and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
+                             and ( ESC_SM0_LEN_C     =  r.program.seq(1).val(ESC_SM0_LEN_C'range) )
+                             and ( ESC_SM0_SMC_C     =  r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
+                     ) then
+                        -- PASSED CHECK
+                     else
 report "CHECK SM0 FAILED ACT: " & integer'image(to_integer( unsigned( r.program.seq(3).val ) ))
-       & " PSA " & integer'image(to_integer( unsigned( r.program.seq(0).val ) ))
-       & " LEN " & integer'image(to_integer( unsigned( r.program.seq(1).val ) ))
-       & " CTL " & integer'image(to_integer( unsigned( r.program.seq(2).val ) ))
+             & " PSA " & integer'image(to_integer( unsigned( r.program.seq(0).val ) ))
+             & " LEN " & integer'image(to_integer( unsigned( r.program.seq(1).val ) ))
+             & " CTL " & integer'image(to_integer( unsigned( r.program.seq(2).val ) ))
 severity warning;
-                  v.smDis(1 downto 0) := (others => '1');
-                  v.reqState          := INIT;
-                  v.errSta            := '1';
-                  v.alErr             := EC_ALER_INVALIDMBXCONFIG_C;
-               end if;
-               if (   ( (ESC_SM1_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM1_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
-                       and ( ESC_SM1_SMA_C     =  r.program.seq(4).val(ESC_SM1_SMA_C'range) )
-                       and ( ESC_SM1_LEN_C     =  r.program.seq(5).val(ESC_SM1_LEN_C'range) )
-                       and ( ESC_SM1_SMC_C     =  r.program.seq(6).val(ESC_SM1_SMC_C'range) ) )
-               ) then
-                  -- PASSED CHECK
-               else
+                        v.smDis(1 downto 0) := (others => '1');
+                        v.reqState          := INIT;
+                        v.errSta            := '1';
+                        v.alErr             := EC_ALER_INVALIDMBXCONFIG_C;
+                     end if;
+                     if (   ( (ESC_SM1_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+                         or (    ( (ESC_SM1_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
+                             and ( ESC_SM1_SMA_C     =  r.program.seq(4).val(ESC_SM1_SMA_C'range) )
+                             and ( ESC_SM1_LEN_C     =  r.program.seq(5).val(ESC_SM1_LEN_C'range) )
+                             and ( ESC_SM1_SMC_C     =  r.program.seq(6).val(ESC_SM1_SMC_C'range) ) )
+                     ) then
+                        -- PASSED CHECK
+                     else
 report "CHECK SM1 FAILED"
 severity warning;
-                  v.smDis(1 downto 0) := (others => '1');
-                  v.reqState          := INIT;
-                  v.errSta            := '1';
-                  v.alErr             := EC_ALER_INVALIDMBXCONFIG_C;
-               end if;
-            end if;
-
-         when EN_DIS_SM =>
-            if ( '0' = r.program.don ) then
-               v.emask( EC_AL_EREQ_SM0_IDX_C ) := not r.smDis(0);
-               v.emask( EC_AL_EREQ_SM1_IDX_C ) := not r.smDis(1);
-               v.emask( EC_AL_EREQ_SM2_IDX_C ) := not r.smDis(2);
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_AL_EMSK_C  , v.emask                  ),
-                     1 => RWXACT( EC_REG_SM_PDI_F(0), r.rptAck(0) & r.smDis(0) ),
-                     2 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) ),
-                     3 => RWXACT( EC_REG_SM_PDI_F(2), r.rptAck(2) & r.smDis(2) ),
-                     4 => RWXACT( EC_REG_SM_PDI_F(3), r.rptAck(3) & r.smDis(3) )
-                  )
-               );
-            else
-               v.state := UPDATE_AS;               
-            end if;
-
-         when SM_ACTIVATION_CHANGED =>
-
-            report "SM_ACTIVATION_CHANGED";
-            report "CurState " & integer'image(ESCStateType'pos(r.curState)) & " ReqState " & integer'image(ESCStateType'pos(r.reqState));
-            report "last AL  " & toString( r.lastAL );
-
-              
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_SM_ACT_F(0) ),
-                     1 => RWXACT( EC_REG_SM_ACT_F(1) ),
-                     2 => RWXACT( EC_REG_SM_ACT_F(2) ),
-                     3 => RWXACT( EC_REG_SM_ACT_F(3) ),
-                     4 => RWXACT( EC_REG_SM_ACT_F(4) ),
-                     5 => RWXACT( EC_REG_SM_ACT_F(5) ),
-                     6 => RWXACT( EC_REG_SM_ACT_F(6) ),
-                     7 => RWXACT( EC_REG_SM_ACT_F(7) )
-                  )
-               );
-            else
-               for i in 0 to 7 loop
-                  report "SM " & integer'image(i) & " active: " & std_logic'image(r.program.seq(i).val(0));
-               end loop;
-               v.state      := HANDLE_AL_EVENT;
-               v.rptAck(0)  := r.program.seq(0).val(EC_SM_ACT_RPT_IDX_C);
-               v.rptAck(1)  := r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C);
-               v.rptAck(2)  := r.program.seq(2).val(EC_SM_ACT_RPT_IDX_C);
-               v.rptAck(3)  := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
-               if (    ( r.program.seq(0).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(0) )
-                    or ( r.program.seq(1).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(1) )
-                    or ( r.program.seq(2).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(2) )
-                    or ( r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(3) )
-                  ) then
-                  if ( r.curState = SAFEOP or r.curState = OP ) then
-                     v.state := CHECK_SM;
-                  elsif ( r.curState = PREOP ) then
-                     v.state := CHECK_MBOX;
-                  end if;
-               elsif ( r.curState /= INIT and ( r.rptAck(1) /= r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C) ) ) then
-                  -- send REPEAT REQ.
-                  if ( txMBXBufHaveBup ) then
-                     -- reset; we toggle after we are done resending
-                     v.rptAck(1)       := r.rptAck(1);
-
-                     v.state           := TXMBX_REPLAY;
-                     if ( txMBXBufWRdy = '0' ) then
-                        -- last buffer send has not been ACKed yet
-                        v.txMBXReplay  := SAVE_BUF;
-                     else
-                        v.txMBXReplay  := NORMAL;
+                        v.smDis(1 downto 0) := (others => '1');
+                        v.reqState          := INIT;
+                        v.errSta            := '1';
+                        v.alErr             := EC_ALER_INVALIDMBXCONFIG_C;
                      end if;
-                     v.txMBXMRep       := '1';
                   end if;
-               end if;
-            end if;
 
-         when EEP_EMUL =>
-            if ( '0' = r.program.don ) then
-               -- read CSR last; we keep it in the same position;
-               -- in case of a READ command it must be written last!
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_EEP_DLO_C ),
-                     1 => RWXACT( EC_REG_EEP_ADR_C ),
-                     2 => RWXACT( EC_REG_EEP_CSR_C )
-                  )
-               );
-            else
-               case r.program.seq(2).val(10 downto 8) is
-                  when EEPROM_WRITE_C =>
+               when EN_DIS_SM =>
+                  if ( '0' = r.program.don ) then
+                     v.emask( EC_AL_EREQ_SM0_IDX_C ) := not r.smDis(0);
+                     v.emask( EC_AL_EREQ_SM1_IDX_C ) := not r.smDis(1);
+                     v.emask( EC_AL_EREQ_SM2_IDX_C ) := not r.smDis(2);
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_AL_EMSK_C  , v.emask                  ),
+                           1 => RWXACT( EC_REG_SM_PDI_F(0), r.rptAck(0) & r.smDis(0) ),
+                           2 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) ),
+                           3 => RWXACT( EC_REG_SM_PDI_F(2), r.rptAck(2) & r.smDis(2) ),
+                           4 => RWXACT( EC_REG_SM_PDI_F(3), r.rptAck(3) & r.smDis(3) )
+                        )
+                     );
+                  else
+                     v.state := UPDATE_AS;               
+                  end if;
+
+               when SM_ACTIVATION_CHANGED =>
+
+                  report "SM_ACTIVATION_CHANGED";
+                  report "CurState " & integer'image(ESCStateType'pos(r.curState)) & " ReqState " & integer'image(ESCStateType'pos(r.reqState));
+                  report "last AL  " & toString( r.lastAL );
+
+                    
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_SM_ACT_F(0) ),
+                           1 => RWXACT( EC_REG_SM_ACT_F(1) ),
+                           2 => RWXACT( EC_REG_SM_ACT_F(2) ),
+                           3 => RWXACT( EC_REG_SM_ACT_F(3) ),
+                           4 => RWXACT( EC_REG_SM_ACT_F(4) ),
+                           5 => RWXACT( EC_REG_SM_ACT_F(5) ),
+                           6 => RWXACT( EC_REG_SM_ACT_F(6) ),
+                           7 => RWXACT( EC_REG_SM_ACT_F(7) )
+                        )
+                     );
+                  else
+                     for i in 0 to 7 loop
+                        report "SM " & integer'image(i) & " active: " & std_logic'image(r.program.seq(i).val(0));
+                     end loop;
+                     v.state      := HANDLE_AL_EVENT;
+                     v.rptAck(0)  := r.program.seq(0).val(EC_SM_ACT_RPT_IDX_C);
+                     v.rptAck(1)  := r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C);
+                     v.rptAck(2)  := r.program.seq(2).val(EC_SM_ACT_RPT_IDX_C);
+                     v.rptAck(3)  := r.program.seq(3).val(EC_SM_ACT_RPT_IDX_C);
+                     if (    ( r.program.seq(0).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(0) )
+                          or ( r.program.seq(1).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(1) )
+                          or ( r.program.seq(2).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(2) )
+                          or ( r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) /= not r.smDis(3) )
+                        ) then
+                        if ( r.curState = SAFEOP or r.curState = OP ) then
+                           v.state := CHECK_SM;
+                        elsif ( r.curState = PREOP ) then
+                           v.state := CHECK_MBOX;
+                        end if;
+                     elsif ( r.curState /= INIT and ( r.rptAck(1) /= r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C) ) ) then
+                        -- send REPEAT REQ.
+                        if ( txMBXBufHaveBup ) then
+                           -- reset; we toggle after we are done resending
+                           v.rptAck(1)       := r.rptAck(1);
+
+                           v.state           := TXMBX_REPLAY;
+                           if ( txMBXBufWRdy = '0' ) then
+                              -- last buffer send has not been ACKed yet
+                              v.txMBXReplay  := SAVE_BUF;
+                           else
+                              v.txMBXReplay  := NORMAL;
+                           end if;
+                           v.txMBXMRep       := '1';
+                        end if;
+                     end if;
+                  end if;
+
+               when EEP_EMUL =>
+                  if ( '0' = r.program.don ) then
+                     -- read CSR last; we keep it in the same position;
+                     -- in case of a READ command it must be written last!
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_EEP_DLO_C ),
+                           1 => RWXACT( EC_REG_EEP_ADR_C ),
+                           2 => RWXACT( EC_REG_EEP_CSR_C )
+                        )
+                     );
+                  else
+                     case r.program.seq(2).val(10 downto 8) is
+                        when EEPROM_WRITE_C =>
 --DONX                     writeEEPROMEmul( eeprom, r.program.seq(1).val, r.program.seq(0).val );
-                     v.state := EEP_WRITE;
+                           v.state := EEP_WRITE;
 
-                  when EEPROM_READ_C | EEPROM_RELD_C  =>
-                     readEEPROMEmul( eeprom, r.program.seq(1).val, v.program.seq(0).val, v.program.seq(1).val );
-                     v.state := EEP_READ;
+                        when EEPROM_READ_C | EEPROM_RELD_C  =>
+                           readEEPROMEmul( eeprom, r.program.seq(1).val, v.program.seq(0).val, v.program.seq(1).val );
+                           v.state := EEP_READ;
 
-                  when others  =>
-                     report "UNSUPPORTED EE EMULATION COMMAND " & integer'image(to_integer(unsigned(r.program.seq(2).val)))
-                        severity warning;
+                        when others  =>
+                           report "UNSUPPORTED EE EMULATION COMMAND " & integer'image(to_integer(unsigned(r.program.seq(2).val)))
+                              severity warning;
+                           v.state := HANDLE_AL_EVENT;
+                     end case;
+                  end if;
+
+              when EEP_WRITE =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val ) ) );
+                  else
                      v.state := HANDLE_AL_EVENT;
-               end case;
-            end if;
-
-        when EEP_WRITE =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val ) ) );
-            else
-               v.state := HANDLE_AL_EVENT;
-            end if;
-                     
-        when EEP_READ =>
-            if ( '0' = r.program.don ) then
+                  end if;
+                           
+              when EEP_READ =>
+                  if ( '0' = r.program.don ) then
 --report "EEP_READ CSR" & integer'image(to_integer(signed(r.program.seq(0).val)));
 --report "         VLO" & integer'image(to_integer(signed(r.program.seq(1).val)));
 --report "         VHI" & integer'image(to_integer(signed(r.program.seq(2).val)));
-               -- the EEPROM contents are now in r.program.seq(1/2).val
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_EEP_DLO_C, r.program.seq(0).val ),
-                     1 => RWXACT( EC_REG_EEP_DHI_C, r.program.seq(1).val ),
-                     2 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val )
-                  )
-               );
-            else
-               v.state := HANDLE_AL_EVENT;
-            end if;
+                     -- the EEPROM contents are now in r.program.seq(1/2).val
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_EEP_DLO_C, r.program.seq(0).val ),
+                           1 => RWXACT( EC_REG_EEP_DHI_C, r.program.seq(1).val ),
+                           2 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val )
+                        )
+                     );
+                  else
+                     v.state := HANDLE_AL_EVENT;
+                  end if;
 
 
-         when CHECK_TX_WORK =>
+               when CHECK_TX_WORK =>
 
-            v.state := POLL_IRQ;
-            -- maybe the TXPDO or MBX needs to be updated ?
-            if (    ( r.curState = SAFEOP or r.curState = OP )
-                and ( ESC_SM3_ACT_C  = '1'                      )
-                and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
-                and ( r.txPDODcm     = 0                        )
-                and ( txPDOMst.valid = '1'                      )
-               ) then
-               v.txPDOBst :=  TXPDO_BURST_MAX_C;
-               v.txPDORdy := '1';
-               v.state    := UPDATE_TXPDO;
-            elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
+                  v.state := POLL_IRQ;
+                  -- maybe the TXPDO or MBX needs to be updated ?
+                  if (    ( r.curState = SAFEOP or r.curState = OP )
+                      and ( ESC_SM3_ACT_C  = '1'                      )
+                      and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
+                      and ( r.txPDODcm     = 0                        )
+                      and ( txPDOMst.valid = '1'                      )
+                     ) then
+                     v.txPDOBst :=  TXPDO_BURST_MAX_C;
+                     v.txPDORdy := '1';
+                     v.state    := UPDATE_TXPDO;
+                  elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
 report "post MBOX";
-               -- master has data, mailbox buffer can accept data and is running
-               -- => start mailbox TX
+                     -- master has data, mailbox buffer can accept data and is running
+                     -- => start mailbox TX
 
-               -- enable latching the payload length into the buffer memory
-               v.txMBXLEna    := '1';
-               -- initially, we assume the message covers the full length of the mailbox
-               -- so that if this is indeed true when the last word is written (which triggers
-               -- the SM) everything is fine. If OTOH, it turns out that the message is shorter
-               -- then we can re-adjust the length in the header later since writing the last
-               -- byte has not triggered the SM yet.
-               v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
-               -- cannot accept data yet (write header first)
-               v.txMBXRdy     := '0';
-               -- reset address pointer, last and overrun flags
-               v.txMBXWAddr   :=  0 ;
-               v.txMBXLast    := '0';
-               v.txMBXOverrun := '0';
-               -- byte-enables are computed on the fly; almost always the full width
-               -- is used; only if the last payload byte is the second-last byte of
-               -- the mailbox then we have to be careful to avoid triggering the SM
-               -- (so the correct length can be re-written). Only in that special case
-               -- is the 'be' reduced to a single lane.
-               v.ctlReq.be    := HBI_BE_W0_C;
-               -- enable latching the mailbox type (from the master interface)
-               v.txMBXTEna    := '1';
-               v.state        := TXMBX_SEND;
-            end if;
+                     -- enable latching the payload length into the buffer memory
+                     v.txMBXLEna    := '1';
+                     -- initially, we assume the message covers the full length of the mailbox
+                     -- so that if this is indeed true when the last word is written (which triggers
+                     -- the SM) everything is fine. If OTOH, it turns out that the message is shorter
+                     -- then we can re-adjust the length in the header later since writing the last
+                     -- byte has not triggered the SM yet.
+                     v.txMBXLen     := to_unsigned(2*TXMBX_PAYLOAD_MAXWORDS_C, v.txMBXLen'length);
+                     -- cannot accept data yet (write header first)
+                     v.txMBXRdy     := '0';
+                     -- reset address pointer, last and overrun flags
+                     v.txMBXWAddr   :=  0 ;
+                     v.txMBXLast    := '0';
+                     v.txMBXOverrun := '0';
+                     -- byte-enables are computed on the fly; almost always the full width
+                     -- is used; only if the last payload byte is the second-last byte of
+                     -- the mailbox then we have to be careful to avoid triggering the SM
+                     -- (so the correct length can be re-written). Only in that special case
+                     -- is the 'be' reduced to a single lane.
+                     v.ctlReq.be    := HBI_BE_W0_C;
+                     -- enable latching the mailbox type (from the master interface)
+                     v.txMBXTEna    := '1';
+                     v.state        := TXMBX_SEND;
+                  end if;
 
-         when DROP_RXPDO =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_RXPDO_L_C )
-                  )
-               );
-            else
-               v.state := HANDLE_AL_EVENT;
-            end if;
+               when DROP_RXPDO =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_RXPDO_L_C )
+                        )
+                     );
+                  else
+                     v.state := HANDLE_AL_EVENT;
+                  end if;
 
-         when UPDATE_TXPDO =>
-            if ( r.txPDORdy = '1' ) then
+               when UPDATE_TXPDO =>
+                  if ( r.txPDORdy = '1' ) then
 
-               -- write to RXPDO pending
-               if ( txPDOMst.valid  = '1' ) then
-                  v.txPDORdy := '0';
+                     -- write to RXPDO pending
+                     if ( txPDOMst.valid  = '1' ) then
+                        v.txPDORdy := '0';
 
 if ( r.decim = 0 ) then
 report "UPDATE_TXPDO " & toString(std_logic_vector(txPDOMst.wrdAddr)) & " LST: " & std_logic'image(txPDOMst.last) & " BEN " & toString(txPDOMst.ben) & " DAT " & toString(txPDOMst.data);
@@ -1129,322 +1137,315 @@ else
 v.decim := r.decim - 1;
 end if;
 
-                  if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
-                     v.ctlReq.addr := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
-                     v.ctlReq.data := ( x"0000" & txPDOMst.data );
-                     v.ctlReq.be   := HBI_BE_W0_C;
+                        if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
+                           v.ctlReq.addr := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
+                           v.ctlReq.data := ( x"0000" & txPDOMst.data );
+                           v.ctlReq.be   := HBI_BE_W0_C;
 
-                     if ( txPDOMst.ben(0) = '0' ) then
-                        v.ctlReq.be(0) := not HBI_BE_ACT_C;
-                     end if;
+                           if ( txPDOMst.ben(0) = '0' ) then
+                              v.ctlReq.be(0) := not HBI_BE_ACT_C;
+                           end if;
 
-                     -- if last byte make sure proper byte-enable is deasserted
-                     if (    ( txPDOMst.ben(1) = '0'       )
-                          or (    ( ESC_SM3_HACK_LEN_C(0) = '1' )
-                              and ( txPDOMst.wrdAddr      = SM3_WADDR_END_C )
-                             )
-                        ) then
-                        v.ctlReq.be(1) := not HBI_BE_ACT_C;
+                           -- if last byte make sure proper byte-enable is deasserted
+                           if (    ( txPDOMst.ben(1) = '0'       )
+                                or (    ( ESC_SM3_HACK_LEN_C(0) = '1' )
+                                    and ( txPDOMst.wrdAddr      = SM3_WADDR_END_C )
+                                   )
+                              ) then
+                              v.ctlReq.be(1) := not HBI_BE_ACT_C;
+                           end if;
+                        else 
+                           -- illegal address; drop
+                           if ( r.txPDOBst = 0 ) then
+                              v.state := POLL_IRQ;
+                           else
+                              v.txPDORdy := '1';
+                              v.txPDOBst := r.txPDOBst - 1;
+                           end if;
+                        end if;
+                     else
+                        -- nothing to send ATM
+                        v.state    := POLL_IRQ;
+                        v.txPDOBst := 0;
+                        v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
                      end if;
-                  else 
-                     -- illegal address; drop
+                  elsif ( '1' = r.program.don ) then
+                     -- write to lan9254 done
+                     if ( r.txPDOSnt = ( ( to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) / 2 ) ) then
+                        v.txPDOSnt := 0;
+                        v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
+                     else
+                        v.txPDOSnt := r.txPDOSnt + 1;
+                     end if;
                      if ( r.txPDOBst = 0 ) then
                         v.state := POLL_IRQ;
                      else
                         v.txPDORdy := '1';
                         v.txPDOBst := r.txPDOBst - 1;
                      end if;
+                  else
+                     -- => initiate lan9254 register write operation
+
+                     scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.data ) ) );
+
                   end if;
-               else
-                  -- nothing to send ATM
-                  v.state    := POLL_IRQ;
-                  v.txPDOBst := 0;
-                  v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
-               end if;
-            elsif ( '1' = r.program.don ) then
-               -- write to lan9254 done
-               if ( r.txPDOSnt = ( ( to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) / 2 ) ) then
-                  v.txPDOSnt := 0;
-                  v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
-               else
-                  v.txPDOSnt := r.txPDOSnt + 1;
-               end if;
-               if ( r.txPDOBst = 0 ) then
-                  v.state := POLL_IRQ;
-               else
-                  v.txPDORdy := '1';
-                  v.txPDOBst := r.txPDOBst - 1;
-               end if;
-            else
-               -- => initiate lan9254 register write operation
 
-               scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.data ) ) );
-
-            end if;
-
-         when MBOX_READ =>
-            if ( r.rxMBXTrg = '1' ) then
-               if ( rxMBXAck = '1' ) then
-                  v.rxMBXTrg := '0';
-                  v.state    := POLL_IRQ;
-               end if;
-            elsif ( '0' = r.program.don ) then
-               scheduleRegXact( v,
-                  (
-                     0 => RWXACT( EC_REG_SM_STA_F( 0 )                  ),
-                     1 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0000") ),
-                     2 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0002") ),
-                     3 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0004") )
-                  )
-               );
-            else
+               when MBOX_READ =>
+                  if    ( '0' = r.program.don ) then
+                     scheduleRegXact( v,
+                        (
+                           0 => RWXACT( EC_REG_SM_STA_F( 0 )                  ),
+                           1 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0000") ),
+                           2 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0002") ),
+                           3 => RWXACT( EC_WORD_REG_F(ESC_SM0_SMA_C, x"0004") )
+                        )
+                     );
+                  else
 
 report  "RX-MBX Header: len "
-       & toString(r.program.seq(1).val(15 downto 0))
-       & ", cnt "
-       & toString(r.program.seq(3).val(15 downto 12))
-       & ", typ "
-       & toString(r.program.seq(3).val(11 downto  8))
-       & ", pri/channel "
-       & toString(r.program.seq(3).val( 7 downto  0))
+             & toString(r.program.seq(1).val(15 downto 0))
+             & ", cnt "
+             & toString(r.program.seq(3).val(15 downto 12))
+             & ", typ "
+             & toString(r.program.seq(3).val(11 downto  8))
+             & ", pri/channel "
+             & toString(r.program.seq(3).val( 7 downto  0))
 ;
-               v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
-               v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
-               v.rxMBXTyp := r.program.seq(3).val(11 downto 8);
-               if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
-                    or v.rxMBXLen < MBX_HDR_SIZE_C ) then
-                  v.state    := HANDLE_AL_EVENT;
-                  if ( v.mbxErr.vld = '0' ) then
-                     v.mbxErr.code := MBX_ERR_CODE_INVALIDSIZE_C;
-                     v.mbxErr.vld  := '1';
-                  end if;
-               elsif ( ( v.rxMBXCnt /= "000" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
-                  -- redundant  transmission; drop
-                  v.state           := SM0_RELEASE;
-               elsif (    ( ENABLE_EOE_G and ( MBX_TYP_EOE_C = v.rxMBXTyp ) )
-                       or ( ENABLE_VOE_G and ( MBX_TYP_VOE_C = v.rxMBXTyp ) )
-                     ) then
-                  rxMBXTrg <= '1';
-                  if ( ( rxMBXTrg and rxMBXAck ) = '1' ) then
-                     v.rxMBXTrg := '0';
-                     v.state    := POLL_IRQ;
-                  else
-                     v.rxMBXTrg := '1';
-                  end if;
-               else
-                  v.state    := SM0_RELEASE;
-                  if ( v.mbxErr.vld = '0' ) then
-                     v.mbxErr.code := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
-                     v.mbxErr.vld  := '1';
-                  end if;
-               end if;
-            end if;
-
-         when SM0_RELEASE =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( unsigned(EC_REG_RXMBX_L_C.addr), HBI_BE_B0_C ) ) );
-            else
-               v.state := HANDLE_AL_EVENT;
-            end if;
- 
-         when MBOX_SM1 =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v,
-                  (
-                     0 => RWXACT( EC_REG_SM_STA_F( 1 )                ),
-                     1 => RWXACT( EC_WORD_REG_F(ESC_SM1_SMA_C, x"0000"), x"fafa" )
-                  )
-               );
-            else
-report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
-               v.txMBXMAck := '1';
-               if ( r.txMBXReplay = RESEND_BUF ) then
-                  -- txMBXAck restores the buffer that has been previously written
-                  -- but had not been acked by the master when we received a repeat request
-                  v.state := TXMBX_REPLAY;
-               else
-                  v.state := HANDLE_AL_EVENT;
-               end if;
-            end if;
-
-         when TXMBX_SEND =>
-            HANDLE_TXMBX : if ( r.txMBXRdy = '1' ) then
-               -- this case handles reading the txMBXMst stream into 
-               -- the ESCTxMbxBuf buffer memory
-               if ( txMBXMst.valid = '1' ) then
-                  if ( r.txMBXOverrun = '0' ) then
-                     -- stop the input stream until the current word
-                     -- has also been written into the LAN9254
-                     v.txMBXRdy    := '0';
-                     -- remember the 'last' flag
-                     v.txMBXLast   := txMBXMst.last;
-                     v.ctlReq.be   := HBI_BE_W0_C;
-                     -- honor the byte-enable (we look at the hi-byte only)
-                     -- this is only relevant for the very last byte. If the
-                     -- message is just one byte short of the full mailbox
-                     -- capacity then writing one byte beyond the message length
-                     -- would trigger the sync-manager and we don't want that
-                     -- to happen since we first must write the correct length
-                     -- to the message header.
-                     -- It also doesn't matter if we write the high-byte to the
-                     -- buffer memory -- but the 'be' we set here is later
-                     -- used by the HBI write-cycle where it matters (A).
-                     if ( txMBXMst.ben(1) = '0' ) then
-                        v.ctlReq.be(1) := not HBI_BE_ACT_C;
-                     end if;
-                  elsif ( txMBXMst.last = '1' ) then
-                     -- ERROR RETURN (overrun drained)
-                     v.state := POLL_IRQ;
-                     v.txMBXRdy := '0';
-                  end if;
-               end if;
-            elsif ( r.program.don = '1' ) then
-               -- this case is reached after a word has been written to the LAN9254
-               v.ctlReq.be := HBI_BE_W0_C;
-               if ( r.txMBXLast = '1' ) then
-                  -- the last word has just been written; first we handle the special
-                  -- case when the message length is identical with the mailbox capacity.
-                  -- If this is true then the sync-manager has just been triggered. Since
-                  -- we initially wrote the full-capacity to the header's length field the
-                  -- everything is fine and we are left with no more work to do.
-                  -- If, OTOH, the message length is just one byte short of the capacity
-                  -- then the SM has not been triggered yet and we must proceed like with
-                  -- any other message length (write correct length to the header and trigger
-                  -- SM by writing the last byte).
-                  -- We find out whether the last byte was part of the message or not by
-                  -- inspecting the byte-enable in the program (note that r.ctlReq.be() has
-                  -- been modified for word-aligned access, see lan9254HBIWrite()).
-                  -- This is where the information set at point (A) above matters...
-                  if ( ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) and ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) ) then
-                        -- message spans full mailbox capacity => ALL DONE
-                        if ( r.txMBXReplay = NONE or r.txMBXReplay = RESEND_BUF ) then
-                           -- we have either the normal case or the case when an un-acknowledged
-                           -- message has been re-sent after a repeated message.
-                           v.state       := POLL_IRQ;
-                           v.txMBXReplay := NONE;
-                        else
-                           -- a repeated message has been sent. We must toggle the repeat-ack bit
-                           -- in the SM PDI register.
-                           v.state := TXMBX_REP_ACK;
+                     v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
+                     v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
+                     v.rxMBXTyp := r.program.seq(3).val(11 downto 8);
+                     if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
+                          or v.rxMBXLen < MBX_HDR_SIZE_C ) then
+                        v.state    := HANDLE_AL_EVENT;
+                        if ( v.mbxErr.vld = '0' ) then
+                           v.mbxErr.code := MBX_ERR_CODE_INVALIDSIZE_C;
+                           v.mbxErr.vld  := '1';
                         end if;
-                  else
-                     -- message was shorter than the full capacity. We must write the true
-                     -- length to the header and eventually kick the sync-manager
-                     if ( ( r.txMBXWAddr /= 0 ) and ( r.txMBXReplay = NONE ) ) then
-                        -- we get here after the last message word was written to the lan9254
-                        -- r.txMBXWAddr therefore contains the correct length of the message
-                        -- (in words). We must write twice this value (plus info about the last byte)
-                        -- to the message header (nothing to do during a replay since the correct value
-                        -- is already in buffer memory). Schedule that for next cycle:
-                        -- target address is 0
-                        v.txMBXWAddr := 0;
-                        -- compute the length
-                        if ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) then
-                           v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2) + 1, v.txMBXLen'length - 1 ) & "0";
-                        else
-                           v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2)    , v.txMBXLen'length - 1 ) & "1";
-                        end if;
-                        -- enable writing txMBXLen to the header.
-                        v.txMBXLEna     := '1';
+                     elsif ( ( v.rxMBXCnt /= "000" ) and ( v.rxMBXCnt = r.rxMBXCnt ) ) then
+                        -- redundant  transmission; drop
+                        v.state           := SM0_RELEASE;
+                     elsif (    (    ( ENABLE_EOE_G and ( MBX_TYP_EOE_C = v.rxMBXTyp ) )
+                                  or ( ENABLE_VOE_G and ( MBX_TYP_VOE_C = v.rxMBXTyp ) ) 
+                                )
+                            and r.txMBXRst = '0'
+                           ) then
+                        rxMBXTrg <= '1';
+                        v.state  := HANDLE_AL_EVENT;
                      else
-                        -- header has been written or we are in a replay (in which case we skip directly here)
-                        -- must kick the SM by writing to the last address
-                        v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
-                        if ( r.txMBXReplay = NONE ) then
-                           -- if we are doing a 'normal' send then issue a write to the last
-                           -- word of the ESCTxMbxBuf which will cause it to swap buffers and clear the 'rdy' flag.
-                           -- If we are in replay mode then the ESCTxMbxBuf is already in 'not rdy' mode.
-                           v.txMBXStrb  := '1';
+                        v.state    := SM0_RELEASE;
+                        if ( v.mbxErr.vld = '0' ) then
+                           v.mbxErr.code := MBX_ERR_CODE_UNSUPPORTEDPROTOCOL_C;
+                           v.mbxErr.vld  := '1';
                         end if;
                      end if;
                   end if;
-               elsif ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) then
-                  -- message too long -> DRAIN
-                  v.txMBXOverrun := '1';
-                  v.txMBXRdy     := '1';
-               else
-                  -- 'normal' write (i.e., not last word) to the LAN9254 has finished; compute the next memory address
-                  if ( r.txMBXWAddr = 0 ) then
-                     -- remember length when doing a replay
-                     v.txMBXLen := unsigned( txMBXBufRDat );
-                  end if;
-                  if ( ( r.txMBXReplay /= NONE ) and ( r.txMBXLen +  MBX_HDR_SIZE_C - 4 ) <= ( to_unsigned(r.txMBXWAddr, r.txMBXLen'length - 1) & "0" ) ) then
-                     -- if we are in replay mode then use the length information from the header (stored in txMBXLen)
-                     -- to raise the 'last' flag.
-                     v.txMBXLast := '1';
-                  end if;
-                  v.txMBXWAddr   := r.txMBXWAddr + 1;
-                  if ( ( r.txMBXWAddr >= MBX_HDR_SIZE_C/2 - 1 ) and ( r.txMBXReplay = NONE ) ) then
-                     -- if we are not in replay mode and beyond the header then
-                     -- we are ready to read the next word from the txMBXMst stream
-                     -- (and we'll end up in the first branch of this big 'if' statement).
-                     v.txMBXRdy := '1';
-                  end if;
-               end if;
-            elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written to the buffer
-               -- schedule next write to the LAN9254. Note that we always 'write-through' the 
-               -- ESCTxMbxBuf buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
-               -- statement.
-               scheduleRegXact( v, (
-                  0 => RWXACT(
-                         unsigned(ESC_SM1_SMA_C) + (to_unsigned(r.txMBXWAddr, ESC_SM1_SMA_C'length - 1) & "0"),
-                         v.ctlReq.be, 
-                         txMBXBufRDat
-                       )
-                  )
-               );
-            end if HANDLE_TXMBX;
 
-         when TXMBX_REPLAY =>
-            if ( '0' = r.program.don and ( r.txMBXReplay = SAVE_BUF ) ) then
-               -- reset the TX mailbox; will resend the non-acked data again
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & "1" ),
-                     1 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) )
-                  )
-               );
-            else
-               -- trigger sending the current buffer (ESCTxMBX) again
-               v.state        := TXMBX_SEND;
-               v.ctlReq.be    := HBI_BE_W0_C;
-               v.txMBXWAddr   := 0;
-               v.txMBXLast    := '0';
-               v.txMBXOverrun := '0';
-            end if;
+               when SM0_RELEASE =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact( v, ( 0 => RWXACT( unsigned(EC_REG_RXMBX_L_C.addr), HBI_BE_B0_C ) ) );
+                  else
+                     v.state := HANDLE_AL_EVENT;
+                  end if;
+ 
+               when MBOX_SM1 =>
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact( v,
+                        (
+                           0 => RWXACT( EC_REG_SM_STA_F( 1 )                ),
+                           1 => RWXACT( EC_WORD_REG_F(ESC_SM1_SMA_C, x"0000"), x"fafa" )
+                        )
+                     );
+                  else
+report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
+                     v.txMBXMAck := '1';
+                     if ( r.txMBXReplay = RESEND_BUF ) then
+                        -- txMBXAck restores the buffer that has been previously written
+                        -- but had not been acked by the master when we received a repeat request
+                        v.state := TXMBX_REPLAY;
+                     else
+                        v.state := HANDLE_AL_EVENT;
+                     end if;
+                  end if;
 
-         when TXMBX_REP_ACK =>
-            -- after a repeat request has ben honored (last unacked message re-sent)
-            -- we must toggle the repeat-ack flag in the SM PDI register. This
-            -- state takes care of that.
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_SM_PDI_F(1), not r.rptAck(1) & r.smDis(1) )
-                  )
-               );
-            else
-               v.rptAck(1) := not r.rptAck(1);
-               if ( r.txMBXReplay = NORMAL ) then
-                  v.txMBXReplay := NONE;
-               else
-                  -- there was an unacked buffer (x) when we received the repeat request.
-                  -- the ESCTxMbxBuf had been 'rewound' to the previous message (prior to
-                  -- the unacked buffer) and that previous message has just been sent
-                  -- with toggling the repeat-ack flag as the final step.
-                  -- Once this resent message is ACKed we reach MBOX_SM1 state and
-                  -- find that we can schedule the other (unacked) message (x).
-                  v.txMBXReplay := RESEND_BUF;
-               end if;
-               v.state       := POLL_IRQ;
-            end if;
-            
-            
+               when TXMBX_SEND =>
+                  HANDLE_TXMBX : if ( r.txMBXRdy = '1' ) then
+                     -- this case handles reading the txMBXMst stream into 
+                     -- the ESCTxMbxBuf buffer memory
+                     if ( txMBXMst.valid = '1' ) then
+                        if ( r.txMBXOverrun = '0' ) then
+                           -- stop the input stream until the current word
+                           -- has also been written into the LAN9254
+                           v.txMBXRdy    := '0';
+                           -- remember the 'last' flag
+                           v.txMBXLast   := txMBXMst.last;
+                           v.ctlReq.be   := HBI_BE_W0_C;
+                           -- honor the byte-enable (we look at the hi-byte only)
+                           -- this is only relevant for the very last byte. If the
+                           -- message is just one byte short of the full mailbox
+                           -- capacity then writing one byte beyond the message length
+                           -- would trigger the sync-manager and we don't want that
+                           -- to happen since we first must write the correct length
+                           -- to the message header.
+                           -- It also doesn't matter if we write the high-byte to the
+                           -- buffer memory -- but the 'be' we set here is later
+                           -- used by the HBI write-cycle where it matters (A).
+                           if ( txMBXMst.ben(1) = '0' ) then
+                              v.ctlReq.be(1) := not HBI_BE_ACT_C;
+                           end if;
+                        elsif ( txMBXMst.last = '1' ) then
+                           -- ERROR RETURN (overrun drained)
+                           v.state := POLL_IRQ;
+                           v.txMBXRdy := '0';
+                        end if;
+                     end if;
+                  elsif ( r.program.don = '1' ) then
+                     -- this case is reached after a word has been written to the LAN9254
+                     v.ctlReq.be := HBI_BE_W0_C;
+                     if ( r.txMBXLast = '1' ) then
+                        -- the last word has just been written; first we handle the special
+                        -- case when the message length is identical with the mailbox capacity.
+                        -- If this is true then the sync-manager has just been triggered. Since
+                        -- we initially wrote the full-capacity to the header's length field the
+                        -- everything is fine and we are left with no more work to do.
+                        -- If, OTOH, the message length is just one byte short of the capacity
+                        -- then the SM has not been triggered yet and we must proceed like with
+                        -- any other message length (write correct length to the header and trigger
+                        -- SM by writing the last byte).
+                        -- We find out whether the last byte was part of the message or not by
+                        -- inspecting the byte-enable in the program (note that r.ctlReq.be() has
+                        -- been modified for word-aligned access, see lan9254HBIWrite()).
+                        -- This is where the information set at point (A) above matters...
+                        if ( ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) and ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) ) then
+                              -- message spans full mailbox capacity => ALL DONE
+                              if ( r.txMBXReplay = NONE or r.txMBXReplay = RESEND_BUF ) then
+                                 -- we have either the normal case or the case when an un-acknowledged
+                                 -- message has been re-sent after a repeated message.
+                                 v.state       := POLL_IRQ;
+                                 v.txMBXReplay := NONE;
+                              else
+                                 -- a repeated message has been sent. We must toggle the repeat-ack bit
+                                 -- in the SM PDI register.
+                                 v.state := TXMBX_REP_ACK;
+                              end if;
+                        else
+                           -- message was shorter than the full capacity. We must write the true
+                           -- length to the header and eventually kick the sync-manager
+                           if ( ( r.txMBXWAddr /= 0 ) and ( r.txMBXReplay = NONE ) ) then
+                              -- we get here after the last message word was written to the lan9254
+                              -- r.txMBXWAddr therefore contains the correct length of the message
+                              -- (in words). We must write twice this value (plus info about the last byte)
+                              -- to the message header (nothing to do during a replay since the correct value
+                              -- is already in buffer memory). Schedule that for next cycle:
+                              -- target address is 0
+                              v.txMBXWAddr := 0;
+                              -- compute the length
+                              if ( r.program.seq(0).reg.bena(1) = HBI_BE_ACT_C ) then
+                                 v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2) + 1, v.txMBXLen'length - 1 ) & "0";
+                              else
+                                 v.txMBXLen   :=  to_unsigned(r.txMBXWAddr - (MBX_HDR_SIZE_C/2)    , v.txMBXLen'length - 1 ) & "1";
+                              end if;
+                              -- enable writing txMBXLen to the header.
+                              v.txMBXLEna     := '1';
+                           else
+                              -- header has been written or we are in a replay (in which case we skip directly here)
+                              -- must kick the SM by writing to the last address
+                              v.txMBXWAddr := TXMBX_MAXWORDS_C - 1;
+                              if ( r.txMBXReplay = NONE ) then
+                                 -- if we are doing a 'normal' send then issue a write to the last
+                                 -- word of the ESCTxMbxBuf which will cause it to swap buffers and clear the 'rdy' flag.
+                                 -- If we are in replay mode then the ESCTxMbxBuf is already in 'not rdy' mode.
+                                 v.txMBXStrb  := '1';
+                              end if;
+                           end if;
+                        end if;
+                     elsif ( r.txMBXWAddr = TXMBX_MAXWORDS_C - 1 ) then
+                        -- message too long -> DRAIN
+                        v.txMBXOverrun := '1';
+                        v.txMBXRdy     := '1';
+                     else
+                        -- 'normal' write (i.e., not last word) to the LAN9254 has finished; compute the next memory address
+                        if ( r.txMBXWAddr = 0 ) then
+                           -- remember length when doing a replay
+                           v.txMBXLen := unsigned( txMBXBufRDat );
+                        end if;
+                        if ( ( r.txMBXReplay /= NONE ) and ( r.txMBXLen +  MBX_HDR_SIZE_C - 4 ) <= ( to_unsigned(r.txMBXWAddr, r.txMBXLen'length - 1) & "0" ) ) then
+                           -- if we are in replay mode then use the length information from the header (stored in txMBXLen)
+                           -- to raise the 'last' flag.
+                           v.txMBXLast := '1';
+                        end if;
+                        v.txMBXWAddr   := r.txMBXWAddr + 1;
+                        if ( ( r.txMBXWAddr >= MBX_HDR_SIZE_C/2 - 1 ) and ( r.txMBXReplay = NONE ) ) then
+                           -- if we are not in replay mode and beyond the header then
+                           -- we are ready to read the next word from the txMBXMst stream
+                           -- (and we'll end up in the first branch of this big 'if' statement).
+                           v.txMBXRdy := '1';
+                        end if;
+                     end if;
+                  elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written to the buffer
+                     -- schedule next write to the LAN9254. Note that we always 'write-through' the 
+                     -- ESCTxMbxBuf buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
+                     -- statement.
+                     scheduleRegXact( v, (
+                        0 => RWXACT(
+                               unsigned(ESC_SM1_SMA_C) + (to_unsigned(r.txMBXWAddr, ESC_SM1_SMA_C'length - 1) & "0"),
+                               v.ctlReq.be, 
+                               txMBXBufRDat
+                             )
+                        )
+                     );
+                  end if HANDLE_TXMBX;
+
+               when TXMBX_REPLAY =>
+                  if ( '0' = r.program.don and ( r.txMBXReplay = SAVE_BUF ) ) then
+                     -- reset the TX mailbox; will resend the non-acked data again
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & "1" ),
+                           1 => RWXACT( EC_REG_SM_PDI_F(1), r.rptAck(1) & r.smDis(1) )
+                        )
+                     );
+                  else
+                     -- trigger sending the current buffer (ESCTxMBX) again
+                     v.state        := TXMBX_SEND;
+                     v.ctlReq.be    := HBI_BE_W0_C;
+                     v.txMBXWAddr   := 0;
+                     v.txMBXLast    := '0';
+                     v.txMBXOverrun := '0';
+                  end if;
+
+               when TXMBX_REP_ACK =>
+                  -- after a repeat request has ben honored (last unacked message re-sent)
+                  -- we must toggle the repeat-ack flag in the SM PDI register. This
+                  -- state takes care of that.
+                  if ( '0' = r.program.don ) then
+                     scheduleRegXact(
+                        v,
+                        (
+                           0 => RWXACT( EC_REG_SM_PDI_F(1), not r.rptAck(1) & r.smDis(1) )
+                        )
+                     );
+                  else
+                     v.rptAck(1) := not r.rptAck(1);
+                     if ( r.txMBXReplay = NORMAL ) then
+                        v.txMBXReplay := NONE;
+                     else
+                        -- there was an unacked buffer (x) when we received the repeat request.
+                        -- the ESCTxMbxBuf had been 'rewound' to the previous message (prior to
+                        -- the unacked buffer) and that previous message has just been sent
+                        -- with toggling the repeat-ack flag as the final step.
+                        -- Once this resent message is ACKed we reach MBOX_SM1 state and
+                        -- find that we can schedule the other (unacked) message (x).
+                        v.txMBXReplay := RESEND_BUF;
+                     end if;
+                     v.state       := POLL_IRQ;
+                  end if;
+                  
+                  
 
  
-      end case C_STATE;
+            end case C_STATE;
+      end case C_HBI_STATE;
 
       rxMBXLen      <= v.rxMBXLen;
       rxMBXTyp      <= v.rxMBXTyp;
@@ -1503,10 +1504,9 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       )
       port map (
          clk         => clk,
-         rst         => rst,
+         rst         => r.txMBXRst,
 
          trg         => rxMBXTrg,
-         ack         => rxMBXAck,
          len         => rxMBXLen,
          typ         => rxMBXTyp,
 
@@ -1536,7 +1536,6 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          rst         => rst,
 
          trg         => rxPDOTrg,
-         ack         => rxPDOAck,
          len         => unsigned(ESC_SM2_LEN_C),
          typ         => x"0",
 

@@ -24,7 +24,6 @@ entity ESCSmRx is
       rst            : in  std_logic;
 
       trg            : in  std_logic;
-      ack            : out std_logic;
       len            : in  unsigned(15 downto 0);
       typ            : in  std_logic_vector(3 downto 0) := (others => '0');
 
@@ -108,16 +107,13 @@ begin
 
    P_COMB : process ( r, trg, len, typ, rxPDORdy, rep ) is
       variable v : RegType;
-      variable a : std_logic;
    begin
       v       := r;
-      a       := '0';
 
       case ( r.state ) is
 
          when IDLE =>
 
-            a := '1';
             if ( trg = '1' ) then 
                v.rxStrmEndAddr          := toByteAddr( len - 1 );
                v.rxStrm.usr(3 downto 0) := typ;
@@ -176,7 +172,6 @@ end if;
 
       end case;
 
-      ack     <= a;
       rin     <= v;
    end process P_COMB;
 
