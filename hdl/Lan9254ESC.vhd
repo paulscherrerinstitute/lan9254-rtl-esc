@@ -59,7 +59,7 @@ architecture rtl of Lan9254ESC is
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
-   type HBIBypassStateType is ( NONE, SM0, SM2, SM3 );
+   type HBIBypassStateType is ( NONE, ESC, SM0, SM2, SM3 );
 
    type ControllerStateType is (
       TEST,
@@ -541,12 +541,15 @@ begin
       end if;
 
       if ( v.hbiState = NONE ) then
+         -- if the HBI is free then arbitrate access
          if    ( txPDOReq.valid = '1' ) then
             v.hbiState := SM3;
          elsif ( rxPDOReq.valid = '1' ) then
             v.hbiState := SM2;
          elsif ( rxMBXReq.valid = '1' ) then
             v.hbiState := SM0;
+         elsif ( r.ctlReq.valid = '1' ) then
+            v.hbiState := ESC;
          end if;
       end if;
 
@@ -555,26 +558,19 @@ begin
          when SM3 =>
             req      <= txPDOReq;
             txPDORep <= rep;
-            if ( rep.valid = '1' ) then
-               v.hbiState := NONE;
-            end if;
-
 
          when SM2 =>
             req      <= rxPDOReq;
             rxPDORep <= rep;
-            if ( rep.valid = '1' ) then
-               v.hbiState := NONE;
-            end if;
 
          when SM0 =>
             req      <= rxMBXReq;
             rxMBXRep <= rep;
-            if ( rep.valid = '1' ) then
-               v.hbiState := NONE;
-            end if;
 
          when others =>
+            -- ESC state machine only executes if the HBI
+            -- is not currently assigned to an SM handling
+            -- channel.
 
             C_STATE : case ( r.state ) is
 
@@ -794,7 +790,9 @@ report "starting SM23";
                         v.rxPDORst    := '1';
                         v.smDis(1)    := '1';
                         v.smDis(0)    := '1';
-                        v.hbiState    := NONE;
+                        if ( ( r.hbiState = SM3 ) or ( r.hbiState = SM2 ) or ( r.hbiState = SM0 ) ) then
+                           v.hbiState    := NONE;
+                        end if;
                      end if;
                      v.state := EN_DIS_SM;
                   end if;
@@ -1388,6 +1386,11 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
  
             end case C_STATE;
       end case C_HBI_STATE;
+
+      if ( rep.valid = '1' ) then
+         -- HBI access terminated; release the HBI
+         v.hbiState := NONE;
+      end if;
 
       rxMBXLen      <= v.rxMBXLen;
       rxMBXTyp      <= v.rxMBXTyp;
