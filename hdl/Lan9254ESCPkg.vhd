@@ -183,7 +183,7 @@ package Lan9254ESCPkg is
 
    -- PDO address **must** be word-aligned for now
    constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1180";
-   constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"10";
+   constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"20";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
    -- HACK_LEN is used for testing (reduce and make sure PDO is not posted)
    constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";

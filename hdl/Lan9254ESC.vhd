@@ -59,7 +59,7 @@ architecture rtl of Lan9254ESC is
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
-   type HBIBypassStateType is ( NONE, SM0, SM2 );
+   type HBIBypassStateType is ( NONE, SM0, SM2, SM3 );
 
    type ControllerStateType is (
       TEST,
@@ -81,7 +81,6 @@ architecture rtl of Lan9254ESC is
       SM_ACTIVATION_CHANGED,
       CHECK_TX_WORK,
       DROP_RXPDO,
-      UPDATE_TXPDO,
       MBOX_READ,
       SM0_RELEASE,
       MBOX_SM1,
@@ -211,7 +210,7 @@ architecture rtl of Lan9254ESC is
    constant LD_XACT_MAX_C          : natural := 3;
    constant XACT_MAX_C             : natural := 2**LD_XACT_MAX_C;
 
-   constant TXPDO_BURST_MAX_C      : natural := 7;
+   constant TXPDO_BURST_MAX_C      : natural := 16;
 
    type RWXactSeqType is record
       seq      : RWXactArray(0 to XACT_MAX_C - 1);
@@ -247,11 +246,8 @@ architecture rtl of Lan9254ESC is
       rptAck               : std_logic_vector( 3 downto 0);
       lastAL               : std_logic_vector(31 downto 0);
       emask                : std_logic_vector(31 downto 0);
-      txPDORdy             : std_logic;
-      txPDOBst             : natural range 0 to TXPDO_BURST_MAX_C;
-      txPDOSnt             : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
-      txPDODcm             : natural range 0 to TXPDO_UPDATE_DECIMATION_C;
       rxPDORst             : std_logic;
+      txPDORst             : std_logic;
       txMBXStrb            : std_logic;
       txMBXLEna            : std_logic;
       txMBXTEna            : std_logic;
@@ -287,11 +283,8 @@ architecture rtl of Lan9254ESC is
       rptAck               => (others => '0'),
       lastAL               => (others => '0'),
       emask                => EC_AL_EMSK_INIT_C,
-      txPDORdy             => '0',
-      txPDOBst             => 0,
-      txPDOSnt             => 0,
-      txPDODcm             => 0,
       rxPDORst             => '1',
+      txPDORst             => '1',
       txMBXStrb            => '0',
       txMBXLEna            => '0',
       txMBXTEna            => '0',
@@ -494,6 +487,8 @@ architecture rtl of Lan9254ESC is
    signal     rxPDOTrg        : std_logic := '0';
    signal     rxPDOReq        : Lan9254ReqType := LAN9254REQ_INIT_C;
    signal     rxPDORep        : Lan9254RepType := LAN9254REP_INIT_C;
+   signal     txPDOReq        : Lan9254ReqType := LAN9254REQ_INIT_C;
+   signal     txPDORep        : Lan9254RepType := LAN9254REP_INIT_C;
 
    signal     rxMBXAck        : std_logic         := '1';
    signal     rxMBXTrg        : std_logic         := '0';
@@ -514,7 +509,6 @@ begin
    P_COMB : process (
          r, rep, eeprom, irq,
          mbxErrRdy, 
-         txPDOMst,
          rxPDORdy,
          txMBXMst,
          rxMBXRdy,
@@ -536,21 +530,20 @@ begin
       v.txMBXTEna   := '0';
       v.txMBXStrb   := '0';
       rxPDORep      <= LAN9254REP_INIT_C;
+      txPDORep      <= LAN9254REP_INIT_C;
       rxMBXRep      <= LAN9254REP_INIT_C;
       req           <= r.ctlReq;
       rxPDOTrg      <= '0';
       rxMBXTrg      <= '0';
-
-      if ( r.txPDODcm > 0 ) then
-         v.txPDODcm := r.txPDODcm - 1;
-      end if;
 
       if ( ( mbxErrRdy and r.mbxErr.vld ) = '1' ) then
          v.mbxErr.vld := '0';
       end if;
 
       if ( v.hbiState = NONE ) then
-         if    ( rxPDOReq.valid = '1' ) then
+         if    ( txPDOReq.valid = '1' ) then
+            v.hbiState := SM3;
+         elsif ( rxPDOReq.valid = '1' ) then
             v.hbiState := SM2;
          elsif ( rxMBXReq.valid = '1' ) then
             v.hbiState := SM0;
@@ -558,6 +551,14 @@ begin
       end if;
 
       C_HBI_STATE : case ( v.hbiState ) is
+
+         when SM3 =>
+            req      <= txPDOReq;
+            txPDORep <= rep;
+            if ( rep.valid = '1' ) then
+               v.hbiState := NONE;
+            end if;
+
 
          when SM2 =>
             req      <= rxPDOReq;
@@ -727,6 +728,10 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
                      else
                         if ( r.curState = OP ) then
                            -- stop output           # FIXME
+                           v.rxPDORst := '1';
+                           if ( r.hbiState = SM2 ) then
+                              v.hbiState := NONE;
+                           end if;
                            v.reqState := SAFEOP;
                         end if;
                         v.errSta := '1';
@@ -753,30 +758,43 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
                         v.state       := CHECK_MBOX;
 report "starting MBOX";
                      elsif ( ( r.reqState = SAFEOP ) ) then
+                        v.txMBXRst    := '0';
+                        v.txPDORst    := '0'; -- start input
                         v.smDis(3)    := '0';
                         v.state       := CHECK_SM;
 report "starting SM23";
                      elsif ( ( r.reqState = OP ) and ( r.curState /= OP ) ) then
-                        -- start output            # NOT IMPLEMENTED
+                        v.txMBXRst    := '0';
+                        v.rxPDORst    := '0'; -- start output
+                        v.txPDORst    := '0'; -- start input
                         v.smDis(2)    := '0';
                         v.state       := EN_DIS_SM;
                      end if;
                   else -- state downshift
                      if ( ( r.reqState < OP ) and ( r.curState = OP ) ) then
-                        -- stop output             # NOT IMPLEMENTED
+                        -- stop output
+                        v.rxPDORst    := '1';
+                        if ( r.hbiState = SM2 ) then
+                           v.hbiState := NONE;
+                        end if;
                         v.smDis(2)    := '1';
                      end if;
                      if ( ( r.reqState < SAFEOP ) and ( r.curState >= SAFEOP ) ) then
-                        -- stop input              # NOT IMPLEMENTED
+                        -- stop input, stop output
                         v.smDis(3)    := '1';
+                        v.txPDORst    := '1';
+                        v.rxPDORst    := '1';
+                        if ( r.hbiState = SM3 or r.hbiState = SM2 ) then
+                           v.hbiState := NONE;
+                        end if;
                      end if;
                      if ( ( r.reqState < PREOP  ) and ( r.curState >= PREOP  ) ) then
                         v.txMBXRst    := '1';
+                        v.txPDORst    := '1';
+                        v.rxPDORst    := '1';
                         v.smDis(1)    := '1';
                         v.smDis(0)    := '1';
-                        if ( r.hbiState = SM0 ) then
-                           v.hbiState := NONE;
-                        end if;
+                        v.hbiState    := NONE;
                      end if;
                      v.state := EN_DIS_SM;
                   end if;
@@ -1072,16 +1090,7 @@ severity warning;
 
                   v.state := POLL_IRQ;
                   -- maybe the TXPDO or MBX needs to be updated ?
-                  if (    ( r.curState = SAFEOP or r.curState = OP )
-                      and ( ESC_SM3_ACT_C  = '1'                      )
-                      and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  )
-                      and ( r.txPDODcm     = 0                        )
-                      and ( txPDOMst.valid = '1'                      )
-                     ) then
-                     v.txPDOBst :=  TXPDO_BURST_MAX_C;
-                     v.txPDORdy := '1';
-                     v.state    := UPDATE_TXPDO;
-                  elsif ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
+                  if    ( ( ( txMBXMst.valid and txMBXBufWRdy and not r.txMBXRst ) = '1' ) and ( r.txMBXReplay = NONE ) ) then
 report "post MBOX";
                      -- master has data, mailbox buffer can accept data and is running
                      -- => start mailbox TX
@@ -1121,73 +1130,6 @@ report "post MBOX";
                      );
                   else
                      v.state := HANDLE_AL_EVENT;
-                  end if;
-
-               when UPDATE_TXPDO =>
-                  if ( r.txPDORdy = '1' ) then
-
-                     -- write to RXPDO pending
-                     if ( txPDOMst.valid  = '1' ) then
-                        v.txPDORdy := '0';
-
-if ( r.decim = 0 ) then
-report "UPDATE_TXPDO " & toString(std_logic_vector(txPDOMst.wrdAddr)) & " LST: " & std_logic'image(txPDOMst.last) & " BEN " & toString(txPDOMst.ben) & " DAT " & toString(txPDOMst.data);
-v.decim := 200;
-else
-v.decim := r.decim - 1;
-end if;
-
-                        if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
-                           v.ctlReq.addr := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
-                           v.ctlReq.data := ( x"0000" & txPDOMst.data );
-                           v.ctlReq.be   := HBI_BE_W0_C;
-
-                           if ( txPDOMst.ben(0) = '0' ) then
-                              v.ctlReq.be(0) := not HBI_BE_ACT_C;
-                           end if;
-
-                           -- if last byte make sure proper byte-enable is deasserted
-                           if (    ( txPDOMst.ben(1) = '0'       )
-                                or (    ( ESC_SM3_HACK_LEN_C(0) = '1' )
-                                    and ( txPDOMst.wrdAddr      = SM3_WADDR_END_C )
-                                   )
-                              ) then
-                              v.ctlReq.be(1) := not HBI_BE_ACT_C;
-                           end if;
-                        else 
-                           -- illegal address; drop
-                           if ( r.txPDOBst = 0 ) then
-                              v.state := POLL_IRQ;
-                           else
-                              v.txPDORdy := '1';
-                              v.txPDOBst := r.txPDOBst - 1;
-                           end if;
-                        end if;
-                     else
-                        -- nothing to send ATM
-                        v.state    := POLL_IRQ;
-                        v.txPDOBst := 0;
-                        v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
-                     end if;
-                  elsif ( '1' = r.program.don ) then
-                     -- write to lan9254 done
-                     if ( r.txPDOSnt = ( ( to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) / 2 ) ) then
-                        v.txPDOSnt := 0;
-                        v.txPDODcm := TXPDO_UPDATE_DECIMATION_C;
-                     else
-                        v.txPDOSnt := r.txPDOSnt + 1;
-                     end if;
-                     if ( r.txPDOBst = 0 ) then
-                        v.state := POLL_IRQ;
-                     else
-                        v.txPDORdy := '1';
-                        v.txPDOBst := r.txPDOBst - 1;
-                     end if;
-                  else
-                     -- => initiate lan9254 register write operation
-
-                     scheduleRegXact( v, ( 0 => RWXACT( v.ctlReq.addr, v.ctlReq.be, v.ctlReq.data ) ) );
-
                   end if;
 
                when MBOX_READ =>
@@ -1533,7 +1475,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       )
       port map (
          clk         => clk,
-         rst         => rst,
+         rst         => r.rxPDORst,
 
          trg         => rxPDOTrg,
          len         => unsigned(ESC_SM2_LEN_C),
@@ -1548,9 +1490,27 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    end generate GEN_RX_PDO;
 
+   GEN_TXPDO : if ( ( ESC_SM3_ACT_C  = '1' ) and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) generate
+      U_TXPDO : entity work.ESCTxPDO
+         generic map (
+            TXPDO_BURST_MAX_G         => TXPDO_BURST_MAX_C,
+            TXPDO_BURST_GAP_G         => 8,
+            TXPDO_UPDATE_DECIMATION_G => TXPDO_UPDATE_DECIMATION_C
+         )
+         port map (
+            clk         => clk,
+            rst         => r.txPDORst,
+
+            txPDOMst    => txPDOMst,
+            txPDORdy    => txPDORdy,
+
+            req         => txPDOReq,
+            rep         => txPDORep
+         );
+   end generate GEN_TXPDO;
+
 
    escState  <= r.curState;
-   txPDORdy  <= r.txPDORdy;
 
    txMBXRdy  <= r.txMBXRdy;
 

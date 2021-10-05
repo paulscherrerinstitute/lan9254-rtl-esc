@@ -217,6 +217,18 @@ package Lan9254Pkg is
       constant enbl : in    boolean                       := true
    );
 
+   procedure lan9254HBIRead(
+      variable rdOut: inout Lan9254ReqType;
+      signal   rdInp: in    Lan9254RepType;
+      constant enbl : in    boolean                       := true
+   );
+
+   procedure lan9254HBIWrite(
+      variable wrOut: inout Lan9254ReqType;
+      signal   wrInp: in    Lan9254RepType;
+      constant enbl : in    boolean                       := true
+   );
+
 
    type IntArray is array(natural range <>) of integer;
 
@@ -233,6 +245,25 @@ end package Lan9254Pkg;
 
 package body Lan9254Pkg is
 
+   procedure adjReq(
+      variable rv : inout Lan9254ReqType
+   ) is
+   begin
+      if    ( rv.addr(1 downto 0) = "11" ) then
+         rv.be   := ( 3 => rv.be(0), others => not HBI_BE_ACT_C );
+         rv.data := rv.data( 7 downto 0) & x"00_0000";
+      elsif ( rv.addr(1 downto 0) = "10" ) then
+         rv.be( 3 downto 2 ) := rv.be(1 downto 0);
+         rv.be( 1 downto 0)  := (others => not HBI_BE_ACT_C);
+         rv.data := rv.data(15 downto 0) & x"0000";
+      elsif ( rv.addr(1 downto 0) = "01" ) then
+         rv.be   := rv.be ( 2 downto 0) & not HBI_BE_ACT_C;
+         rv.data := rv.data(23 downto 0) & x"00";
+      end if;
+      rv.addr(1 downto 0) := (others => '0');
+      rv.valid := '1';
+   end procedure adjReq;
+
    function adjReq(
       constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
       constant bena : in    std_logic_vector( 3 downto 0) := (others => HBI_BE_ACT_C);
@@ -242,22 +273,11 @@ package body Lan9254Pkg is
       variable rv : Lan9254ReqType;
    begin
       rv       := LAN9254REQ_INIT_C;
-      rv.addr  := unsigned(rdAdr(rv.addr'high downto 2)) & "00";
+      rv.addr  := unsigned(rdAdr(rv.addr'high downto 0));
       rv.be    := bena;
       rv.data  := data;
       rv.rdnwr := rdnwr;
-      rv.valid := '1';
-      if    ( rdAdr(1 downto 0) = "11" ) then
-         rv.be   := ( 3 => bena(0), others => not HBI_BE_ACT_C );
-         rv.data := data  ( 7 downto 0) & x"00_0000";
-      elsif ( rdAdr(1 downto 0) = "10" ) then
-         rv.be( 3 downto 2 ) := bena(1 downto 0);
-         rv.be( 1 downto 0)  := (others => not HBI_BE_ACT_C);
-         rv.data := data  (15 downto 0) & x"0000";
-      elsif ( rdAdr(1 downto 0) = "01" ) then
-         rv.be   := bena  ( 2 downto 0) & not HBI_BE_ACT_C;
-         rv.data := data  (23 downto 0) & x"00";
-      end if;
+      adjReq( rv );
       return rv;
    end function adjReq;
 
@@ -277,6 +297,41 @@ package body Lan9254Pkg is
       end if;
       return v;
    end function adjRep;
+
+   procedure lan9254HBIRead(
+      variable rdOut: inout Lan9254ReqType;
+      signal   rdInp: in    Lan9254RepType;
+      constant enbl : in    boolean                       := true
+   ) is
+   begin
+      if ( rdOut.valid = '0' ) then
+         rdOut.rdnwr := '1';
+         adjReq( rdOut );
+--report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
+      else
+         if ( rdInp.valid = '1' ) then
+            rdOut.valid :='0';
+            rdOut.data  := adjRep( rdOut, rdInp );
+--report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
+         end if;
+      end if;
+   end procedure lan9254HBIRead;
+
+   procedure lan9254HBIWrite(
+      variable wrOut: inout Lan9254ReqType;
+      signal   wrInp: in    Lan9254RepType;
+      constant enbl : in    boolean                       := true
+   ) is
+   begin
+      if ( wrOut.valid = '0' ) then
+         wrOut.rdnwr := '0';
+         adjReq(wrOut);
+      else
+         if ( wrInp.valid = '1' ) then
+            wrOut.valid := '0';
+         end if;
+      end if;
+   end procedure lan9254HBIWrite;
 
    procedure lan9254HBIRead(
       variable rdOut: inout Lan9254ReqType;

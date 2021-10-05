@@ -17,6 +17,7 @@ OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
 OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
+OBJS+=ESCTxPDO.o
 
 TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o
 
@@ -79,7 +80,7 @@ eeprom.bin: test.xml
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCTxMbxBuf.o ESCSmRx.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCTxMbxBuf.o ESCSmRx.o ESCTxPDO.o
 EEEmulPkg.o: EEPROMContentPkg.o Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
@@ -87,14 +88,14 @@ Lan9254ESCTb.o:  $(OBJS)
 Lan9254ESCrun.o: $(OBJS)
 TxMBXTb.o:       $(OBJS)
 EoETb.o:         $(OBJS)
-RxPDOSoft.o: Lan9254ESCPkg.o Lan9254Pkg.o
+RxPDOSoft.o ESCTxPDO.o: Lan9254ESCPkg.o Lan9254Pkg.o
 Lan9254ESCPkg.o: Lan9254Pkg.o
 ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCEoETx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
 ESCTxMbxMux.o: Lan9254Pkg.o
-ESCRxMBXMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
+ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
 
 clean:
