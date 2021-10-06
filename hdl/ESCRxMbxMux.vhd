@@ -56,6 +56,8 @@ begin
          m(i).valid := '0';
       end loop;
 
+      rdyIb <= '0';
+
       case ( r.state ) is
          when SEL =>
             FOR_SEL : for i in 0 to NUM_STREAMS_C - 1 loop
@@ -71,7 +73,7 @@ begin
                   exit FOR_SEL;
                end if;
             end loop FOR_SEL;
-            
+
          when FWD   =>
             m(r.sel).valid := mbxIb.valid;
             rdyIb          <= rdyOb(r.sel);
