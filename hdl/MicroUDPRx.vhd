@@ -87,7 +87,7 @@ architecture rtl of MicroUdpRx is
 
 begin
 
-   P_COMB : process (r, myMac, myIp, myPort, mstIb, txRdy, pldRdyOb) is
+   P_COMB : process (r, myMac, myIp, myPort, mstIb, txRdy, pldRdyOb, errIb) is
       variable v  : RegType;
       variable ok : boolean;
       variable m  : Lan9254StrmMstType;
