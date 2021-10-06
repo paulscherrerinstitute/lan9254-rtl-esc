@@ -513,6 +513,7 @@ begin
          txMBXMst,
          rxMBXRdy,
          rxPDOReq,
+         txPDOReq,
          rxMBXReq,
          txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup
    ) is
