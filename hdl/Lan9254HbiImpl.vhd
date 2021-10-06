@@ -190,8 +190,9 @@ begin
                if ( (r.req.addr(1 downto 0) = "00") and (r.req.be /= BE_DEASS_C)  ) then
                   v.hbiOut.cs              := HBI_CS_ACT_C;
                   v.hbiOut.ale(0)          := HBI_AL_ACT_C;
+                  v.hbiOut.ad              := (others => '0');
                   v.hbiOut.ad(13)          := END_SEL_C;
-                  v.hbiOut.ad(12 downto 1) := r.req.addr(13 downto 2);
+                  v.hbiOut.ad(12 downto 1) := std_logic_vector(r.req.addr(13 downto 2));
                   v.hbiOut.ad_t            := (others => '0');
                   if ( r.req.be(1 downto 0) /= BE_DEASS_C(1 downto 0) ) then
                      -- low-word transfer
@@ -230,9 +231,9 @@ begin
                      v.hbiOut.ws   := HBI_WS_ACT_C;
                      v.dly         := TWR_CNT_C;
                      if ( r.hbiOut.ad(0) = '1' ) then
-                        v.hbiOut.ad   := req.wdata(31 downto 16);
+                        v.hbiOut.ad   := req.data(31 downto 16);
                      else
-                        v.hbiOut.ad   := req.wdata(15 downto  0);
+                        v.hbiOut.ad   := req.data(15 downto  0);
                      end if;
                   end if;
                   v.timeo := TWAK_TIMEO_CNT_C;
