@@ -50,6 +50,9 @@ entity Lan9254ESCWrapper is
       txUDPMst                : in  Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       txUDPRdy                : out std_logic    := '1';
 
+      escState                : out ESCStateType;
+      debug                   : out std_logic_vector(23 downto 0);
+
       testFailed              : out std_logic_vector(4 downto 0)
    );
 end entity Lan9254ESCWrapper;
@@ -125,6 +128,9 @@ begin
          mbxErrRdy   => errRdy(0),
 
          irq         => irq,
+
+         escState    => escState,
+         debug       => debug(23 downto 0),
 
          testFailed  => testFailed
       );
