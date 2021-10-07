@@ -165,12 +165,12 @@ package Lan9254ESCPkg is
 
    constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
    constant ESC_SM0_SMC_C                               : ESCVal08Type :=   x"26";
-   constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0080";
+   constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0020";
    constant ESC_SM0_ACT_C                               : std_logic    := '1';
 
    constant ESC_SM1_SMA_C                               : ESCVal16Type := x"1080";
    constant ESC_SM1_SMC_C                               : ESCVal08Type :=   x"22";
-   constant ESC_SM1_LEN_C                               : ESCVal16Type := x"0080";
+   constant ESC_SM1_LEN_C                               : ESCVal16Type := x"0020";
    constant ESC_SM1_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
