@@ -1218,8 +1218,7 @@ report  "RX-MBX Header: len "
                      v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
                      v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
                      v.rxMBXTyp := r.program.seq(3).val(11 downto 8);
-                     if (    v.rxMBXLen > MBX_HDR_SIZE_C + to_integer(unsigned(ESC_SM0_LEN_C ))
-                          or v.rxMBXLen < MBX_HDR_SIZE_C ) then
+                     if ( v.rxMBXLen > to_integer(unsigned(ESC_SM0_LEN_C ) - MBX_HDR_SIZE_C) ) then
                         v.state    := HANDLE_AL_EVENT;
                         if ( v.mbxErr.vld = '0' ) then
                            v.mbxErr.code := MBX_ERR_CODE_INVALIDSIZE_C;
