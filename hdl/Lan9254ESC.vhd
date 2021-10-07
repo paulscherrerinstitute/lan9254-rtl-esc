@@ -59,6 +59,20 @@ architecture rtl of Lan9254ESC is
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
+   constant HBI_WAIT_MAX_TIME_C       : real    := 200.0E-9;
+   constant HBI_WAIT_MAX_C            : natural := natural( HBI_WAIT_MAX_TIME_C * CLK_FREQ_G );
+
+   subtype  HbiWaitTimeType          is natural range 0 to HBI_WAIT_MAX_C;
+
+   function hbiWaitTime(constant t : real) return HbiWaitTimeType is
+   begin
+      if ( t > HBI_WAIT_MAX_TIME_C ) then
+         return HBI_WAIT_MAX_C;
+      else
+         return natural( t * CLK_FREQ_G );
+      end if;
+   end function hbiWaitTime;
+
    type HBIBypassStateType is ( NONE, ESC, SM0, SM2, SM3 );
 
    type ControllerStateType is (
@@ -136,7 +150,6 @@ architecture rtl of Lan9254ESC is
 
    constant TXMBX_MAXWORDS_C         : natural := to_integer( unsigned( ESC_SM1_LEN_C ) )/2;
    constant TXMBX_PAYLOAD_MAXWORDS_C : natural := TXMBX_MAXWORDS_C - ( MBX_HDR_SIZE_C / 2 );
-
 
    function toESCState(constant x : std_logic_vector)
    return EscStateType is
@@ -216,7 +229,7 @@ architecture rtl of Lan9254ESC is
       seq      : RWXactArray(0 to XACT_MAX_C - 1);
       idx      : unsigned(LD_XACT_MAX_C - 1 downto 0);
       num      : unsigned(LD_XACT_MAX_C - 1 downto 0);
-      dly      : unsigned(                3 downto 0); -- FIXME
+      dly      : HbiWaitTimeType;
       don      : std_logic;
       ret      : ControllerStateType;
    end record RWXactSeqType;
@@ -225,7 +238,7 @@ architecture rtl of Lan9254ESC is
       seq      => (others => RWXACT_INIT_C),
       idx      => (others => '0'),
       num      => (others => '0'),
-      dly      => (others => '0'),
+      dly      => 0,
       don      => '0',
       ret      => POLL_IRQ
    );
@@ -233,7 +246,7 @@ architecture rtl of Lan9254ESC is
    type RegType is record
       state                : ControllerStateType;
       hbiState             : HBIBypassStateType;
-      testPhas             : natural range 0 to 3;
+      testPhas             : natural range 0 to 6;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
       errAck               : std_logic;
@@ -265,6 +278,7 @@ architecture rtl of Lan9254ESC is
       rxMBXLen             : unsigned(15 downto 0);
       mbxErr               : MbxErrorType;
       decim                : natural;
+      hbiWaitTimer         : HbiWaitTimeType;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -301,13 +315,14 @@ architecture rtl of Lan9254ESC is
       rxMBXLen             => (others => '0'),
       rxMBXTyp             => (others => '0'),
       mbxErr               => MBX_ERROR_INIT_C,
-      decim                => 0
+      decim                => 0,
+      hbiWaitTimer         => 0
    );
 
    procedure scheduleRegXact(
       variable endp : inout RegType;
       constant prog : in    RWXactArray;
-      constant dly  : in    unsigned(3 downto 0) := x"0"  -- FIXME
+      constant dly  : in    HbiWaitTimeType := 0
    ) is
    begin
       endp.program.ret             := endp.state;
@@ -456,6 +471,46 @@ architecture rtl of Lan9254ESC is
                   assert false report "Write16a readback mismatch" severity failure;
                   if ( v.testFail = 0 ) then v.testFail :=15; end if;
                end if;
+               v.testPhas := r.testPhas + 1;
+            end if;
+
+         when 3 =>
+            if ( r.ctlReq.valid = '0' ) then
+               v.ctlReq.addr := unsigned( WB1.addr(v.ctlReq.addr'range) );
+               v.ctlReq.be   := WB1.bena;
+            end if;
+            lan9254HBIRead( v.ctlReq, rep );
+            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+               if ( v.ctlReq.data( 7 downto  0) /= x"22" ) then
+                  assert false report "ReadEPa8 readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=16; end if;
+               end if;
+               v.testPhas := r.testPhas + 1;
+            end if;
+
+         when 4 =>
+            if ( r.ctlReq.valid = '0' ) then
+               v.ctlReq.addr := unsigned( WW1.addr(v.ctlReq.addr'range) );
+               v.ctlReq.be   := WW1.bena;
+               v.ctlReq.data := x"0000abcd";
+            end if;
+            lan9254HBIWrite( v.ctlReq, rep );
+            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+               v.testPhas := r.testPhas + 1;
+            end if;
+
+         when 5 =>
+            if ( r.ctlReq.valid = '0' ) then
+               v.ctlReq.addr := unsigned( WB3.addr(v.ctlReq.addr'range) );
+               v.ctlReq.be   := WB3.bena;
+            end if;
+            lan9254HBIRead( v.ctlReq, rep );
+            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+               if ( v.ctlReq.data( 7 downto  0) /= x"ab" ) then
+                  assert false report "ReadEPa8_2 readback mismatch" severity failure;
+                  if ( v.testFail = 0 ) then v.testFail :=17; end if;
+               end if;
+
                if ( v.testFail = 0 ) then
                   v.testPhas := 0;
                   v.state    := INIT;
@@ -463,6 +518,7 @@ architecture rtl of Lan9254ESC is
                   v.testPhas := r.testPhas + 1; -- go into limbo
                end if;
             end if;
+
          when others =>
             -- remain here
       end case CASE_TEST;
@@ -539,6 +595,10 @@ begin
 
       if ( ( mbxErrRdy and r.mbxErr.vld ) = '1' ) then
          v.mbxErr.vld := '0';
+      end if;
+
+      if ( r.hbiWaitTimer /= 0 ) then
+         v.hbiWaitTimer := r.hbiWaitTimer - 1;
       end if;
 
       if ( v.hbiState = NONE ) then
@@ -799,25 +859,28 @@ report "starting SM23";
                   end if;
 
                when XACT =>
-                  xct := r.program.seq(to_integer(r.program.idx));
-                  if ( xct.dis = '0' ) then
-                     if ( xct.rdnwr ) then
-                        readReg( v.ctlReq, rep, xct.reg );
-                        if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
-                           v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.data;
-                        end if;
-                     else
+                  if ( r.hbiWaitTimer = 0 ) then
+                     xct := r.program.seq(to_integer(r.program.idx));
+                     if ( xct.dis = '0' ) then
+                        if ( xct.rdnwr ) then
+                           readReg( v.ctlReq, rep, xct.reg );
+                           if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+                              v.program.seq(to_integer(r.program.idx)).val := v.ctlReq.data;
+                           end if;
+                        else
 --report "WRITE " & integer'image(to_integer(unsigned(xct.reg.addr))) & " " & integer'image(to_integer(signed(xct.val)));
-                        writeReg( v.ctlReq, rep, xct.reg, xct.val );
+                           writeReg( v.ctlReq, rep, xct.reg, xct.val );
+                        end if;
                      end if;
-                  end if;
-                  if ( ( ( r.ctlReq.valid and rep.valid ) or xct.dis  ) = '1' ) then
-                     v.ctlReq.valid := '0';
-                     if ( r.program.idx = r.program.num ) then
-                        v.state        := r.program.ret;
-                        v.program.don  := '1';
-                     else
-                        v.program.idx  := r.program.idx + 1;
+                     if ( ( ( r.ctlReq.valid and rep.valid ) or xct.dis  ) = '1' ) then
+                        v.ctlReq.valid := '0';
+                        v.hbiWaitTimer := r.program.dly;
+                        if ( r.program.idx = r.program.num ) then
+                           v.state        := r.program.ret;
+                           v.program.don  := '1';
+                        else
+                           v.program.idx  := r.program.idx + 1;
+                        end if;
                      end if;
                   end if;
 
@@ -1536,7 +1599,7 @@ debug(23)           <= rep.valid;
    probe0(21          ) <= r.ctlReq.rdnwr;
    probe0(22          ) <= r.ctlReq.valid;
    probe0(23          ) <= rep.valid;
-   probe0(28 downto 24) <= std_logic_vector( to_unsigned( ControllerStateType'pos( rin.state ), 5) );
+   probe0(28 downto 24) <= (others => '0');
    probe0(29          ) <= r.program.don;
    probe0(30 downto 30) <= (others => '0');
    probe0(31          ) <= irq;
@@ -1557,6 +1620,8 @@ debug(23)           <= rep.valid;
    probe2(19 downto 16) <= r.program.seq(1).reg.bena;
    probe2(23 downto 20) <= r.program.seq(2).reg.bena;
    probe2(27 downto 24) <= r.ctlReq.be;
+   probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIBypassStateType'pos( r.hbiState ) , 3 ) );
+   probe2(31          ) <= '0';
    
 
    probe2(63 downto 32) <= r.program.seq(0).val;
