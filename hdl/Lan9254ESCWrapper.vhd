@@ -7,6 +7,7 @@ use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
 use work.MicroUDPPkg.all;
+use work.IlaWrappersPkg.all;
 
 entity Lan9254ESCWrapper is
    generic (
@@ -16,6 +17,7 @@ entity Lan9254ESCWrapper is
       ENABLE_EOE_G            : boolean := true;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
+      GEN_EOE_ILA_G           : boolean := true;
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false
    );
@@ -216,7 +218,63 @@ begin
       signal   rxReq           : EthTxReqType := ETH_TX_REQ_INIT_C;
       signal   rxRdy           : std_logic    := '0';
 
+      signal   probe0          : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe1          : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe2          : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe3          : std_logic_vector(63 downto 0) := (others => '0');
+
    begin
+
+      GEN_ILA : if ( GEN_EOE_ILA_G ) generate
+         U_ILA : component Ila_256
+            port map (
+               clk      => clk,
+               probe0   => probe0,
+               probe1   => probe1,
+               probe2   => probe2,
+               probe3   => probe3
+            );
+      end generate GEN_ILA;
+
+      probe0( 15 downto  0 ) <= rxStmMst(EOE_RX_STRM_IDX_C).data;
+      probe0( 16           ) <= rxStmMst(EOE_RX_STRM_IDX_C).valid;
+      probe0( 17           ) <= rxStmRdy(EOE_RX_STRM_IDX_C);
+      probe0( 18           ) <= rxStmMst(EOE_RX_STRM_IDX_C).last;
+      probe0( 31 downto 19 ) <= (others => '0');
+      probe0( 47 downto 32 ) <= eoeMstOb.data;
+      probe0( 48           ) <= eoeMstOb.valid;
+      probe0( 49           ) <= eoeRdyOb;
+      probe0( 50           ) <= eoeMstOb.last;
+      probe0( 51           ) <= eoeErrOb;
+      probe0( 63 downto 52 ) <= (others => '0');
+
+      probe1( 15 downto  0 ) <= txStmMst(EOE_RX_STRM_IDX_C).data;
+      probe1( 16           ) <= txStmMst(EOE_RX_STRM_IDX_C).valid;
+      probe1( 17           ) <= txStmRdy(EOE_RX_STRM_IDX_C);
+      probe1( 18           ) <= txStmMst(EOE_RX_STRM_IDX_C).last;
+      probe1( 31 downto 19 ) <= (others => '0');
+      probe1( 47 downto 32 ) <= eoeMstIb.data;
+      probe1( 48           ) <= eoeMstIb.valid;
+      probe1( 49           ) <= eoeRdyIb;
+      probe1( 50           ) <= eoeMstIb.last;
+      probe1( 51           ) <= '0';
+      probe1( 63 downto 52 ) <= (others => '0');
+
+      probe2( 15 downto  0 ) <= std_logic_vector(rxReq.length);
+      probe2( 16           ) <= rxReq.valid;
+      probe2( 17           ) <= rxRdy;
+      probe2( 19 downto 18 ) <= std_logic_vector(to_unsigned(EthPktType'pos(rxReq.typ), 2));
+      probe2( 31 downto 20 ) <= rxReq.dstMac(47 downto 36);
+      probe2( 47 downto 32 ) <= rxReq.protoData;
+      probe2( 63 downto 48 ) <= rxReq.dstIp(31 downto 16);
+
+      probe3( 15 downto  0 ) <= std_logic_vector(txReq.length);
+      probe3( 16           ) <= txReq.valid;
+      probe3( 17           ) <= txRdy;
+      probe3( 19 downto 18 ) <= std_logic_vector(to_unsigned(EthPktType'pos(txReq.typ), 2));
+      probe3( 31 downto 20 ) <= txReq.dstMac(47 downto 36);
+      probe3( 47 downto 32 ) <= txReq.protoData;
+      probe3( 63 downto 48 ) <= txReq.dstIp(31 downto 16);
 
       U_EOE_RX: entity work.ESCEoERx
          port map (
