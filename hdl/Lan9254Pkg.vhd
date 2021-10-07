@@ -39,7 +39,13 @@ package Lan9254Pkg is
 
    constant LAN9254REP_INIT_C : Lan9254RepType := (
       valid   => '0',
-      rdata   => (others => 'X'),
+      rdata   => (others => '0'),
+      berr    => (others => '1')
+   );
+
+   constant LAN9254REP_DFLT_C : Lan9254RepType := (
+      valid   => '1',
+      rdata   => (others => '0'),
       berr    => (others => '1')
    );
 
@@ -54,7 +60,7 @@ package Lan9254Pkg is
 
    constant LAN9254PDO_MST_INIT_C : Lan9254PDOMstType := (
       wrdAddr => (others => '0'),
-      data    => (others => 'X'),
+      data    => (others => '0'),
       valid   => '0',
       ben     => (others => '0'),
       usr     => (others => '0'),
@@ -70,7 +76,7 @@ package Lan9254Pkg is
    end record Lan9254StrmMstType;
 
    constant LAN9254STRM_MST_INIT_C : Lan9254StrmMstType := (
-      data    => (others => 'X'),
+      data    => (others => '0'),
       valid   => '0',
       ben     => (others => '0'),
       usr     => (others => '0'),
@@ -203,17 +209,17 @@ package Lan9254Pkg is
    procedure lan9254HBIRead(
       variable rdOut: inout Lan9254ReqType;
       signal   rdInp: in    Lan9254RepType;
-      constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
-      constant rdBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
+      constant rdAdr: in    std_logic_vector(15 downto 0);
+      constant rdBEn: in    std_logic_vector(3 downto 0);
       constant enbl : in    boolean                       := true
    );
 
    procedure lan9254HBIWrite(
       variable wrOut: inout Lan9254ReqType;
       signal   wrInp: in    Lan9254RepType;
-      constant wrAdr: in    std_logic_vector(15 downto 0) := (others => '0');
+      constant wrAdr: in    std_logic_vector(15 downto 0);
       constant wrDat: in    std_logic_vector(31 downto 0);
-      constant wrBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
+      constant wrBEn: in    std_logic_vector(3 downto 0);
       constant enbl : in    boolean                       := true
    );
 
@@ -246,7 +252,8 @@ end package Lan9254Pkg;
 package body Lan9254Pkg is
 
    procedure adjReq(
-      variable rv : inout Lan9254ReqType
+      variable rv : inout Lan9254ReqType;
+      constant rw : in    std_logic
    ) is
    begin
       if    ( rv.addr(1 downto 0) = "11" ) then
@@ -261,25 +268,59 @@ package body Lan9254Pkg is
          rv.data := rv.data(23 downto 0) & x"00";
       end if;
       rv.addr(1 downto 0) := (others => '0');
+      rv.rdnwr := rw;
       rv.valid := '1';
    end procedure adjReq;
 
    function adjReq(
-      constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
-      constant bena : in    std_logic_vector( 3 downto 0) := (others => HBI_BE_ACT_C);
-      constant rdnwr: in    std_logic                     := '1';
+      constant rdAdr: in    std_logic_vector(15 downto 0);
+      constant bena : in    std_logic_vector( 3 downto 0);
+      constant rdnwr: in    std_logic;
       constant data : in    std_logic_vector(31 downto 0) := (others => '0')
    ) return Lan9254ReqType is
       variable rv : Lan9254ReqType;
    begin
-      rv       := LAN9254REQ_INIT_C;
-      rv.addr  := unsigned(rdAdr(rv.addr'high downto 0));
-      rv.be    := bena;
-      rv.data  := data;
-      rv.rdnwr := rdnwr;
-      adjReq( rv );
-      return rv;
+
+       rv       := LAN9254REQ_INIT_C;
+       rv.addr  := unsigned(rdAdr(rv.addr'high downto 0));
+       rv.be    := bena;
+       rv.data  := data;
+      -- rv.rdnwr := rdnwr;
+      -- vivado 2018.3 ill-synthesizes if we assign rdnwr prior to
+      -- calling adjReq (ghdl simulation passes); do it in the procedure!
+       adjReq( rv, rdnwr );
+       return rv;
    end function adjReq;
+
+
+--   function adjReq(
+--      constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
+--      constant bena : in    std_logic_vector( 3 downto 0) := (others => HBI_BE_ACT_C);
+--      constant rdnwr: in    std_logic                     := '1';
+--      constant data : in    std_logic_vector(31 downto 0) := (others => '0')
+--   ) return Lan9254ReqType is
+--      variable rv : Lan9254ReqType;
+--   begin
+--
+--       rv       := LAN9254REQ_INIT_C;
+--       rv.addr  := unsigned(rdAdr(rv.addr'high downto 2)) & "00";
+--       rv.be    := bena;
+--       rv.data  := data;
+--       rv.rdnwr := rdnwr;
+--       rv.valid := '1';
+--       if    ( rdAdr(1 downto 0) = "11" ) then
+--          rv.be   := ( 3 => bena(0), others => not HBI_BE_ACT_C );
+--          rv.data := data  ( 7 downto 0) & x"00_0000";
+--       elsif ( rdAdr(1 downto 0) = "10" ) then
+--          rv.be( 3 downto 2 ) := bena(1 downto 0);
+--          rv.be( 1 downto 0)  := (others => not HBI_BE_ACT_C);
+--          rv.data := data  (15 downto 0) & x"0000";
+--       elsif ( rdAdr(1 downto 0) = "01" ) then
+--          rv.be   := bena  ( 2 downto 0) & not HBI_BE_ACT_C;
+--          rv.data := data  (23 downto 0) & x"00";
+--       end if;
+--       return rv;
+--   end function adjReq;
 
    function adjRep(
       constant req : in Lan9254ReqType;
@@ -303,16 +344,20 @@ package body Lan9254Pkg is
       signal   rdInp: in    Lan9254RepType;
       constant enbl : in    boolean                       := true
    ) is
+      variable rdBEn : std_logic_vector(3 downto 0);
    begin
       if ( rdOut.valid = '0' ) then
-         rdOut.rdnwr := '1';
-         adjReq( rdOut );
---report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
+--         rdBEn       := rdOut.be;
+         --rdOut.rdnwr := '1';
+         -- vivado 2018.3 ill-synthesizes if we assign rdnwr prior to
+         -- calling adjReq (ghdl simulation passes); do it in the procedure!
+         adjReq( rdOut, '1' );
+-- report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
       else
          if ( rdInp.valid = '1' ) then
             rdOut.valid :='0';
             rdOut.data  := adjRep( rdOut, rdInp );
---report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
+-- report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
          end if;
       end if;
    end procedure lan9254HBIRead;
@@ -324,8 +369,10 @@ package body Lan9254Pkg is
    ) is
    begin
       if ( wrOut.valid = '0' ) then
-         wrOut.rdnwr := '0';
-         adjReq(wrOut);
+         -- vivado 2018.3 ill-synthesizes if we assign rdnwr prior to
+         -- calling adjReq (ghdl simulation passes); do it in the procedure!
+         --wrOut.rdnwr := '0';
+         adjReq(wrOut, '0');
       else
          if ( wrInp.valid = '1' ) then
             wrOut.valid := '0';
@@ -336,19 +383,19 @@ package body Lan9254Pkg is
    procedure lan9254HBIRead(
       variable rdOut: inout Lan9254ReqType;
       signal   rdInp: in    Lan9254RepType;
-      constant rdAdr: in    std_logic_vector(15 downto 0) := (others => '0');
-      constant rdBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
+      constant rdAdr: in    std_logic_vector(15 downto 0);
+      constant rdBEn: in    std_logic_vector(3 downto 0);
       constant enbl : in    boolean                       := true
    ) is
    begin
       if ( rdOut.valid = '0' ) then
          rdOut := adjReq(rdAdr, rdBEn, '1');
---report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
+-- report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
       else
          if ( rdInp.valid = '1' ) then
             rdOut.valid := '0';
             rdOut.data  := adjRep( rdOut, rdInp );
---report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
+-- report "HBIRead from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " GOT " & toString(rdOut.data) & " (rdata " & toString(rdInp.rdata) &")";
          end if;
       end if;
    end procedure lan9254HBIRead;
@@ -356,9 +403,9 @@ package body Lan9254Pkg is
    procedure lan9254HBIWrite(
       variable wrOut: inout Lan9254ReqType;
       signal   wrInp: in    Lan9254RepType;
-      constant wrAdr: in    std_logic_vector(15 downto 0) := (others => '0');
+      constant wrAdr: in    std_logic_vector(15 downto 0);
       constant wrDat: in    std_logic_vector(31 downto 0);
-      constant wrBEn: in    std_logic_vector(3 downto 0)  := (others => HBI_BE_ACT_C);
+      constant wrBEn: in    std_logic_vector(3 downto 0);
       constant enbl : in    boolean                       := true
    ) is
    begin
@@ -435,7 +482,7 @@ package body Lan9254Pkg is
          else                   s(i) := 'U';
          end if;
       end loop;
-      return s; 
+      return s;
    end function toString;
 
    function toString(constant x : unsigned)
