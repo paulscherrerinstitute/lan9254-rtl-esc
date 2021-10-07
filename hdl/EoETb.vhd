@@ -93,6 +93,9 @@ begin
       );
 
    U_DUT_RX : entity work.ESCEoERx
+      generic map (
+         CLOCK_FREQ_G        => 100.0E3
+      )
       port map (
          clk                 => clk,
          rst                 => rst,

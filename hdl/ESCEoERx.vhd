@@ -8,20 +8,28 @@ use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
 
 entity ESCEoERx is
+   generic (
+      CLOCK_FREQ_G   : real;
+      RX_TIMEOUT_G   : real := 0.1
+   );
    port (
-      clk         : in  std_logic;
-      rst         : in  std_logic;
+      clk            : in  std_logic;
+      rst            : in  std_logic;
 
-      mbxMstIb    : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
-      mbxRdyIb    : out std_logic;
+      mbxMstIb       : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
+      mbxRdyIb       : out std_logic;
 
-      eoeMstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      eoeErrOb    : out std_logic;
-      eoeRdyOb    : in  std_logic := '1'
+      eoeMstOb       : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      eoeErrOb       : out std_logic;
+      eoeRdyOb       : in  std_logic := '1'
    );
 end entity ESCEoERx;
 
 architecture rtl of ESCEoERx is
+
+   constant FRAME_TIMEOUT_C : natural := natural( RX_TIMEOUT_G * CLOCK_FREQ_G ) + 1; -- avoid zero
+
+   subtype FrameTimeoutType is natural range 0 to FRAME_TIMEOUT_C;
 
    type StateType is (IDLE, HDR, FWD, DROP);
 
@@ -41,6 +49,7 @@ architecture rtl of ESCEoERx is
       frameNo                 : unsigned(3 downto 0);
       eoeErr                  : std_logic;
       drained                 : std_logic;
+      frameTimeout            : FrameTimeoutType;
    end record RegType;
 
    constant REG_INIT_C        : RegType := (
@@ -56,7 +65,8 @@ architecture rtl of ESCEoERx is
       frameOff                => (others => '0'),
       frameNo                 => (others => '0'),
       eoeErr                  => '0',
-      drained                 => '1'
+      drained                 => '1',
+      frameTimeout            => 0
    );
 
    signal r                   : RegType := REG_INIT_C;
@@ -77,6 +87,10 @@ begin
       m.usr(MBX_TYP_EOE_C'range) := MBX_TYP_EOE_C;
       m.valid := '0';
       rdy     := '1';
+
+      if ( r.frameTimeout /= 0 ) then
+         v.frameTimeout := r.frameTimeout - 1;
+      end if;
 
       C_STATE : case ( r.state ) is
 
@@ -115,6 +129,7 @@ report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
                   v.frameNo        := unsigned(mbxMstIb.data(15 downto 12));
  --- TODO : CHECK
                   v.state          := FWD;
+                  v.frameTimeout   := FRAME_TIMEOUT_C;
                   if ( v.fragNo /= r.fragNo ) then
 report "Unexpected fragment # " & integer'image(to_integer(v.fragNo)) & " exp " & integer'image(to_integer(r.fragNo));
                      if ( v.fragNo /= 0 ) then
@@ -154,6 +169,9 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                else
                   v.fragNo  := r.fragNo + 1;
                end if;
+            elsif ( r.frameTimeout = 0 ) then
+               v.eoeErr := '1';
+               v.state  := DROP;
             end if;
 
          when DROP =>

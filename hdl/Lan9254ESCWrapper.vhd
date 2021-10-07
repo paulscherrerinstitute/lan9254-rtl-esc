@@ -277,6 +277,9 @@ begin
       probe3( 63 downto 48 ) <= txReq.dstIp(31 downto 16);
 
       U_EOE_RX: entity work.ESCEoERx
+         generic map (
+            CLOCK_FREQ_G     => CLOCK_FREQ_G
+         )
          port map (
             clk         => clk,
             rst         => rst,
