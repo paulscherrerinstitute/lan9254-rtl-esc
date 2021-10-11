@@ -33,7 +33,9 @@ entity ESCEoETx is
       eoeRdyIb    : out std_logic;
 
       mbxMstOb    : out Lan9254StrmMstType;
-      mbxRdyOb    : in  std_logic             := '1'
+      mbxRdyOb    : in  std_logic             := '1';
+
+      debug       : out std_logic_vector(31 downto 0)
    );
 end entity ESCEoETx;
 
@@ -85,6 +87,13 @@ architecture rtl of ESCEoETx is
    signal   rdyLoc   : std_logic;
 
 begin
+
+   debug( 7 downto  0) <= std_logic_vector( to_unsigned( r.pldCnt, 8 ) );
+   debug(15 downto  8) <= std_logic_vector( r.frameSz(7 downto 0 ) );
+   debug(18 downto 16) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
+   debug(19          ) <= r.lstBen(1);
+   debug(25 downto 20) <= std_logic_vector( r.fragNo  );
+   debug(31 downto 26) <= std_logic_vector( r.fragOff );
 
    G_NO_STORE : if ( not STORE_AND_FWD_G ) generate
       frameSz  <= eoeFrameSz;
