@@ -131,15 +131,6 @@ begin
          eoeMst.usr                      <= (others => '0');
       end process P_MST_COMB;
 
-      P_RAMWR : process ( clk ) is
-      begin
-         if ( rising_edge( clk ) ) then
-            if ( ( eoeMst.valid = '0' ) and ( eoeMstIb.valid = '1' ) ) then
-               mem( idx( frameSz ) ) <= eoeMstIb.data;
-            end if;
-         end if;
-      end process P_RAMWR;
-
       P_RAMRD : process ( clk ) is
       begin
          if ( rising_edge( clk ) ) then
