@@ -55,7 +55,8 @@ entity Lan9254ESCWrapper is
       escState                : out ESCStateType;
       debug                   : out std_logic_vector(23 downto 0);
 
-      testFailed              : out std_logic_vector(4 downto 0)
+      stats                   : out StatCounterArray(21 downto 0) := (others => STAT_COUNTER_INIT_C);
+      testFailed              : out std_logic_vector( 4 downto 0)
    );
 end entity Lan9254ESCWrapper;
 
@@ -68,7 +69,11 @@ architecture rtl of Lan9254ESCWrapper is
       if ( c ) then return a; else return b; end if;
    end function ite;
 
-   constant NUM_MBX_ERRS_C    : natural := 1;
+   function ite(c: boolean; a,b: unsigned) return unsigned is
+   begin
+      if ( c ) then return a; else return b; end if;
+   end function ite;
+
 
    constant NUM_MBX_ERRS_C    : natural := 1;
 
@@ -97,6 +102,14 @@ architecture rtl of Lan9254ESCWrapper is
    signal   rxStmMst          : Lan9254StrmMstArray(NUM_RXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
    signal   rxStmRdy          : std_logic_vector(NUM_RXMBX_PROTO_C - 1 downto 0)    := (others => '1'                   );
 
+   signal   ilaTrigEoE2ESC    : std_logic := '0';
+   signal   ilaTackEoE2ESC    : std_logic := '1';
+
+   signal   ilaTrigESC2EoE    : std_logic := '0';
+   signal   ilaTackESC2EoE    : std_logic := '1';
+
+   signal   reqLoc            : Lan9254ReqType;
+
 begin
 
    U_ESC : entity work.Lan9254ESC
@@ -113,7 +126,7 @@ begin
          clk         => clk,
          rst         => rst,
 
-         req         => req,
+         req         => reqLoc,
          rep         => rep,
 
          rxPDOMst    => rxPDOMst,
@@ -125,8 +138,8 @@ begin
          txMBXMst    => txMbxMst,
          txMBXRdy    => txMbxRdy,
 
-         rxMBXMst    => rxMBXMst,
-         rxMBXRdy    => rxMBXRdy,
+         rxMBXMst    => rxMbxMst,
+         rxMBXRdy    => rxMbxRdy,
 
      
          mbxErrMst   => errMst(0),
@@ -137,8 +150,17 @@ begin
          escState    => escState,
          debug       => debug(23 downto 0),
 
-         testFailed  => testFailed
+         testFailed  => testFailed,
+         stats       => stats(1 downto 0),
+
+         ilaTrigOb   => ilaTrigESC2EoE,
+         ilaTackOb   => ilaTackESC2EoE,
+
+         ilaTrigIb   => ilaTrigEoE2ESC,
+         ilaTackIb   => ilaTackEoE2ESC
       );
+
+      req <= reqLoc;
 
    -- Mailbox multiplexers
 
@@ -233,16 +255,24 @@ begin
       signal   probe2          : std_logic_vector(63 downto 0) := (others => '0');
       signal   probe3          : std_logic_vector(63 downto 0) := (others => '0');
 
+      signal   eoeTxDbg        : std_logic_vector(31 downto 0);
+      signal   eoeRxDbg        : std_logic_vector(15 downto 0);
+      signal   uUDPDbg         : std_logic_vector(15 downto 0);
+
    begin
 
       GEN_ILA : if ( GEN_EOE_ILA_G ) generate
          U_ILA : component Ila_256
             port map (
-               clk      => clk,
-               probe0   => probe0,
-               probe1   => probe1,
-               probe2   => probe2,
-               probe3   => probe3
+               clk          => clk,
+               probe0       => probe0,
+               probe1       => probe1,
+               probe2       => probe2,
+               probe3       => probe3,
+               trig_out     => ilaTrigEoE2ESC,
+               trig_out_ack => ilaTackEoE2ESC,
+               trig_in      => ilaTrigESC2EoE,
+               trig_in_ack  => ilaTackESC2EoE
             );
       end generate GEN_ILA;
 
@@ -250,25 +280,37 @@ begin
       probe0( 16           ) <= rxStmMst(EOE_RX_STRM_IDX_C).valid;
       probe0( 17           ) <= rxStmRdy(EOE_RX_STRM_IDX_C);
       probe0( 18           ) <= rxStmMst(EOE_RX_STRM_IDX_C).last;
-      probe0( 31 downto 19 ) <= (others => '0');
+      probe0( 19 downto 19 ) <= (others => '0');
+      probe0( 20           ) <= rxMbxMst.valid;
+      probe0( 21           ) <= rxMbxRdy;
+      probe0( 23 downto 22 ) <= rxMbxMst.ben;
+      probe0( 26 downto 24 ) <= uUDPDbg(14 downto 12);
+      probe0( 30 downto 27 ) <= reqLoc.be;
+      probe0( 31 downto 31 ) <= (others => '0');
       probe0( 47 downto 32 ) <= eoeMstOb.data;
       probe0( 48           ) <= eoeMstOb.valid;
       probe0( 49           ) <= eoeRdyOb;
       probe0( 50           ) <= eoeMstOb.last;
       probe0( 51           ) <= eoeErrOb;
-      probe0( 63 downto 52 ) <= (others => '0');
+      probe0( 53 downto 52 ) <= eoeMstOb.ben;
+      probe0( 63 downto 54 ) <= uUDPDbg(9 downto 0);
 
       probe1( 15 downto  0 ) <= txStmMst(EOE_RX_STRM_IDX_C).data;
       probe1( 16           ) <= txStmMst(EOE_RX_STRM_IDX_C).valid;
       probe1( 17           ) <= txStmRdy(EOE_RX_STRM_IDX_C);
       probe1( 18           ) <= txStmMst(EOE_RX_STRM_IDX_C).last;
-      probe1( 31 downto 19 ) <= (others => '0');
+      probe1( 19 downto 19 ) <= (others => '0');
+      probe1( 20           ) <= txMbxMst.valid;
+      probe1( 21           ) <= txMbxRdy;
+      probe1( 23 downto 22 ) <= txMbxMst.ben;
+      probe1( 31 downto 24 ) <= (others => '0');
       probe1( 47 downto 32 ) <= eoeMstIb.data;
       probe1( 48           ) <= eoeMstIb.valid;
       probe1( 49           ) <= eoeRdyIb;
       probe1( 50           ) <= eoeMstIb.last;
-      probe1( 51           ) <= '0';
-      probe1( 63 downto 52 ) <= (others => '0');
+      probe1( 51           ) <= reqLoc.valid;
+      probe1( 53 downto 52 ) <= eoeMstIb.ben;
+      probe1( 63 downto 54 ) <= std_logic_vector(reqLoc.addr(9 downto 0));
 
       probe2( 15 downto  0 ) <= std_logic_vector(rxReq.length);
       probe2( 16           ) <= rxReq.valid;
@@ -276,15 +318,14 @@ begin
       probe2( 19 downto 18 ) <= std_logic_vector(to_unsigned(EthPktType'pos(rxReq.typ), 2));
       probe2( 31 downto 20 ) <= rxReq.dstMac(47 downto 36);
       probe2( 47 downto 32 ) <= rxReq.protoData;
-      probe2( 63 downto 48 ) <= rxReq.dstIp(31 downto 16);
+      probe2( 63 downto 48 ) <= eoeRxDbg;
 
       probe3( 15 downto  0 ) <= std_logic_vector(txReq.length);
       probe3( 16           ) <= txReq.valid;
       probe3( 17           ) <= txRdy;
       probe3( 19 downto 18 ) <= std_logic_vector(to_unsigned(EthPktType'pos(txReq.typ), 2));
       probe3( 31 downto 20 ) <= txReq.dstMac(47 downto 36);
-      probe3( 47 downto 32 ) <= txReq.protoData;
-      probe3( 63 downto 48 ) <= txReq.dstIp(31 downto 16);
+      probe3( 63 downto 32 ) <= eoeTxDbg;
 
       U_EOE_RX: entity work.ESCEoERx
          generic map (
@@ -300,7 +341,10 @@ begin
    
             eoeMstOb    => eoeMstOb,
             eoeRdyOb    => eoeRdyOb,
-            eoeErrOb    => eoeErrOb
+            eoeErrOb    => eoeErrOb,
+
+            debug       => eoeRxDbg,
+            stats       => stats(4 downto 2)
          );
 
       U_EOE_TX: entity work.ESCEoETx
@@ -317,7 +361,9 @@ begin
             eoeFrameSz  => txReq.length(10 downto 0),
    
             mbxMstOb    => txStmMst(EOE_TX_STRM_IDX_C),
-            mbxRdyOb    => txStmRdy(EOE_TX_STRM_IDX_C)
+            mbxRdyOb    => txStmRdy(EOE_TX_STRM_IDX_C),
+
+            debug       => eoeTxDbg
          );
    
       U_IP_RX : entity work.MicroUDPRx
@@ -337,7 +383,10 @@ begin
             txRdy            => rxRdy,
    
             pldMstOb         => ipPldRxMst,
-            pldRdyOb         => ipPldRxRdy
+            pldRdyOb         => ipPldRxRdy,
+
+            debug            => uUDPDbg,
+            stats            => stats(21 downto 5)
          );
    
       U_IP_TX : entity work.MicroUDPTx
