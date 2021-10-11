@@ -3,6 +3,7 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 use     work.Lan9254Pkg.all;
+use     work.Lan9254ESCPkg.all;
 use     work.MicroUDPPkg.all;
 
 entity MicroUdpRx is
@@ -25,8 +26,10 @@ entity MicroUdpRx is
       txRdy    : in  std_logic := '1';
 
       pldMstOb : out Lan9254StrmMstType;
-      pldRdyOb : in  std_logic := '1'
+      pldRdyOb : in  std_logic := '1';
 
+      debug    : out std_logic_vector(15 downto 0);
+      stats    : out StatCounterArray(16 downto 0)
    );
 end entity MicroUdpRx;
 
@@ -42,6 +45,23 @@ architecture rtl of MicroUdpRx is
       txReq       : EthTxReqType;
       rdy         : std_logic;
       maybeBcst   : boolean;
+      nMacDrp     : StatCounterType;
+      nShtDrp     : StatCounterType;
+      nArpHdr     : StatCounterType;
+      nIP4Hdr     : StatCounterType;
+      nUnkHdr     : StatCounterType;
+      nArpDrp     : StatCounterType;
+      nArpReq     : StatCounterType;
+      nIP4Drp     : StatCounterType;
+      nPinReq     : StatCounterType;
+      nUdpReq     : StatCounterType;
+      nUnkIP4     : StatCounterType;
+      nIP4Mis     : StatCounterType;
+      nPinDrp     : StatCounterType;
+      nPinHdr     : StatCounterType;
+      nUdpMis     : StatCounterType;
+      nUdpHdr     : StatCounterType;
+      nPktFwd     : StatCounterType;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -49,7 +69,24 @@ architecture rtl of MicroUdpRx is
       cnt         => 0,
       txReq       => ETH_TX_REQ_INIT_C,
       rdy         => '1',
-      maybeBcst   => false
+      maybeBcst   => false,
+      nMacDrp     => STAT_COUNTER_INIT_C,
+      nShtDrp     => STAT_COUNTER_INIT_C,
+      nArpHdr     => STAT_COUNTER_INIT_C,
+      nIP4Hdr     => STAT_COUNTER_INIT_C,
+      nUnkHdr     => STAT_COUNTER_INIT_C,
+      nArpDrp     => STAT_COUNTER_INIT_C,
+      nArpReq     => STAT_COUNTER_INIT_C,
+      nIP4Drp     => STAT_COUNTER_INIT_C,
+      nPinReq     => STAT_COUNTER_INIT_C,
+      nUdpReq     => STAT_COUNTER_INIT_C,
+      nUnkIP4     => STAT_COUNTER_INIT_C,
+      nIP4Mis     => STAT_COUNTER_INIT_C,
+      nPinDrp     => STAT_COUNTER_INIT_C,
+      nPinHdr     => STAT_COUNTER_INIT_C,
+      nUdpMis     => STAT_COUNTER_INIT_C,
+      nUdpHdr     => STAT_COUNTER_INIT_C,
+      nPktFwd     => STAT_COUNTER_INIT_C
    );
 
    procedure matchMac(
@@ -113,10 +150,11 @@ begin
 
                matchMac( mstIb.data, v, ok );
                if ( not ok ) then
-                  v.state := DROP;
+                  v.state     := DROP;
+                  v.nMacDrp   := r.nMacDrp + 1;
                else
-                  v.cnt   := r.cnt + 1;
-                  v.state := MAC_HDR;
+                  v.cnt       := r.cnt + 1;
+                  v.state     := MAC_HDR;
                end if;
             end if;
                   
@@ -126,12 +164,14 @@ begin
                v.state := DROP;
             elsif ( mstIb.valid = '1' ) then
                if ( mstIb.last  = '1' ) then
-                  v.state := DROP;
+                  v.state   := DROP;
+                  v.nShtDrp := r.nShtDrp + 1;
                else
                   if ( r.cnt < 3 ) then
                      matchMac( mstIb.data, v, ok );
                      if ( not ok ) then
-                        v.state := DROP;
+                        v.state     := DROP;
+                        v.nMacDrp   := r.nMacDrp + 1;
                      end if;
                   else
 report "MAC PASSED";
@@ -143,9 +183,12 @@ report "MAC PASSED";
                           if    ( mstIb.data = x"0608" ) then
                              v.state        := ARP_REQ;
                              v.txReq.length := to_unsigned( MAC_HDR_SIZE_C + ARP_SIZE_C, 16);
+                             v.nArpHdr      := r.nArpHdr + 1;
                           elsif ( mstIb.data = x"0008" ) then
-                             v.state := IP_HDR;
+                             v.state        := IP_HDR;
+                             v.nIP4Hdr      := r.nIP4Hdr + 1;
                           else
+                             v.nUnkHdr      := r.nUnkHdr + 1;
                              v.state := DROP;
                           end if;
                      end case;
@@ -161,11 +204,12 @@ report "MAC PASSED";
                v.state := DROP;
 report "ARP_REQ error drop";
             elsif ( mstIb.valid = '1' ) then
-               if ( mstIb.last  = '1' and ( r.cnt < IP4_HDR_SIZE_C ) ) then
+               if ( ( mstIb.last  = '1' ) and ( r.cnt < 20 ) ) then
 report "ARP_REQ early last drop";
-                  v.state := DROP;
+                  v.nShtDrp   := r.nShtDrp + 1;
+                  v.state     := DROP;
                else
-                  v.cnt := r.cnt + 1; -- resetState manipulates v.cnt; increment first
+                  v.cnt       := r.cnt + 1; -- resetState manipulates v.cnt; increment first
                   case ( r.cnt ) is
                      when  7 =>
                         if ( mstIb.data /= x"0100" ) then v.state := DROP; end if;
@@ -188,19 +232,23 @@ report "ARP_REQ early last drop";
                         if ( mstIb.data /= myIp(31 downto 16) ) then
                            v.state := DROP;
                         else
+                           v.nArpReq     := r.nArpReq + 1;
                            v.txReq.typ   := ARP_REP;
                            v.txReq.valid := '1';
 report "ARP_REQ OK, L " & std_logic'image(mstIb.last);
                            if ( mstIb.last = '1' ) then
                               resetState( v );
                            else
-                              v.state := DROP;
+                              v.state   := DROP;
                            end if;
                         end if;
 if ( v.state = DROP ) then
 report "ARP_REQ drop @" & integer'image(r.cnt);
 end if;
                   end case;
+                  if ( v.state = DROP ) then
+                     v.nArpDrp   := r.nArpDrp + 1;
+                  end if;
                end if;
             end if;
 
@@ -208,11 +256,12 @@ end if;
             if ( errIb = '1' ) then
                v.state := DROP;
             elsif ( mstIb.valid = '1' ) then
-               if ( ( mstIb.last  = '1' ) and ( r.cnt < 17 ) ) then
+               if ( ( mstIb.last  = '1' ) ) then
 report "IP_HDR early last drop";
-                  v.state := DROP;
+                  v.state   := DROP;
+                  v.nShtDrp := r.nShtDrp + 1;
                else
-                  v.cnt := r.cnt + 1;
+                  v.cnt     := r.cnt + 1;
                   case ( r.cnt ) is
                     when  7    =>
                        if ( mstIb.data(7 downto 0) /= x"45" ) then v.state := DROP; end if;
@@ -231,7 +280,8 @@ report "IP_HDR early last drop";
                           when x"11" =>
                              v.txReq.typ := UDP;
                           when others =>
-                             v.state := DROP;
+                             v.nUnkIP4   := r.nUnkIP4 + 1;
+                             v.state     := DROP;
                        end case;
                     when 12    => -- ignore checksum
                     when 13    =>
@@ -240,21 +290,29 @@ report "IP_HDR early last drop";
                        v.txReq.dstIp(31 downto 16) := mstIb.data;
                     when 15    =>
                        if ( myIp( 15 downto  0 ) /= mstIb.data ) then
-                          v.state := DROP;
+                          v.nIP4Mis    := r.nIP4Mis + 1;
+                          v.state      := DROP;
                        end if;
                     when others  =>
                        if ( myIp( 31 downto 16 ) /= mstIb.data ) then
-                          v.state := DROP;
+                          v.nIP4Mis    := r.nIP4Mis + 1;
+                          v.state      := DROP;
                        else
+                          v.nIP4Hdr    := r.nIP4Hdr + 1;
                           if ( r.txReq.typ = PING_REP ) then
-                             v.state := ICMP_REQ;
+                             v.nPinReq := r.nPinReq + 1;
+                             v.state   := ICMP_REQ;
 report "IP HDR PASSED => ICMP";
                           else
 report "IP HDR PASSED => UDP";
-                             v.state := UDP;
+                             v.nUdpReq := r.nUdpReq + 1;
+                             v.state   := UDP;
                           end if;
                        end if;
                   end case;
+                  if ( v.state = DROP ) then
+                     v.nIP4Drp := r.nIP4Drp + 1;
+                  end if;
                end if;
             end if;
 if ( v.state = DROP ) then
@@ -265,18 +323,21 @@ end if;
             if ( errIb = '1' ) then
                v.state := DROP;
             elsif ( mstIb.valid = '1' ) then
-               if ( mstIb.last  = '1' and ( r.cnt < 19 ) ) then
-                 v.state := DROP;
+               if ( mstIb.last  = '1' ) then
+                 v.state   := DROP;
+                 v.nShtDrp := r.nShtDrp + 1;
                else
                   v.cnt := r.cnt + 1;
                   case ( r.cnt ) is
                      when     17 =>
                         if ( mstIb.data /= x"0008" ) then
-                           v.state := DROP;
+                           v.state        := DROP;
+                           v.nPinDrp      := r.nPinDrp + 1;
                         end if;
                      when others =>
                         v.state           := FWD;
                         v.txReq.valid     := '1';
+                        v.nPinHdr         := r.nPinHdr + 1;
                         -- record checksum; sender may adjust
                         v.txReq.protoData := mstIb.data;
                   end case;
@@ -287,8 +348,9 @@ end if;
             if ( errIb = '1' ) then
                v.state := DROP;
             elsif ( mstIb.valid = '1' ) then
-               if ( mstIb.last  = '1' and ( r.cnt < 21 ) ) then
-                 v.state := DROP;
+               if ( mstIb.last  = '1' ) then
+                 v.state   := DROP;
+                 v.nShtDrp := r.nShtDrp + 1;
                else
                   v.cnt := r.cnt + 1;
                   case ( r.cnt ) is
@@ -296,11 +358,13 @@ end if;
                         v.txReq.protoData := mstIb.data;
                      when 18 =>
                         if ( mstIb.data /= myPort ) then
-                           v.state := DROP;
+                           v.nUdpMis  := r.nUdpMis + 1;
+                           v.state    := DROP;
                            -- should really send ICMP message
                         end if;
                      when 19 =>
                      when others =>
+                        v.nUdpHdr     := r.nUdpHdr + 1;
                         v.state       := FWD;
                         v.txReq.valid := '1';
                   end case;
@@ -308,6 +372,9 @@ end if;
             end if;
 
          when DROP =>
+            if ( ( mstIb.valid = '1' ) ) then
+               v.cnt := r.cnt + 1;
+            end if;
             if ( ( ( mstIb.valid and mstIb.last ) or errIb ) = '1' ) then
                resetState( v );
             end if;
@@ -315,7 +382,14 @@ end if;
          when FWD =>
             rdyIb    <= pldRdyOb; 
             m.valid  := mstIb.valid;
-            if ( ( (pldRdyOb and mstIb.valid and mstIb.last) or errIb ) = '1' ) then
+            if ( errIb = '1' ) then
+               m.last := '1';
+            end if;
+            if ( ( mstIb.valid and pldRdyOb ) = '1' ) then
+               v.cnt := r.cnt + 1;
+            end if;
+            if ( (pldRdyOb and ( (mstIb.valid and mstIb.last) or errIb ) ) = '1' ) then
+               v.nPktFwd := r.nPktFwd + 1;
                resetState( v );
             end if;
 
@@ -337,5 +411,28 @@ end if;
          end if;
       end if;
    end process P_SEQ;
+
+   debug(10 downto  0) <= std_logic_vector( to_unsigned( r.cnt, 11 ) );
+   debug(11          ) <= '0';
+   debug(14 downto 12) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
+   debug(15          ) <= '0';
+
+   stats( 0) <= r.nMacDrp;
+   stats( 1) <= r.nShtDrp;
+   stats( 2) <= r.nArpHdr;
+   stats( 3) <= r.nIP4Hdr;
+   stats( 4) <= r.nUnkHdr;
+   stats( 5) <= r.nArpDrp;
+   stats( 6) <= r.nArpReq;
+   stats( 7) <= r.nIP4Drp;
+   stats( 8) <= r.nPinReq;
+   stats( 9) <= r.nUdpReq;
+   stats(10) <= r.nUnkIP4;
+   stats(11) <= r.nIP4Mis;
+   stats(12) <= r.nPinDrp;
+   stats(13) <= r.nPinHdr;
+   stats(14) <= r.nUdpMis;
+   stats(15) <= r.nUdpHdr;
+   stats(16) <= r.nPktFwd;
 
 end architecture rtl;
