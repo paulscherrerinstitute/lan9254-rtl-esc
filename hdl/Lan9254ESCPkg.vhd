@@ -205,6 +205,11 @@ package Lan9254ESCPkg is
 
    function toSlv(constant arg : ESCStateType) return std_logic_vector;
 
+   subtype  StatCounterType is unsigned(12 downto 0);
+   constant STAT_COUNTER_INIT_C : StatCounterType := (others => '0');
+
+   type    StatCounterArray is array (natural range <>) of StatCounterType;
+
 end package LAN9254ESCPkg;
 
 package body LAN9254ESCPkg is
