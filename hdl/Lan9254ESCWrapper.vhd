@@ -70,8 +70,11 @@ architecture rtl of Lan9254ESCWrapper is
 
    constant NUM_MBX_ERRS_C    : natural := 1;
 
+   constant NUM_MBX_ERRS_C    : natural := 1;
 
    constant NUM_RXMBX_PROTO_C : natural := 1;
+
+   constant GEN_RXMBX_MUX_C   : boolean := ( NUM_RXMBX_PROTO_C > 1 );
 
    constant EOE_RX_STRM_IDX_C : natural := 0;
 
@@ -154,6 +157,7 @@ begin
          rdyOb            => txMbxRdy
       );
 
+   GEN_RXMBX_MUX : if ( GEN_RXMBX_MUX_C ) generate
    U_RXMBX_MUX : entity work.ESCRxMbxMux
       generic map (
          STREAM_CONFIG_G  => (EOE_RX_STRM_IDX_C => MBX_TYP_EOE_C)
@@ -168,6 +172,12 @@ begin
          mbxOb            => rxStmMst,
          rdyOb            => rxStmRdy
       );
+   end generate GEN_RXMBX_MUX;
+
+   GEN_NO_RXMBX_MUX : if ( not GEN_RXMBX_MUX_C ) generate
+      rxStmMst(EOE_RX_STRM_IDX_C) <= rxMbxMst;
+      rxMbxRdy                    <= rxStmRdy(EOE_RX_STRM_IDX_C);
+   end generate GEN_NO_RXMBX_MUX;
 
    -- Error mailbox stream
    U_ERR : entity work.ESCTxMbxErr
