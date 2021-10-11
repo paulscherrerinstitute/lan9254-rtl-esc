@@ -105,7 +105,11 @@ begin
 
       type MemArray is array (0 to (EOE_MAX_FRAME_SIZE_C + 1)/2 - 1) of std_logic_vector(15 downto 0);      
 
-      signal mem : MemArray      := (others => (others => '0'));
+
+      signal                 mem : MemArray := (others => (others => '0'));
+
+      attribute RAM_STYLE        : string;
+      attribute RAM_STYLE of mem : signal is "block";
 
       signal rdp : FrameSizeType := FRAME_SIZE_ZERO_C;
       signal nrp : FrameSizeType := FRAME_SIZE_ZERO_C;
@@ -114,7 +118,6 @@ begin
 
       nrp <= rdp + 2;
 
-      eoeMst.data <= mem( idx(rdp) );
       eoeMst.last <= '0'; -- unused
 
       eoeRdyIb    <= not eoeMst.valid;
@@ -127,6 +130,26 @@ begin
          end if;
          eoeMst.usr                      <= (others => '0');
       end process P_MST_COMB;
+
+      P_RAMWR : process ( clk ) is
+      begin
+         if ( rising_edge( clk ) ) then
+            if ( ( eoeMst.valid = '0' ) and ( eoeMstIb.valid = '1' ) ) then
+               mem( idx( frameSz ) ) <= eoeMstIb.data;
+            end if;
+         end if;
+      end process P_RAMWR;
+
+      P_RAMRD : process ( clk ) is
+      begin
+         if ( rising_edge( clk ) ) then
+            if ( ( eoeMst.valid and rdyLoc ) = '1' ) then
+               eoeMst.data           <= mem( idx(nrp) );
+            else
+               eoeMst.data           <= mem( idx(rdp) );
+            end if;
+         end if;
+      end process P_RAMRD;
 
       P_RDWR : process ( clk ) is
       begin
@@ -244,7 +267,7 @@ begin
                         m.data(15 downto 8) := x"EF";
                      end if;
                   end if;
-               elsif ( r.pldCnt = CHUNK_SIZE_C - 2 ) then
+               elsif ( r.pldCnt = CHUNK_SIZE_C - 2 ) then -- should we pack the last fragment (make it > 32) ?
                   m.last    := '1';
                   v.fragNo  := r.fragNo + 1;
                   v.state   := IDLE;
