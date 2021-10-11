@@ -149,10 +149,8 @@ report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
                   v.frameTimeout   := FRAME_TIMEOUT_C;
                   if ( v.fragNo /= r.fragNo ) then
 report "Unexpected fragment # " & integer'image(to_integer(v.fragNo)) & " exp " & integer'image(to_integer(r.fragNo));
-                     if ( v.fragNo /= 0 ) then
-                        v.state  := DROP;
-                        v.eoeErr := '1';
-                     end if;
+                     v.state  := DROP;
+                     v.eoeErr := '1';
                   end if;
                   if ( ( v.fragNo /= 0 ) and ( v.frameNo /= r.frameNo ) ) then
 report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & integer'image(to_integer(r.frameNo));
