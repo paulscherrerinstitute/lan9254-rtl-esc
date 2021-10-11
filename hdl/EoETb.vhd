@@ -109,13 +109,22 @@ begin
 
    B_CHECK : block is
       signal got : unsigned(15 downto 0) := (others => '0');
+      signal don : std_logic_vector(3 downto 0) := (others => '0');
    begin
 
    P_CHECK : process ( clk ) is
       variable len : unsigned(15 downto 0);
    begin
       if ( rising_edge( clk ) ) then
-         if ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
+         if ( don(0) /= '0' ) then
+            assert eoeMstOb.valid = '0' report "eoeMstOb.valid = 1 after frame" severity failure;
+            assert mbxMstOb.valid = '0' report "mbxMstOb.valid = 1 after frame" severity failure;
+            don <= don(don'left - 1 downto 0) & '1';
+            if ( don(don'left) = '1' ) then
+               report "TEST PASSED";
+               run <= false;
+            end if;
+         elsif ( ( eoeMstOb.valid and eoeRdyOb ) = '1' ) then
             if ( eoeMstOb.last = '1' and eoeMstOb.ben(1) = '0' ) then
                assert got(7 downto 0) = unsigned(eoeMstOb.data(7 downto 0)) report "Data mismatch " & toString(eoeMstOb.data) severity failure;
             else
@@ -130,8 +139,7 @@ begin
                   len := len + 1;
                end if;
                assert len = frameSz report "Final frame size mismatch" severity failure;
-               report "TEST PASSED";
-               run <= false;
+               don(0) <= '1';
             else
                assert eoeMstOb.ben = "11" report "BEN mismatch" severity failure;
             end if;
