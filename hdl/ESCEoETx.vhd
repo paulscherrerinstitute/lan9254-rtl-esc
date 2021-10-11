@@ -183,8 +183,10 @@ begin
 
          when IDLE =>
             v.pldCnt   := 0;
-            if ( eoeMst.valid = '1' ) then
-               v.frameSz := frameSz + TS_LEN_C;
+            if ( ( eoeMst.valid = '1' ) ) then
+               if ( r.fragNo = 0 ) then
+                  v.frameSz := frameSz + TS_LEN_C;
+               end if;
                v.state   := H1;
             end if;
 
