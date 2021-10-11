@@ -27,7 +27,7 @@ end entity ESCRxMbxMux;
 
 architecture rtl of ESCRxMbxMux is
 
-   type StateType is ( SEL, FWD );
+   type StateType is ( SEL, FWD, DROP );
 
    constant NUM_STREAMS_C : natural := STREAM_CONFIG_G'length;
 
@@ -60,24 +60,37 @@ begin
 
       case ( r.state ) is
          when SEL =>
-            FOR_SEL : for i in 0 to NUM_STREAMS_C - 1 loop
-               if ( STREAM_CONFIG_G(i) = mbxIb.usr(3 downto 0) ) then
-                  v.sel      := i;
-                  m(i).valid := mbxIb.valid;
-                  rdyIb      <= rdyOb(i);
-                  if ( rdyOb(i) = '1' ) then
-                     if ( mbxIb.last = '0' ) then
-                        v.state := FWD;
-                     end if;
-                  end if;
-                  exit FOR_SEL;
+            if ( mbxIb.valid = '1' ) then
+               -- default
+               rdyIb <= '1';
+               if ( mbxIb.last = '0' ) then
+                  v.state := DROP;
                end if;
-            end loop FOR_SEL;
+
+               FOR_SEL : for i in 0 to NUM_STREAMS_C - 1 loop
+                  if ( STREAM_CONFIG_G(i) = mbxIb.usr(3 downto 0) ) then
+                     v.sel      := i;
+                     m(i).valid := mbxIb.valid;
+                     rdyIb      <= rdyOb(i);
+                     v.state    := FWD;
+                     if ( ( rdyOb(i) and mbxIb.last ) = '1' ) then
+                        v.state := SEL;
+                     end if;
+                     exit FOR_SEL;
+                  end if;
+               end loop FOR_SEL;
+            end if;
 
          when FWD   =>
             m(r.sel).valid := mbxIb.valid;
             rdyIb          <= rdyOb(r.sel);
             if ( ( mbxIb.valid and rdyOb(r.sel) and mbxIb.last ) = '1' ) then
+               v.state := SEL;
+            end if;
+
+         when DROP =>
+            rdyIb <= '1';
+            if ( ( mbxIb.valid and mbxIb.last ) = '1' ) then
                v.state := SEL;
             end if;
       end case;
