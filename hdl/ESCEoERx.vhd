@@ -21,7 +21,11 @@ entity ESCEoERx is
 
       eoeMstOb       : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       eoeErrOb       : out std_logic;
-      eoeRdyOb       : in  std_logic := '1'
+      eoeRdyOb       : in  std_logic := '1';
+
+      debug          : out std_logic_vector(15 downto 0);
+
+      stats          : out StatCounterArray(2 downto 0)
    );
 end entity ESCEoERx;
 
@@ -50,6 +54,9 @@ architecture rtl of ESCEoERx is
       eoeErr                  : std_logic;
       drained                 : std_logic;
       frameTimeout            : FrameTimeoutType;
+      numFrags                : StatCounterType;
+      numFrams                : StatCounterType;
+      numDrops                : StatCounterType;
    end record RegType;
 
    constant REG_INIT_C        : RegType := (
@@ -66,13 +73,23 @@ architecture rtl of ESCEoERx is
       frameNo                 => (others => '0'),
       eoeErr                  => '0',
       drained                 => '1',
-      frameTimeout            => 0
+      frameTimeout            => 0,
+      numFrags                => STAT_COUNTER_INIT_C,
+      numFrams                => STAT_COUNTER_INIT_C,
+      numDrops                => STAT_COUNTER_INIT_C
    );
 
    signal r                   : RegType := REG_INIT_C;
    signal rin                 : RegType;
 
 begin
+
+   debug( 5 downto  0) <= std_logic_vector( r.fragNo  );
+   debug(11 downto  6) <= std_logic_vector( r.frameOff );
+
+   debug(13 downto 12) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 2 ) );
+   debug(14          ) <= r.timeAppend;
+   debug(15 downto 15) <= (others => '0');
 
    P_COMB : process ( r, mbxMstIb, eoeRdyOb ) is
       variable v   : RegType;
@@ -162,12 +179,14 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                end if;
             end if;
             if ( ( mbxMstIb.valid and eoeRdyOb and mbxMstIb.last ) = '1' ) then
-               v.state  := IDLE;
+               v.numFrags := r.numFrags + 1;
+               v.state    := IDLE;
                if ( r.lastFrag = '1' ) then
-                  v.fragNo  := to_unsigned(0, v.fragNo'length);
-                  v.frameNo := r.frameNo + 1;
+                  v.numFrams := r.numFrams + 1;
+                  v.fragNo   := to_unsigned(0, v.fragNo'length);
+                  v.frameNo  := r.frameNo + 1;
                else
-                  v.fragNo  := r.fragNo + 1;
+                  v.fragNo   := r.fragNo + 1;
                end if;
             elsif ( r.frameTimeout = 0 ) then
                v.eoeErr := '1';
@@ -185,7 +204,8 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                v.drained := '1';
             end if;
             if ( ( v.drained and not v.eoeErr ) = '1' ) then
-               v.state := IDLE;
+               v.numDrops := r.numDrops + 1;
+               v.state    := IDLE;
             end if;
 
       end case C_STATE;
@@ -207,5 +227,8 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
    end process P_SEQ;
 
    eoeErrOb <= r.eoeErr;
+   stats(0) <= r.numFrags;
+   stats(1) <= r.numFrams;
+   stats(2) <= r.numDrops;
 
 end architecture rtl;
