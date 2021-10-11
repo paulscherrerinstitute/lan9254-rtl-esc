@@ -302,11 +302,11 @@ begin
             eoeRdyOb    => eoeRdyOb,
             eoeErrOb    => eoeErrOb
          );
-   
+
       U_EOE_TX: entity work.ESCEoETx
          generic map (
             MAX_FRAGMENT_SIZE_G => to_integer(unsigned(ESC_SM1_LEN_C) - MBX_HDR_SIZE_C),
-            STORE_AND_FWD_G     => false
+            STORE_AND_FWD_G     => true
          )
          port map (
             clk         => clk,
