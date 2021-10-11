@@ -51,7 +51,14 @@ entity Lan9254ESC is
       mbxErrMst   : out MbxErrorType;
       mbxErrRdy   : in  std_logic := '1';
 
-      testFailed  : out std_logic_vector(4 downto 0)
+      testFailed  : out std_logic_vector(4 downto 0);
+
+      stats       : out StatCounterArray(1 downto 0) := (others => STAT_COUNTER_INIT_C);
+
+      ilaTrigOb   : out std_logic := '0';
+      ilaTackOb   : in  std_logic := '1';
+      ilaTrigIb   : in  std_logic := '0';
+      ilaTackIb   : out std_logic := '1'
    );
 end entity Lan9254ESC;
 
@@ -533,6 +540,12 @@ architecture rtl of Lan9254ESC is
    signal     probe1          : std_logic_vector(63 downto 0) := (others => '0');
    signal     probe2          : std_logic_vector(63 downto 0) := (others => '0');
    signal     probe3          : std_logic_vector(63 downto 0) := (others => '0');
+
+   signal     rxMBXDebug      : std_logic_vector(2 downto 0)  := (others => '0');
+
+   signal     stalled         : std_logic;
+   constant   STALL_C         : natural := 15;
+   signal     stalledCount    : natural range 0 to STALL_C;
 
    signal     txMBXBufWBEh    : std_logic;
    signal     txMBXBufWEna    : std_logic;
@@ -1524,7 +1537,10 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          rxPDORdy    => rxMBXRdy,
 
          req         => rxMBXReq,
-         rep         => rxMBXRep
+         rep         => rxMBXRep,
+
+         debug       => rxMBXDebug,
+         stats       => stats(0 downto 0)
       );
 
       P_REFORMAT : process ( rxMBXPDO ) is
@@ -1553,7 +1569,9 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          rxPDORdy    => rxPDORdy,
 
          req         => rxPDOReq,
-         rep         => rxPDORep
+         rep         => rxPDORep,
+
+         stats       => stats(1 downto 1)
       );
 
    end generate GEN_RX_PDO;
@@ -1584,6 +1602,30 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    mbxErrMst <= r.mbxErr;
 
+   P_STALLED : process ( clk ) is
+   begin
+      if ( rising_edge( clk ) ) then
+         if ( rst = '1' ) then
+            stalledCount <= 0;
+         else
+            if ( (r.state /= TXMBX_SEND) ) then
+               stalledCount <= 0;
+            elsif ( stalledCount < STALL_C ) then
+               stalledCount <= stalledCount + 1;
+            end if;
+         end if;
+      end if;
+   end process P_STALLED;
+
+   P_IS_STALLED : process ( stalledCount ) is
+   begin
+      if ( stalledCount = STALL_C ) then
+         stalled <= '1';
+      else
+         stalled <= '0';
+      end if;
+   end process P_IS_STALLED;
+
 debug(4  downto 0) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
 debug(7 downto 5)  <= r.program.seq(2).val(10 downto 8);
 debug(12 downto 8) <= std_logic_vector( to_unsigned( ControllerStateType'pos( rin.state ), 5) );
@@ -1594,35 +1636,32 @@ debug(22)           <= reqLoc.valid;
 debug(23)           <= rep.valid;
 
 
-   probe0(15 downto 14) <= (others => '0');
    probe0(13 downto  0) <= std_logic_vector(reqLoc.addr);
+   probe0(15 downto 14) <= rxMBXDebug(1 downto 0);
    probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
    probe0(21          ) <= reqLoc.rdnwr;
    probe0(22          ) <= reqLoc.valid;
    probe0(23          ) <= rep.valid;
-   probe0(28 downto 24) <= (others => '0');
-   probe0(29          ) <= r.program.don;
-   probe0(30 downto 30) <= (others => '0');
-   probe0(31          ) <= irq;
+   probe0(31 downto 24) <= std_logic_vector( rxMBXPDO.wrdAddr(7 downto 0) );
    probe0(63 downto 32) <= reqLoc.data;
 
    probe1(31 downto  0) <= rep.rdata;
    probe1(63 downto 32) <= r.lastAL;
 
    probe2( 2 downto  0) <= std_logic_vector(r.program.idx);
-   probe2( 3 downto  3) <= (others => '0');
+   probe2( 3          ) <= r.program.don;
    probe2( 6 downto  4) <= std_logic_vector(r.program.num);
-   probe2( 7 downto  7) <= (others => '0');
+   probe2( 7          ) <= irq;
    probe2( 8          ) <= toSL(r.program.seq(0).rdnwr);
    probe2( 9          ) <= toSL(r.program.seq(1).rdnwr);
    probe2(10          ) <= toSL(r.program.seq(2).rdnwr);
-   probe2(11 downto 11) <= (others => '0');
+   probe2(11          ) <= stalled;
    probe2(15 downto 12) <= r.program.seq(0).reg.bena;
    probe2(19 downto 16) <= r.program.seq(1).reg.bena;
    probe2(23 downto 20) <= r.program.seq(2).reg.bena;
    probe2(27 downto 24) <= reqLoc.be;
    probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIBypassStateType'pos( r.hbiState ) , 3 ) );
-   probe2(31          ) <= '0';
+   probe2(31          ) <= rxMBXDebug(2);
    
 
    probe2(63 downto 32) <= r.program.seq(0).val;
@@ -1632,11 +1671,15 @@ debug(23)           <= rep.valid;
 
    U_ILA_ESC : component Ila_256
       port map (
-         clk    => clk,
-         probe0 => probe0,
-         probe1 => probe1,
-         probe2 => probe2,
-         probe3 => probe3
+         clk          => clk,
+         probe0       => probe0,
+         probe1       => probe1,
+         probe2       => probe2,
+         probe3       => probe3,
+         trig_out     => ilaTrigOb,
+         trig_out_ack => ilaTackOb,
+         trig_in      => ilaTrigIb,
+         trig_in_ack  => ilaTackIb
       );
 
    testFailed <= std_logic_vector(to_unsigned(r.testFail, testFailed'length));

@@ -31,7 +31,11 @@ entity ESCSmRx is
       rxPDORdy       : in  std_logic;
 
       req            : out Lan9254ReqType;
-      rep            : in  Lan9254RepType
+      rep            : in  Lan9254RepType;
+
+      debug          : out std_logic_vector(2 downto 0);
+
+      stats          : out StatCounterArray(0 downto 0)
    );
 end entity ESCSmRx;
 
@@ -47,6 +51,8 @@ architecture rtl of ESCSmRx is
       rxStrmEndAddr   : Lan9254ByteAddrType;
       ctlReq          : Lan9254ReqType;
       decim           : natural range 0 to 255;
+      stalled         : natural range 0 to 255;
+      numFrames       : StatCounterType;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -54,7 +60,9 @@ architecture rtl of ESCSmRx is
       rxStrm          => LAN9254PDO_MST_INIT_C,
       rxStrmEndAddr   => (others => '0'),
       ctlReq          => LAN9254REQ_INIT_C,
-      decim           => 0
+      decim           => 0,
+      stalled         => 0,
+      numFrames       => STAT_COUNTER_INIT_C
    );
 
    function toWordAddr(constant a : unsigned) return Lan9254WordAddrType is
@@ -102,13 +110,22 @@ architecture rtl of ESCSmRx is
 
    signal    r        : RegType := REG_INIT_C;
    signal    rin      : RegType;
+
+   signal    is_stalled : std_logic;
   
 begin
 
    P_COMB : process ( r, trg, len, typ, rxPDORdy, rep ) is
       variable v : RegType;
    begin
-      v       := r;
+      v         := r;
+
+      v.stalled := 0;
+      if ( r.stalled > 50 ) then
+         is_stalled <= '1';
+      else
+         is_stalled <= '0';
+      end if;
 
       case ( r.state ) is
 
@@ -139,6 +156,7 @@ end if;
                   v.rxStrm.valid := '0';
                   if ( r.rxStrm.last = '1' ) then
                      -- last write completed; we are done
+                     v.numFrames := r.numFrames + 1;
                      if ( r.rxStrmEndAddr /= SM_END_ADDR_C ) then
                         -- if we read less than the SM-covered area then
                         -- we must read the last byte to release the SM.
@@ -149,6 +167,10 @@ end if;
                   else
                      -- next word
                      v.rxStrm.wrdAddr := r.rxStrm.wrdAddr + 1;
+                  end if;
+               else
+                  if ( r.stalled < 255 ) then
+                     v.stalled := r.stalled + 1;
                   end if;
                end if;
             else
@@ -189,5 +211,10 @@ end if;
    
    req      <= r.ctlReq;
    rxPDOMst <= r.rxStrm;
+
+   debug(1 downto 0) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 2 ) );
+   debug(2)          <= is_stalled;
+
+   stats(0)          <= r.numFrames;
 
 end architecture rtl;
