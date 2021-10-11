@@ -1608,7 +1608,9 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
             if ( (r.state /= TXMBX_SEND) ) then
                stalledCount <= 0;
             elsif ( stalledCount < STALL_C ) then
-               stalledCount <= stalledCount + 1;
+               if ( r.hbiState = NONE ) then
+                  stalledCount <= stalledCount + 1;
+               end if;
             end if;
          end if;
       end if;
