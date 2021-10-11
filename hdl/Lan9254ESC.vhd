@@ -554,6 +554,7 @@ architecture rtl of Lan9254ESC is
    signal     rxMBXLen        : unsigned(15 downto 0);
    signal     rxMBXTyp        : std_logic_vector(3 downto 0);
 
+   signal     reqLoc          : Lan9254ReqType;
 
 begin
 
@@ -586,10 +587,11 @@ begin
       v.txMBXLEna   := '0';
       v.txMBXTEna   := '0';
       v.txMBXStrb   := '0';
+
       rxPDORep      <= LAN9254REP_INIT_C;
       txPDORep      <= LAN9254REP_INIT_C;
       rxMBXRep      <= LAN9254REP_INIT_C;
-      req           <= r.ctlReq;
+      reqLoc        <= r.ctlReq;
       rxPDOTrg      <= '0';
       rxMBXTrg      <= '0';
 
@@ -617,15 +619,15 @@ begin
       C_HBI_STATE : case ( v.hbiState ) is
 
          when SM3 =>
-            req      <= txPDOReq;
+            reqLoc   <= txPDOReq;
             txPDORep <= rep;
 
          when SM2 =>
-            req      <= rxPDOReq;
+            reqLoc   <= rxPDOReq;
             rxPDORep <= rep;
 
          when SM0 =>
-            req      <= rxMBXReq;
+            reqLoc   <= rxMBXReq;
             rxMBXRep <= rep;
 
          when others =>
@@ -1262,7 +1264,7 @@ report  "RX-MBX Header: len "
 report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                      v.txMBXMAck := '1';
                      if ( r.txMBXReplay = RESEND_BUF ) then
-                        -- txMBXAck restores the buffer that has been previously written
+                        -- txMBXMAck restores the buffer that has been previously written
                         -- but had not been acked by the master when we received a repeat request
                         v.state := TXMBX_REPLAY;
                      else
@@ -1588,21 +1590,21 @@ debug(12 downto 8) <= std_logic_vector( to_unsigned( ControllerStateType'pos( ri
 debug(15 downto 13) <= std_logic_vector(r.program.idx);
 debug(20 downto 16) <= r.program.seq(0).val(8 downto 4);
 debug(21)           <= r.program.don;
-debug(22)           <= r.ctlReq.valid;
+debug(22)           <= reqLoc.valid;
 debug(23)           <= rep.valid;
 
 
-   probe0(13 downto  0) <= std_logic_vector(r.ctlReq.addr);
    probe0(15 downto 14) <= (others => '0');
+   probe0(13 downto  0) <= std_logic_vector(reqLoc.addr);
    probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
-   probe0(21          ) <= r.ctlReq.rdnwr;
-   probe0(22          ) <= r.ctlReq.valid;
+   probe0(21          ) <= reqLoc.rdnwr;
+   probe0(22          ) <= reqLoc.valid;
    probe0(23          ) <= rep.valid;
    probe0(28 downto 24) <= (others => '0');
    probe0(29          ) <= r.program.don;
    probe0(30 downto 30) <= (others => '0');
    probe0(31          ) <= irq;
-   probe0(63 downto 32) <= r.ctlReq.data;
+   probe0(63 downto 32) <= reqLoc.data;
 
    probe1(31 downto  0) <= rep.rdata;
    probe1(63 downto 32) <= r.lastAL;
@@ -1618,7 +1620,7 @@ debug(23)           <= rep.valid;
    probe2(15 downto 12) <= r.program.seq(0).reg.bena;
    probe2(19 downto 16) <= r.program.seq(1).reg.bena;
    probe2(23 downto 20) <= r.program.seq(2).reg.bena;
-   probe2(27 downto 24) <= r.ctlReq.be;
+   probe2(27 downto 24) <= reqLoc.be;
    probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIBypassStateType'pos( r.hbiState ) , 3 ) );
    probe2(31          ) <= '0';
    
@@ -1638,5 +1640,7 @@ debug(23)           <= rep.valid;
       );
 
    testFailed <= std_logic_vector(to_unsigned(r.testFail, testFailed'length));
+
+   req        <= reqLoc;
 
 end architecture rtl;
