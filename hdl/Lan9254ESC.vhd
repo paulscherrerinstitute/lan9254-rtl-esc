@@ -592,7 +592,6 @@ begin
       variable xct       : RWXactType;
    begin
       v             := r;
-      v.program.don := '0';
       val           := (others => '0');
       xct           := RWXACT_INIT_C;
       v.txMBXMAck   := '0';
@@ -647,6 +646,7 @@ begin
             -- ESC state machine only executes if the HBI
             -- is not currently assigned to an SM handling
             -- channel.
+            v.program.don := '0';
 
             C_STATE : case ( r.state ) is
 
@@ -1458,9 +1458,6 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                      end if;
                      v.state       := POLL_IRQ;
                   end if;
-                  
-                  
-
  
             end case C_STATE;
       end case C_HBI_STATE;
