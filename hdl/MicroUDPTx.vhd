@@ -39,11 +39,23 @@ architecture rtl of MicroUdpTx is
       hdrCsumRst  : std_logic;
    end record RegType;
 
+   -- use defaults but assert BEN and set EOE type
+   function resetStreamMaster return Lan9254StrmMstType is
+      variable v : Lan9254StrmMstType;
+   begin
+      v                 := LAN9254STRM_MST_INIT_C;
+      v.ben             := "11";
+      v.last            := '0';
+      v.valid           := '0';
+      v.usr(3 downto 0) := MBX_TYP_EOE_C;
+      return v;
+   end function resetStreamMaster;
+
    constant REG_INIT_C : RegType := (
       state       => IDLE,
       cnt         => 0,
       txRdy       => '0',
-      mstOb       => LAN9254STRM_MST_INIT_C,
+      mstOb       => resetStreamMaster,
       hdrCsumRst  => '1'
    );
 
@@ -100,7 +112,7 @@ begin
                v.cnt         := r.cnt + 1;
                v.hdrCsumRst  := '0';
             end if;
-                  
+
          when MAC_HDR  =>
             if ( rdyOb = '1' ) then
                v.cnt := r.cnt + 1;
@@ -161,7 +173,7 @@ report "Sent ARP REP";
                v.cnt := r.cnt + 1;
                case ( r.cnt ) is
                   when  7 =>      v.mstOb.data := x"0045";
-                  when  8 =>      v.mstOb.data := bswap(txReq.length - MAC_HDR_SIZE_C); 
+                  when  8 =>      v.mstOb.data := bswap(txReq.length - MAC_HDR_SIZE_C);
                                   v4HdrCsumMux <= v.mstOb.data;
                   when  9 | 10 => v.mstOb.data := x"0000"; -- id, flags, frag. offset
                   when 11 =>      if ( txReq.typ = PING_REP ) then
