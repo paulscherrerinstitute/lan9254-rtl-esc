@@ -267,6 +267,14 @@ begin
                         m.data(15 downto 8) := x"EF";
                      end if;
                   end if;
+               elsif ( eoeMst.last = '1' ) then
+                  -- short AKA aborted frame; we already sent our header with the frame length; try
+                  -- to jam the receiver by forcing a new frame
+                  m.last    := '1';
+                  v.frameNo := r.frameNo + 1;
+                  v.fragNo  := (others => '0');
+                  v.fragOff := (others => '0');
+                  v.state   := IDLE;
                elsif ( r.pldCnt = CHUNK_SIZE_C - 2 ) then -- should we pack the last fragment (make it > 32) ?
                   m.last    := '1';
                   v.fragNo  := r.fragNo + 1;
