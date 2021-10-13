@@ -12,14 +12,14 @@ SIITOOL=siitool
 
 -include config.local.mk
 
-PROG=lan9254escrun lan9254esctb txmbxtb eoetb
+PROG=lan9254escrun lan9254esctb txmbxtb eoetb strmframebuftb
 OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
 OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
-OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o
+OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o StrmFrameBuf.o
 
-TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o
+TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 
 # Default target
 all: $(PROG)
@@ -41,6 +41,8 @@ readWriteSim.o: readWriteSim.c
 eoetb: $(OBJS) EoETb.o
 	$(GHDL) -e $(GHDLFLAGS) $@
 
+strmframebuftb: StrmFrameBufTb.o $(OBJS)
+	$(GHDL) -e $(GHDLFLAGS) $@
 
 # Run target
 run: $(PROG)
@@ -88,6 +90,7 @@ Lan9254ESCTb.o:  $(OBJS)
 Lan9254ESCrun.o: $(OBJS)
 TxMBXTb.o:       $(OBJS)
 EoETb.o:         $(OBJS)
+StrmFrameBufTb.o: StrmFrameBuf.o
 RxPDOSoft.o ESCTxPDO.o: Lan9254ESCPkg.o Lan9254Pkg.o
 Lan9254ESCPkg.o: Lan9254Pkg.o
 ESCTxMbx.o ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
@@ -95,7 +98,7 @@ ESCEoETx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
 ESCTxMbxMux.o: Lan9254Pkg.o
-ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
+StrmFrameBuf.o ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 MicroUDPIPMux.o MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
 Lan9254ESCWrapper.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o MicroUDPPkg.o Lan9254ESC.o ESCTxMbxMux.o ESCRxMbxMux.o ESCTxMbxErr.o ESCEoERx.o ESCEoETx.o MicroUDPRx.o MicroUDPTx.o
 

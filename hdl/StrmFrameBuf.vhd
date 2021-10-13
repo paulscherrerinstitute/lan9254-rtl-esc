@@ -56,8 +56,9 @@ architecture rtl of StrmFrameBuf is
 
 begin
 
-   nrp         <= rdp + 2;
-   strmRdyIb   <= not strmMst.valid;
+   nrp            <= rdp + 2;
+   strmRdyIb      <= not strmMst.valid;
+   strmMst.ben(0) <= '1';
 
    P_RAMRD : process ( clk ) is
    begin
@@ -111,7 +112,7 @@ begin
                end if;
             else -- readout
                if ( strmRdyOb = '1' ) then
-                  if ( nrp >= frameEnd ) then
+                  if ( strmMst.last = '1' ) then
                      strmMst.valid <= '0';
                      frameSz       <=  FRAME_SIZE_ZERO_C;
                      frameEnd      <=  FRAME_SIZE_ZERO_C;
