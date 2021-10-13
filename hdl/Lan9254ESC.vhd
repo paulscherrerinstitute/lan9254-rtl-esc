@@ -1526,7 +1526,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       )
       port map (
          clk         => clk,
-         rst         => r.txMBXRst,
+         rst         => rst,
+         stop        => r.txMBXRst,
 
          trg         => rxMBXTrg,
          len         => rxMBXLen,
@@ -1558,7 +1559,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       )
       port map (
          clk         => clk,
-         rst         => r.rxPDORst,
+         rst         => rst,
+         stop        => r.rxPDORst,
 
          trg         => rxPDOTrg,
          len         => unsigned(ESC_SM2_LEN_C),
@@ -1584,7 +1586,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          )
          port map (
             clk         => clk,
-            rst         => r.txPDORst,
+            rst         => rst,
+            stop        => r.txPDORst,
 
             txPDOMst    => txPDOMst,
             txPDORdy    => txPDORdy,

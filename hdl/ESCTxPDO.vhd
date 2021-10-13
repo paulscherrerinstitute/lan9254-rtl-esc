@@ -15,6 +15,7 @@ entity ESCTxPDO is
    port (
       clk         : in  std_logic;
       rst         : in  std_logic;
+      stop        : in  std_logic; -- reset but wait for HBI access to terminate
 
       txPDOMst    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       txPDORdy    : out std_logic;
@@ -60,7 +61,7 @@ architecture rtl of ESCTxPDO is
 
 begin
 
-   P_COMB : process ( r, txPDOMst, rep ) is
+   P_COMB : process ( r, txPDOMst, rep, rst, stop ) is
       variable v : RegType;
    begin
       v     := r;
@@ -141,17 +142,17 @@ end if;
             end if;
       end case;
 
+      if ( ( rst or ( not r.ctlReq.valid and stop ) ) = '1' ) then
+         v := REG_INIT_C;
+      end if;
+
       rin   <= v;
    end process P_COMB;
 
    P_SEQ : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-       if ( rst = '1' ) then
-            r <= REG_INIT_C;
-       else
-            r <= rin;
-       end if;
+         r <= rin;
       end if;
    end process P_SEQ;
 
