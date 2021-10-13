@@ -1479,11 +1479,11 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
    P_SEQ : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
-       if ( rst = '1' ) then
-            r <= REG_INIT_C;
-       else
-            r <= rin;
-       end if;
+         if ( rst = '1' ) then
+              r <= REG_INIT_C;
+         else
+              r <= rin;
+         end if;
       end if;
    end process P_SEQ;
 
@@ -1597,7 +1597,6 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          );
    end generate GEN_TXPDO;
 
-
    escState  <= r.curState;
 
    txMBXRdy  <= r.txMBXRdy;
@@ -1666,7 +1665,7 @@ debug(23)           <= rep.valid;
    probe2(27 downto 24) <= reqLoc.be;
    probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIBypassStateType'pos( r.hbiState ) , 3 ) );
    probe2(31          ) <= rxMBXDebug(2);
-   
+
 
    probe2(63 downto 32) <= r.program.seq(0).val;
 
