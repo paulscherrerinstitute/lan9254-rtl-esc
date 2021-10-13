@@ -256,6 +256,7 @@ package body Lan9254Pkg is
       constant rw : in    std_logic
    ) is
    begin
+      rv := rv;
       if    ( rv.addr(1 downto 0) = "11" ) then
          rv.be   := ( 3 => rv.be(0), others => not HBI_BE_ACT_C );
          rv.data := rv.data( 7 downto 0) & x"00_0000";
@@ -346,6 +347,7 @@ package body Lan9254Pkg is
    ) is
       variable rdBEn : std_logic_vector(3 downto 0);
    begin
+      rdOut := rdOut;
       if ( rdOut.valid = '0' ) then
 --         rdBEn       := rdOut.be;
          --rdOut.rdnwr := '1';
@@ -368,6 +370,7 @@ package body Lan9254Pkg is
       constant enbl : in    boolean                       := true
    ) is
    begin
+      wrOut := wrOut;
       if ( wrOut.valid = '0' ) then
          -- vivado 2018.3 ill-synthesizes if we assign rdnwr prior to
          -- calling adjReq (ghdl simulation passes); do it in the procedure!
@@ -388,6 +391,7 @@ package body Lan9254Pkg is
       constant enbl : in    boolean                       := true
    ) is
    begin
+      rdOut := rdOut;
       if ( rdOut.valid = '0' ) then
          rdOut := adjReq(rdAdr, rdBEn, '1');
 -- report "HBIRead sched from " & toString(rdOut.addr) & " BE " & toString(rdOut.be) & " (be in " & toString(rdBEn) &")";
@@ -409,6 +413,7 @@ package body Lan9254Pkg is
       constant enbl : in    boolean                       := true
    ) is
    begin
+      wrOut := wrOut;
       if ( wrOut.valid = '0' ) then
          wrOut       := adjReq(wrAdr, wrBEn, '0', wrDat);
       else

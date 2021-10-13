@@ -71,6 +71,7 @@ architecture rtl of MicroUdpTx is
       variable v : inout RegType
    ) is
    begin
+      v                       := v;
       v.cnt                   := 0;
       v.state                 := IDLE;
       v.mstOb.ben             := "11";

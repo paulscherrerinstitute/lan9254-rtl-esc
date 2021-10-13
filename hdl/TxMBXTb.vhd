@@ -32,6 +32,7 @@ architecture rtl of TxMBXTb is
       signal   rdy : in    std_logic
    ) is
    begin
+      mst <= mst;
       for i in 1 to (tst.len + 1)/2 loop
          mst.data            <= std_logic_vector(tst.prefix + i);
          mst.valid           <= '1';
@@ -63,7 +64,8 @@ architecture rtl of TxMBXTb is
       constant act : std_logic_vector(3 downto 0) := "0011"
    ) is
    begin
-      ok := true;
+      ok  := true;
+      rep <= rep;
       if ( req.rdnwr = '1' ) then
          if    (   req.addr = x"0800" ) then
             if ( req.be = HBI_BE_W0_C ) then
@@ -148,6 +150,8 @@ architecture rtl of TxMBXTb is
       variable i     : natural;
       variable ok    : boolean;
    begin
+     rep  <= rep;
+     rpt  <= rpt;
      don  := '0';
      stat := '1';
      while ( don = '0' ) loop
@@ -197,6 +201,8 @@ architecture rtl of TxMBXTb is
       variable stat  : std_logic;
       variable smok  : boolean;
    begin
+     rep  <= rep;
+     rpt  <= rpt;
      don  := '0';
      stat := '1';
      rpt  <= not rpt;

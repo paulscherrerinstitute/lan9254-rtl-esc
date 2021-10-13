@@ -92,6 +92,7 @@ architecture rtl of ESCSmRx is
       variable be : std_logic_vector(3  downto 0);
       variable a  : std_logic_vector(15 downto 0);
    begin
+      v              := v;
       v.rxStrm.ben   := "11";
       v.rxStrm.last  := '0';
       be             := HBI_BE_W0_C;

@@ -95,6 +95,7 @@ architecture rtl of MicroUdpRx is
       variable r : out   boolean
    ) is
    begin
+      v := v;
       if ( d = x"ffff" and ( ( v.cnt = 0 ) or v.maybeBcst ) ) then
          r           := true;
          v.maybeBcst := true;
@@ -112,6 +113,7 @@ architecture rtl of MicroUdpRx is
       variable v : inout RegType
    ) is
    begin
+      v           := v;
       v.cnt       := 0;
       v.state     := IDLE;
       v.rdy       := '1';

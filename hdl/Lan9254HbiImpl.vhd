@@ -146,6 +146,7 @@ begin
          constant dl: in    DelayType := 0
       ) is
       begin
+         vv           := vv;
          vv.rep.valid := '1';
          vv.state     := HSHK;
       end procedure DONE;

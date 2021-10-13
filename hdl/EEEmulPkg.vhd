@@ -37,6 +37,7 @@ package body EEEMulPkg is
    )
    is
    begin
+      eep                                   <= eep;
       eep( to_integer( unsigned( addr ) ) ) <= val(15 downto 0);
    end procedure writeEEPROMEmul;
 

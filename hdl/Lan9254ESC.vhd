@@ -69,9 +69,9 @@ architecture rtl of Lan9254ESC is
    constant HBI_WAIT_MAX_TIME_C       : real    := 200.0E-9;
    constant HBI_WAIT_MAX_C            : natural := natural( HBI_WAIT_MAX_TIME_C * CLK_FREQ_G );
 
-   subtype  HbiWaitTimeType          is natural range 0 to HBI_WAIT_MAX_C;
+   subtype  HBIWaitTimeType          is natural range 0 to HBI_WAIT_MAX_C;
 
-   function hbiWaitTime(constant t : real) return HbiWaitTimeType is
+   function hbiWaitTime(constant t : real) return HBIWaitTimeType is
    begin
       if ( t > HBI_WAIT_MAX_TIME_C ) then
          return HBI_WAIT_MAX_C;
@@ -236,7 +236,7 @@ architecture rtl of Lan9254ESC is
       seq      : RWXactArray(0 to XACT_MAX_C - 1);
       idx      : unsigned(LD_XACT_MAX_C - 1 downto 0);
       num      : unsigned(LD_XACT_MAX_C - 1 downto 0);
-      dly      : HbiWaitTimeType;
+      dly      : HBIWaitTimeType;
       don      : std_logic;
       ret      : ControllerStateType;
    end record RWXactSeqType;
@@ -285,7 +285,7 @@ architecture rtl of Lan9254ESC is
       rxMBXLen             : unsigned(15 downto 0);
       mbxErr               : MbxErrorType;
       decim                : natural;
-      hbiWaitTimer         : HbiWaitTimeType;
+      hbiWaitTimer         : HBIWaitTimeType;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -329,9 +329,10 @@ architecture rtl of Lan9254ESC is
    procedure scheduleRegXact(
       variable endp : inout RegType;
       constant prog : in    RWXactArray;
-      constant dly  : in    HbiWaitTimeType := 0
+      constant dly  : in    HBIWaitTimeType := 0
    ) is
    begin
+      endp                         := endp;
       endp.program.ret             := endp.state;
       endp.state                   := XACT;
       endp.program.seq(prog'range) := prog;
@@ -363,10 +364,11 @@ architecture rtl of Lan9254ESC is
    end procedure writeReg;
 
    procedure testRegisterIO(
-      variable v : inout RegType;
-      signal   r : in    RegType
+      variable v   : inout RegType;
+      signal   r   : in    RegType;
    ) is
    begin
+      v := v;
       CASE_TEST : case ( r.testPhas ) is
          when 0 =>
             if ( '0' = r.program.don ) then
