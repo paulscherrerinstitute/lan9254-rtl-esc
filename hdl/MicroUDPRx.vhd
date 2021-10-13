@@ -45,6 +45,7 @@ architecture rtl of MicroUdpRx is
       txReq       : EthTxReqType;
       rdy         : std_logic;
       maybeBcst   : boolean;
+      maybeUcst   : boolean;
       nMacDrp     : StatCounterType;
       nShtDrp     : StatCounterType;
       nArpHdr     : StatCounterType;
@@ -70,6 +71,7 @@ architecture rtl of MicroUdpRx is
       txReq       => ETH_TX_REQ_INIT_C,
       rdy         => '1',
       maybeBcst   => false,
+      maybeUcst   => false,
       nMacDrp     => STAT_COUNTER_INIT_C,
       nShtDrp     => STAT_COUNTER_INIT_C,
       nArpHdr     => STAT_COUNTER_INIT_C,
@@ -96,17 +98,29 @@ architecture rtl of MicroUdpRx is
    ) is
    begin
       v := v;
-      if ( d = x"ffff" and ( ( v.cnt = 0 ) or v.maybeBcst ) ) then
-         r           := true;
-         v.maybeBcst := true;
-      else
-         case ( v.cnt ) is
-            when 0 =>  r := ( d = myMac( 15 + 0*16 downto  0*16 ) );
-            when 1 =>  r := ( d = myMac( 15 + 1*16 downto  1*16 ) );
-            when 2 =>  r := ( d = myMac( 15 + 2*16 downto  2*16 ) );
-            when others => r:= false;
-         end case;
-      end if;
+      case ( v.cnt ) is
+         when 0 =>
+            v.maybeBcst := (d = x"FFFF");
+         when others =>
+            if ( d /= x"FFFF" ) then
+               v.maybeBcst := false;
+            end if;
+      end case;
+      case ( v.cnt ) is
+         when 0 =>
+            v.maybeUcst := ( d  = myMac( 15 + 0*16 downto  0*16 ) );
+         when 1 =>
+            if ( d /= myMac( 15 + 1*16 downto  1*16 ) ) then
+               v.maybeUcst := false;
+            end if;
+         when 2 =>
+            if ( d /= myMac( 15 + 2*16 downto  2*16 ) ) then
+               v.maybeUcst := false;
+            end if;
+         when others =>
+            v.maybeUcst := false;
+      end case;
+      r := ( v.maybeUcst or v.maybeBcst );
    end procedure matchMac;
 
    procedure resetState(
