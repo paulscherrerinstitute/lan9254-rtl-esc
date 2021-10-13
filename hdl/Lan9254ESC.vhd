@@ -366,6 +366,7 @@ architecture rtl of Lan9254ESC is
    procedure testRegisterIO(
       variable v   : inout RegType;
       signal   r   : in    RegType;
+      signal   rpl : in    Lan9254RepType
    ) is
    begin
       v := v;
@@ -488,8 +489,8 @@ architecture rtl of Lan9254ESC is
                v.ctlReq.addr := unsigned( WB1.addr(v.ctlReq.addr'range) );
                v.ctlReq.be   := WB1.bena;
             end if;
-            lan9254HBIRead( v.ctlReq, rep );
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+            lan9254HBIRead( v.ctlReq, rpl );
+            if ( ( r.ctlReq.valid and rpl.valid ) = '1' ) then
                if ( v.ctlReq.data( 7 downto  0) /= x"22" ) then
                   assert false report "ReadEPa8 readback mismatch" severity failure;
                   if ( v.testFail = 0 ) then v.testFail :=16; end if;
@@ -503,8 +504,8 @@ architecture rtl of Lan9254ESC is
                v.ctlReq.be   := WW1.bena;
                v.ctlReq.data := x"0000abcd";
             end if;
-            lan9254HBIWrite( v.ctlReq, rep );
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+            lan9254HBIWrite( v.ctlReq, rpl );
+            if ( ( r.ctlReq.valid and rpl.valid ) = '1' ) then
                v.testPhas := r.testPhas + 1;
             end if;
 
@@ -513,8 +514,8 @@ architecture rtl of Lan9254ESC is
                v.ctlReq.addr := unsigned( WB3.addr(v.ctlReq.addr'range) );
                v.ctlReq.be   := WB3.bena;
             end if;
-            lan9254HBIRead( v.ctlReq, rep );
-            if ( ( r.ctlReq.valid and rep.valid ) = '1' ) then
+            lan9254HBIRead( v.ctlReq, rpl );
+            if ( ( r.ctlReq.valid and rpl.valid ) = '1' ) then
                if ( v.ctlReq.data( 7 downto  0) /= x"ab" ) then
                   assert false report "ReadEPa8_2 readback mismatch" severity failure;
                   if ( v.testFail = 0 ) then v.testFail :=17; end if;
