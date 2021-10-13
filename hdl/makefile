@@ -80,7 +80,7 @@ eeprom.bin: test.xml
 	$(GHDL) -a $(GHDLFLAGS) $<
 
 # Files dependences
-Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCTxMbxBuf.o ESCSmRx.o ESCTxPDO.o
+Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersPkg.o ESCMbxPkg.o ESCTxMbxBuf.o ESCSmRx.o ESCTxPDO.o ESCTxMbx.o
 EEEmulPkg.o: EEPROMContentPkg.o Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
@@ -90,7 +90,7 @@ TxMBXTb.o:       $(OBJS)
 EoETb.o:         $(OBJS)
 RxPDOSoft.o ESCTxPDO.o: Lan9254ESCPkg.o Lan9254Pkg.o
 Lan9254ESCPkg.o: Lan9254Pkg.o
-ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
+ESCTxMbx.o ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCEoETx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
