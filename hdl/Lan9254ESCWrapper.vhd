@@ -330,7 +330,7 @@ begin
       U_EOE_RX: entity work.ESCEoERx
          generic map (
             CLOCK_FREQ_G     => CLOCK_FREQ_G,
-            STORE_AND_FWD_G  => false
+            STORE_AND_FWD_G  => true
          )
          port map (
             clk         => clk,
@@ -351,7 +351,7 @@ begin
       U_EOE_TX: entity work.ESCEoETx
          generic map (
             MAX_FRAGMENT_SIZE_G => to_integer(unsigned(ESC_SM1_LEN_C) - MBX_HDR_SIZE_C),
-            STORE_AND_FWD_G     => true
+            STORE_AND_FWD_G     => false
          )
          port map (
             clk         => clk,
