@@ -35,6 +35,9 @@ architecture rtl of Lan9254ESCrun is
    signal txPDOMst : Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
    signal txPDORdy : std_logic;
 
+   signal udpMst   : UdpStrmMstType    := UDP_STRM_MST_INIT_C;
+   signal udpRdy   : std_logic         := '1';
+
    signal decim    : natural := 1000;
 
    signal irq      : std_logic := not EC_IRQ_ACT_C;
@@ -144,6 +147,12 @@ begin
 
          txPDOMst    => txPDOMst,
          txPDORdy    => txPDORdy,
+
+         udpRxMst    => udpMst,
+         udpRxRdy    => udpRdy,
+
+         udpTxMst    => udpMst,
+         udpTxRdy    => udpRdy,
 
          irq         => irq
       );

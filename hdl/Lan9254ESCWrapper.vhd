@@ -42,15 +42,11 @@ entity Lan9254ESCWrapper is
       myIp                    : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
       myPort                  : in  std_logic_vector(15 downto 0) := x"6688";
 
-      rxUDPHdr                : out EthTxReqType := ETH_TX_REQ_INIT_C;
-      rxUDPHdrAck             : in  std_logic    := '1';
-      rxUDPMst                : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      rxUDPRdy                : in  std_logic    := '1';
+      udpRxMst                : out UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      udpRxRdy                : in  std_logic      := '1';
 
-      txUDPHdr                : in  EthTxReqType := ETH_TX_REQ_INIT_C;
-      txUDPHdrAck             : out std_logic    := '1';
-      txUDPMst                : in  Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      txUDPRdy                : out std_logic    := '1';
+      udpTxMst                : in  UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      udpTxRdy                : out std_logic      := '1';
 
       escState                : out ESCStateType;
       debug                   : out std_logic_vector(23 downto 0);
@@ -423,13 +419,27 @@ begin
          end process P_MON_EOE;
       end generate GEN_EOE_MON;
 
+      U_UDP_ICMP_MUX : entity work.MicroUDPIPMux
+         port map (
+            clk              => clk,
+            rst              => rst,
 
-      -- FIXME: must mux/splice UDP in
-      ipPldTxMst <= ipPldRxMst;
-      ipPldRxRdy <= ipPldTxRdy;
+            ipRxMst          => ipPldRxMst,
+            ipRxRdy          => ipPldRxRdy,
+            ipRxReq          => rxReq,
+            ipRxAck          => rxRdy,
 
-      txReq      <= rxReq;
-      rxRdy      <= txRdy;
+            ipTxMst          => ipPldTxMst,
+            ipTxRdy          => ipPldTxRdy,
+            ipTxReq          => txReq,
+            ipTxAck          => txRdy,
+
+            udpRxMst         => udpRxMst,
+            udpRxRdy         => udpRxRdy,
+
+            udpTxMst         => udpTxMst,
+            udpTxRdy         => udpTxRdy
+         );
 
    end generate GEN_EOE;
 
