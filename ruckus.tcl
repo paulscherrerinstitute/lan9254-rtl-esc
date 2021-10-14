@@ -27,6 +27,7 @@ foreach f {
   MicroUDPPkg.vhd
   MicroUDPRx.vhd
   MicroUDPTx.vhd
+  MicroUDPIPMux.vhd
   SynchronizerBit.vhd
   Lan9254Pkg.vhd
   StrmFrameBuf.vhd
