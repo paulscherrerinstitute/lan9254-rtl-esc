@@ -44,7 +44,7 @@ entity Lan9254ESCWrapper is
       -- mac, ip and port in network-byte order!
       myMac                   : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
       myIp                    : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
-      myPort                  : in  std_logic_vector(15 downto 0) := x"6688";
+      myPort                  : in  std_logic_vector(15 downto 0) := x"0010"; -- 4096
 
       -- UDP stream I/O
       udpRxMst                : out UdpStrmMstType := UDP_STRM_MST_INIT_C;
