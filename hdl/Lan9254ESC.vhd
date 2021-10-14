@@ -31,6 +31,9 @@ entity Lan9254ESC is
       req         : out Lan9254ReqType;
       rep         : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
+      extHBIReq   : in  Lan9254ReqType    := LAN9254REQ_INIT_C;
+      extHBIRep   : out Lan9254RepType;
+
       escState    : out ESCStateType;
       debug       : out std_logic_vector(23 downto 0);
 
@@ -80,7 +83,7 @@ architecture rtl of Lan9254ESC is
       end if;
    end function hbiWaitTime;
 
-   type HBIMuxStateType is ( IDLE, ESC, SM0, SM2, SM3 );
+   type HBIMuxStateType is ( IDLE, EXT, ESC, SM0, SM2, SM3 );
 
    type ControllerStateType is (
       TEST,
@@ -585,32 +588,36 @@ begin
    txMBXBufWBEh <= ( not r.txMBXRdy ) or txMBXMst.ben(1);
    txMBXRdy     <= r.txMBXRdy;
 
-   P_HBI_COMB : process ( hbiState, r, rep, rxPDOReq, rxMBXReq, txPDOReq ) is
+   P_HBI_COMB : process ( hbiState, r, rep, rxPDOReq, rxMBXReq, txPDOReq, extHBIReq ) is
       variable v : HBIMuxStateType;
    begin
-      v             := hbiState;
+      v               := hbiState;
 
-      rxPDORep       <= rep;
-      rxPDORep.valid <= '0';
-      txPDORep       <= rep;
-      txPDORep.valid <= '0';
-      rxMBXRep       <= rep;
-      rxMBXRep.valid <= '0';
-      repLoc         <= rep;
-      repLoc.valid   <= '0';
+      rxPDORep        <= rep;
+      rxPDORep.valid  <= '0';
+      txPDORep        <= rep;
+      txPDORep.valid  <= '0';
+      rxMBXRep        <= rep;
+      rxMBXRep.valid  <= '0';
+      repLoc          <= rep;
+      repLoc.valid    <= '0';
+      extHBIRep       <= rep;
+      extHBIRep.valid <= '0';
 
-      reqLoc         <= r.ctlReq;
+      reqLoc          <= r.ctlReq;
 
       if ( hbiState = IDLE ) then
          -- if the HBI is free then arbitrate access
-         if    ( txPDOReq.valid = '1' ) then
+         if    ( txPDOReq.valid  = '1' ) then
             v       := SM3;
-         elsif ( rxPDOReq.valid = '1' ) then
+         elsif ( rxPDOReq.valid  = '1' ) then
             v       := SM2;
-         elsif ( rxMBXReq.valid = '1' ) then
+         elsif ( rxMBXReq.valid  = '1' ) then
             v       := SM0;
-         elsif ( r.ctlReq.valid = '1' ) then
+         elsif ( r.ctlReq.valid  = '1' ) then
             v       := ESC;
+         elsif ( extHBIReq.valid = '1' ) then
+            v       := EXT;
          end if;
       end if;
 
@@ -626,6 +633,10 @@ begin
          when SM0 =>
             reqLoc         <= rxMBXReq;
             rxMBXRep.valid <= rep.valid;
+
+         when EXT =>
+            reqLoc          <= extHBIReq;
+            extHBIRep.valid <= rep.valid;
 
          when others =>
             repLoc.valid   <= rep.valid;
@@ -652,7 +663,6 @@ begin
 
    P_COMB : process (
          r, repLoc, eeprom, irq,
-         hbiState,
          mbxErrRdy,
          rxPDORdy,
          txMBXMst,

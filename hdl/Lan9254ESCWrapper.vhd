@@ -26,28 +26,38 @@ entity Lan9254ESCWrapper is
       clk                     : in  std_logic;
       rst                     : in  std_logic;
 
+      -- HBI access output; connects to Lan9254 HBI
       req                     : out Lan9254ReqType;
       rep                     : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
+      -- interrupt from Lan9254
+      irq                     : in  std_logic         := '1'; -- default to polled-mode
+
+      -- TXPDO
       txPDOMst                : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       txPDORdy                : out std_logic;
 
+      -- RXDO
       rxPDOMst                : out Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       rxPDORdy                : in  std_logic         := '1';
-
-      irq                     : in  std_logic         := '1'; -- default to polled-mode
 
       -- mac, ip and port in network-byte order!
       myMac                   : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
       myIp                    : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
       myPort                  : in  std_logic_vector(15 downto 0) := x"6688";
 
+      -- UDP stream I/O
       udpRxMst                : out UdpStrmMstType := UDP_STRM_MST_INIT_C;
       udpRxRdy                : in  std_logic      := '1';
 
       udpTxMst                : in  UdpStrmMstType := UDP_STRM_MST_INIT_C;
       udpTxRdy                : out std_logic      := '1';
 
+      -- HBI access by an external agent
+      extHBIReq               : in  Lan9254ReqType    := LAN9254REQ_INIT_C;
+      extHBIRep               : out Lan9254RepType;
+
+      -- debugging
       escState                : out ESCStateType;
       debug                   : out std_logic_vector(23 downto 0);
 
@@ -125,6 +135,8 @@ begin
          req         => reqLoc,
          rep         => rep,
 
+         irq         => irq,
+
          rxPDOMst    => rxPDOMst,
          rxPDORdy    => rxPDORdy,
 
@@ -137,11 +149,12 @@ begin
          rxMBXMst    => rxMbxMst,
          rxMBXRdy    => rxMbxRdy,
 
-     
+
          mbxErrMst   => errMst(0),
          mbxErrRdy   => errRdy(0),
 
-         irq         => irq,
+         extHBIReq   => extHBIReq,
+         extHBIRep   => extHBIRep,
 
          escState    => escState,
          debug       => debug(23 downto 0),
@@ -331,11 +344,11 @@ begin
          port map (
             clk         => clk,
             rst         => rst,
-   
+
             mbxMstIb    => rxStmMst(EOE_RX_STRM_IDX_C),
             mbxRdyIb    => rxStmRdy(EOE_RX_STRM_IDX_C),
-   
-   
+
+
             eoeMstOb    => eoeMstOb,
             eoeRdyOb    => eoeRdyOb,
             eoeErrOb    => eoeErrOb,
@@ -352,17 +365,17 @@ begin
          port map (
             clk         => clk,
             rst         => rst,
-   
+
             eoeMstIb    => eoeMstIb,
             eoeRdyIb    => eoeRdyIb,
             eoeFrameSz  => txReq.length(10 downto 0),
-   
+
             mbxMstOb    => txStmMst(EOE_TX_STRM_IDX_C),
             mbxRdyOb    => txStmRdy(EOE_TX_STRM_IDX_C),
 
             debug       => eoeTxDbg
          );
-   
+
       U_IP_RX : entity work.MicroUDPRx
          port map (
             clk              => clk,
@@ -371,21 +384,21 @@ begin
             myMac            => myMac,
             myIp             => myIp,
             myPort           => myPort,
-   
+
             mstIb            => eoeMstOb,
             errIb            => eoeErrOb,
             rdyIb            => eoeRdyOb,
-   
+
             txReq            => rxReq,
             txRdy            => rxRdy,
-   
+
             pldMstOb         => ipPldRxMst,
             pldRdyOb         => ipPldRxRdy,
 
             debug            => uUDPDbg,
             stats            => stats(21 downto 5)
          );
-   
+
       U_IP_TX : entity work.MicroUDPTx
          port map (
             clk              => clk,
@@ -394,13 +407,13 @@ begin
             myMac            => myMac,
             myIp             => myIp,
             myPort           => myPort,
-    
+
             mstOb            => eoeMstIb,
             rdyOb            => eoeRdyIb,
-   
+
             txReq            => txReq,
             txRdy            => txRdy,
-   
+
             pldMstIb         => ipPldTxMst,
             pldRdyIb         => ipPldTxRdy
          );
