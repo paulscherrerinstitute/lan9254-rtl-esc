@@ -103,81 +103,18 @@ begin
 
    G_STORE : if ( STORE_AND_FWD_G ) generate
 
-      type MemArray is array (0 to (EOE_MAX_FRAME_SIZE_C + 1)/2 - 1) of std_logic_vector(15 downto 0);      
+      U_STORE : entity work.StrmFrameBuf
+         port map (
+            clk       => clk,
+            rst       => rst,
+            strmMstIb => eoeMstIb,
+            strmRdyIb => eoeRdyIb,
 
+            frameSize => frameSz,
+            strmMstOb => eoeMst,
+            strmRdyOb => rdyLoc
+         );
 
-      signal                 mem : MemArray := (others => (others => '0'));
-
-      attribute RAM_STYLE        : string;
-      attribute RAM_STYLE of mem : signal is "block";
-
-      signal rdp : FrameSizeType := FRAME_SIZE_ZERO_C;
-      signal nrp : FrameSizeType := FRAME_SIZE_ZERO_C;
-
-   begin
-
-      nrp <= rdp + 2;
-
-      eoeMst.last <= '0'; -- unused
-
-      eoeRdyIb    <= not eoeMst.valid;
-
-      P_MST_COMB : process ( frameSz, nrp ) is
-      begin
-         eoeMst.ben                      <= (others => '1');
-         if ( ( nrp >= frameSz ) and (frameSz(0) = '1') ) then
-            eoeMst.ben(1)                <= '0';
-         end if;
-         eoeMst.usr                      <= (others => '0');
-      end process P_MST_COMB;
-
-      P_RAMRD : process ( clk ) is
-      begin
-         if ( rising_edge( clk ) ) then
-            if ( ( eoeMst.valid and rdyLoc ) = '1' ) then
-               eoeMst.data           <= mem( idx(nrp) );
-            else
-               eoeMst.data           <= mem( idx(rdp) );
-            end if;
-         end if;
-      end process P_RAMRD;
-
-      P_RDWR : process ( clk ) is
-      begin
-         if ( rising_edge( clk ) ) then
-            if ( rst = '1' ) then
-               eoeMst.valid <= '0';
-               frameSz      <= FRAME_SIZE_ZERO_C;
-               rdp          <= FRAME_SIZE_ZERO_C;
-            else
-               if ( eoeMst.valid = '0' ) then
-                  rdp <= FRAME_SIZE_ZERO_C;
-                  if ( eoeMstIb.valid = '1' ) then
-                     mem( idx( frameSz ) ) <= eoeMstIb.data;
-                     if ( eoeMstIb.last = '1' ) then
-                        eoeMst.valid                    <= '1';
-                     end if;
-                     if ( frameSz < EOE_MAX_FRAME_SIZE_C - 1 ) then
-                        if ( ( eoeMstIb.last = '1' ) and ( eoeMstIb.ben(1) = '0' ) ) then
-                           frameSz <= frameSz + 1;
-                        else
-                           frameSz <= frameSz + 2;
-                        end if;
-                     end if;
-                  end if;
-               else -- readout
-                  if ( rdyLoc = '1' ) then
-                     if ( nrp >= frameSz ) then
-                        eoeMst.valid <= '0';
-                        frameSz      <=  FRAME_SIZE_ZERO_C;
-                     else
-                        rdp <= nrp;
-                     end if;
-                  end if;
-               end if;
-            end if;
-         end if;
-      end process P_RDWR;
    end generate G_STORE;
 
    P_COMB : process (r, eoeMst, frameSz, mbxRdyOb) is
