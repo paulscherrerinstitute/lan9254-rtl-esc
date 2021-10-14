@@ -268,6 +268,8 @@ begin
       signal   eoeRxDbg        : std_logic_vector(15 downto 0);
       signal   uUDPDbg         : std_logic_vector(15 downto 0);
 
+      signal   udpMuxState     : std_logic_vector( 1 downto 0);
+
    begin
 
       GEN_ILA : if ( GEN_EOE_ILA_G ) generate
@@ -289,13 +291,13 @@ begin
       probe0( 16           ) <= rxStmMst(EOE_RX_STRM_IDX_C).valid;
       probe0( 17           ) <= rxStmRdy(EOE_RX_STRM_IDX_C);
       probe0( 18           ) <= rxStmMst(EOE_RX_STRM_IDX_C).last;
-      probe0( 19 downto 19 ) <= (others => '0');
+      probe0( 19 downto 19 ) <= udpMuxState(0 downto 0);
       probe0( 20           ) <= rxMbxMst.valid;
       probe0( 21           ) <= rxMbxRdy;
       probe0( 23 downto 22 ) <= rxMbxMst.ben;
       probe0( 26 downto 24 ) <= uUDPDbg(14 downto 12);
       probe0( 30 downto 27 ) <= reqLoc.be;
-      probe0( 31 downto 31 ) <= (others => '0');
+      probe0( 31 downto 31 ) <= udpMuxState(1 downto 1);
       probe0( 47 downto 32 ) <= eoeMstOb.data;
       probe0( 48           ) <= eoeMstOb.valid;
       probe0( 49           ) <= eoeRdyOb;
@@ -434,24 +436,27 @@ begin
 
       U_UDP_ICMP_MUX : entity work.MicroUDPIPMux
          port map (
-            clk              => clk,
-            rst              => rst,
+            clk               => clk,
+            rst               => rst,
 
-            ipRxMst          => ipPldRxMst,
-            ipRxRdy          => ipPldRxRdy,
-            ipRxReq          => rxReq,
-            ipRxAck          => rxRdy,
+            ipRxMst           => ipPldRxMst,
+            ipRxRdy           => ipPldRxRdy,
+            ipRxReq           => rxReq,
+            ipRxAck           => rxRdy,
 
-            ipTxMst          => ipPldTxMst,
-            ipTxRdy          => ipPldTxRdy,
-            ipTxReq          => txReq,
-            ipTxAck          => txRdy,
+            ipTxMst           => ipPldTxMst,
+            ipTxRdy           => ipPldTxRdy,
+            ipTxReq           => txReq,
+            ipTxAck           => txRdy,
 
-            udpRxMst         => udpRxMst,
-            udpRxRdy         => udpRxRdy,
+            udpRxMst          => udpRxMst,
+            udpRxRdy          => udpRxRdy,
 
-            udpTxMst         => udpTxMst,
-            udpTxRdy         => udpTxRdy
+            udpTxMst          => udpTxMst,
+            udpTxRdy          => udpTxRdy,
+
+            debug(1 downto 0) => udpMuxState,
+            debug(7 downto 2) => open
          );
 
    end generate GEN_EOE;

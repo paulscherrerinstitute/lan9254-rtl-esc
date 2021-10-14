@@ -27,7 +27,9 @@ entity MicroUDPIPMux is
       udpRxRdy   : in  std_logic          := '1';
 
       udpTxMst   : in  UdpStrmMstType     := UDP_STRM_MST_INIT_C;
-      udpTxRdy   : out std_logic
+      udpTxRdy   : out std_logic;
+
+      debug      : out std_logic_vector(7 downto 0)
    );
 end entity MicroUDPIPMux;
 
@@ -136,5 +138,19 @@ begin
       
       rin <= v;
    end process P_COMB;
+
+   P_SEQ : process ( clk ) is
+   begin
+      if ( rising_edge( clk ) ) then
+         if ( rst = '1' ) then
+            r <= REG_INIT_C;
+         else
+            r <= rin;
+         end if;
+      end if;
+   end process P_SEQ;
+
+   debug(1 downto 0) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 2 ) );
+   debug(7 downto 2) <= (others => '0');
 
 end architecture rtl;
