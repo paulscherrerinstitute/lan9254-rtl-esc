@@ -95,7 +95,7 @@ begin
       case ( r.state ) is
          when IDLE =>
             if ( ipRxReq.valid = '1' ) then
-               if ( ipRxReq.typ = PING_REP ) then
+               if ( ( ipRxReq.typ = PING_REP ) or ( ipRxReq.typ = ARP_REP ) ) then
                   -- wait for an ongoing transmission to end
                   if ( not v.udpTxInProgress or not r.udpTxInProgress ) then
                      -- make sure they didn't just try to start
