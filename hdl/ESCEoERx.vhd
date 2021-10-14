@@ -9,23 +9,25 @@ use work.ESCMbxPkg.all;
 
 entity ESCEoERx is
    generic (
-      CLOCK_FREQ_G   : real;
-      RX_TIMEOUT_G   : real := 0.1
+      CLOCK_FREQ_G      : real;
+      RX_TIMEOUT_G      : real := 0.1;
+      STORE_AND_FWD_G   : boolean
    );
    port (
-      clk            : in  std_logic;
-      rst            : in  std_logic;
+      clk               : in  std_logic;
+      rst               : in  std_logic;
 
-      mbxMstIb       : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
-      mbxRdyIb       : out std_logic;
+      mbxMstIb          : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
+      mbxRdyIb          : out std_logic;
 
-      eoeMstOb       : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      eoeErrOb       : out std_logic;
-      eoeRdyOb       : in  std_logic := '1';
+      eoeMstOb          : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      eoeErrOb          : out std_logic;
+      eoeRdyOb          : in  std_logic := '1';
+      eoeFrameSz        : out unsigned(10 downto 0);
 
-      debug          : out std_logic_vector(15 downto 0);
+      debug             : out std_logic_vector(15 downto 0);
 
-      stats          : out StatCounterArray(2 downto 0)
+      stats             : out StatCounterArray(2 downto 0)
    );
 end entity ESCEoERx;
 
@@ -82,6 +84,9 @@ architecture rtl of ESCEoERx is
    signal r                   : RegType := REG_INIT_C;
    signal rin                 : RegType;
 
+   signal eoeMst              : Lan9254StrmMstType;
+   signal eoeRdyLoc           : std_logic;
+
 begin
 
    debug( 5 downto  0) <= std_logic_vector( r.fragNo  );
@@ -91,7 +96,7 @@ begin
    debug(14          ) <= r.timeAppend;
    debug(15 downto 15) <= (others => '0');
 
-   P_COMB : process ( r, mbxMstIb, eoeRdyOb ) is
+   P_COMB : process ( r, mbxMstIb, eoeRdyLoc ) is
       variable v   : RegType;
       variable m   : Lan9254StrmMstType;
       variable rdy : std_logic;
@@ -161,7 +166,7 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
             end if;
  
          when FWD =>
-            rdy     := eoeRdyOb;
+            rdy     := eoeRdyLoc;
             m.last  := r.lastFrag and mbxMstIb.last;
             if ( r.timeAppend = '0' or r.lastFrag = '0' ) then
                m.valid := mbxMstIb.valid;
@@ -171,12 +176,12 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                -- only the last 'ben' is relevant)
                m.valid := r.delayedValid(1);
                m.data  := r.delayedData (1);
-               if ( ( mbxMstIb.valid and eoeRdyOb ) = '1' ) then
+               if ( ( mbxMstIb.valid and eoeRdyLoc ) = '1' ) then
                   v.delayedValid := r.delayedValid(r.delayedValid'left - 1 downto 0) & mbxMstIb.valid;
                   v.delayedData  := r.delayedData (r.delayedData'left  - 1 downto 0) & mbxMstIb.data;
                end if;
             end if;
-            if ( ( mbxMstIb.valid and eoeRdyOb and mbxMstIb.last ) = '1' ) then
+            if ( ( mbxMstIb.valid and eoeRdyLoc and mbxMstIb.last ) = '1' ) then
                v.numFrags := r.numFrags + 1;
                v.state    := IDLE;
                if ( r.lastFrag = '1' ) then
@@ -195,7 +200,7 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
             m.valid  := r.eoeErr;
             m.last   := r.eoeErr;
             v.fragNo := (others => '0');
-            if ( (r.eoeErr and eoeRdyOb ) = '1' ) then
+            if ( (r.eoeErr and eoeRdyLoc ) = '1' ) then
                v.eoeErr := '0';
             end if;
             if ( ( mbxMstIb.valid and rdy and mbxMstIb.last ) = '1' ) then
@@ -209,7 +214,7 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
       end case C_STATE;
 
       mbxRdyIb <= rdy;
-      eoeMstOb <= m;
+      eoeMst   <= m;
       rin      <= v;
    end process P_COMB;
 
@@ -224,7 +229,49 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
       end if;
    end process P_SEQ;
 
-   eoeErrOb <= r.eoeErr;
+   GEN_NO_STORE : if ( not STORE_AND_FWD_G ) generate
+      eoeMstOb   <= eoeMst;
+      eoeRdyLoc  <= eoeRdyOb;
+      eoeErrOb   <= r.eoeErr;
+      eoeFrameSz <= (others => '0');
+   end generate GEN_NO_STORE;
+
+   GEN_STORE : if ( STORE_AND_FWD_G ) generate
+      signal rstBuf : std_logic;
+      signal errAck : std_logic := '0';
+      signal eoeRdy : std_logic;
+   begin
+
+      rstBuf     <= rst or r.eoeErr;
+      eoeErrOb   <= '0';
+      eoeRdyLoc  <= eoeRdy or errAck;
+
+      P_ERRACK : process ( clk ) is
+      begin
+         if ( rising_edge( clk ) ) then
+            if ( rst = '1' ) then
+               errAck <= '0';
+            elsif ( r.eoeErr = '1' ) then
+               errAck <= not errAck;
+            end if;
+         end if;
+      end process P_ERRACK;
+
+      U_STORE : entity work.StrmFrameBuf
+         port map (
+            clk        => clk,
+            rst        => rstBuf,
+
+            strmMstIb  => eoeMst,
+            strmRdyIb  => eoeRdy,
+
+            strmMstOb  => eoeMstOb,
+            strmRdyOb  => eoeRdyOb,
+            frameSize  => eoeFrameSz
+         );
+
+   end generate GEN_STORE;
+
    stats(0) <= r.numFrags;
    stats(1) <= r.numFrams;
    stats(2) <= r.numDrops;

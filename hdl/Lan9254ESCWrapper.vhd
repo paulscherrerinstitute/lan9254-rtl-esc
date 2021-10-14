@@ -329,7 +329,8 @@ begin
 
       U_EOE_RX: entity work.ESCEoERx
          generic map (
-            CLOCK_FREQ_G     => CLOCK_FREQ_G
+            CLOCK_FREQ_G     => CLOCK_FREQ_G,
+            STORE_AND_FWD_G  => false
          )
          port map (
             clk         => clk,
