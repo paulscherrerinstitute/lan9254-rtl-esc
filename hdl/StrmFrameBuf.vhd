@@ -19,6 +19,8 @@ entity StrmFrameBuf is
       clk         : in  std_logic;
       rst         : in  std_logic;
 
+      restore     : in  std_logic             := '0';
+
       strmMstIb   : in  Lan9254StrmMstType    := LAN9254STRM_MST_INIT_C;
       strmRdyIb   : out std_logic;
 
@@ -46,7 +48,10 @@ architecture rtl of StrmFrameBuf is
 
    signal   frameSz           : FrameSizeType      := FRAME_SIZE_ZERO_C;
    signal   frameEnd          : FrameSizeType      := FRAME_SIZE_ZERO_C;
+   signal   frameSzPrev       : FrameSizeType      := FRAME_SIZE_ZERO_C;
+   signal   frameEndPrev      : FrameSizeType      := FRAME_SIZE_ZERO_C;
    signal   strmMst           : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+   signal   canRestore        : boolean            := false;
 
    signal   mem               : MemArray := (others => (others => '0'));
    attribute RAM_STYLE of mem : signal is "block";
@@ -90,13 +95,17 @@ begin
       if ( rising_edge( clk ) ) then
          if ( rst = '1' ) then
             strmMst.valid <= '0';
+            frameSzPrev  <= FRAME_SIZE_ZERO_C;
+            frameEndPrev <= FRAME_SIZE_ZERO_C;
             frameSz      <= FRAME_SIZE_ZERO_C;
             frameEnd     <= FRAME_SIZE_ZERO_C;
             rdp          <= FRAME_SIZE_ZERO_C;
+            canRestore   <= false;
          else
             if ( strmMst.valid = '0' ) then --write
                rdp <= FRAME_SIZE_ZERO_C;
                if ( strmMstIb.valid = '1' ) then
+                  canRestore            <= false;
                   mem( idx( frameSz ) ) <= strmMstIb.data;
                   frameEnd              <= frameSz;
                   if ( strmMstIb.last = '1' ) then
@@ -109,13 +118,21 @@ begin
                         frameSz <= frameSz + 2;
                      end if;
                   end if;
+               elsif ( ( restore = '1' ) and canRestore ) then
+                  strmMst.valid <= '1';
+                  canRestore    <= false;
+                  frameSz       <= frameSzPrev;
+                  frameEnd      <= frameEndPrev;
                end if;
             else -- readout
                if ( strmRdyOb = '1' ) then
                   if ( strmMst.last = '1' ) then
                      strmMst.valid <= '0';
-                     frameSz       <=  FRAME_SIZE_ZERO_C;
-                     frameEnd      <=  FRAME_SIZE_ZERO_C;
+                     frameSzPrev   <= frameSz;
+                     frameSz       <= FRAME_SIZE_ZERO_C;
+                     frameEndPrev  <= frameEnd;
+                     frameEnd      <= FRAME_SIZE_ZERO_C;
+                     canRestore    <= true;
                   else
                      rdp           <= nrp;
                   end if;
