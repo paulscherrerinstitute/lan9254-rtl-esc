@@ -31,6 +31,7 @@ architecture sim of StrmFrameBufTb is
    signal twrdno    : natural               := 0;
 
    signal rdylo     : natural               := 0;
+   signal restore   : std_logic_vector(2 downto 0) := "000";
 
    type   FramType  is array (natural range 0 to 8) of std_logic_vector(18 downto 0);
    type   FramArray is array (natural range <>) of FramType;
@@ -108,6 +109,8 @@ begin
          clk                 => clk,
          rst                 => rst,
 
+         restore             => restore(0),
+
          strmMstIb           => strmMstIb,
          strmRdyIb           => strmRdyIb,
 
@@ -119,6 +122,8 @@ begin
    P_CMP : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
+         -- delay pipeline for restore
+         restore <= restore(1) & restore(0) & restore(0);
          if ( ( strmMstOb.valid and strmRdyOb ) = '1' ) then
             assert strmMstOb.data = tstvec(rframno)(rwrdno)(15 downto  0) 
                report "data mismatch @ frame " & integer'image(rframno) & "[" & integer'image(rwrdno) & "]"
@@ -134,8 +139,14 @@ begin
                   report "size mismatch @ frame " & integer'image(rframno) & "[" & integer'image(rwrdno) & "]"
                   severity failure;
                if ( rframno = tstvec'high ) then
-                  report "TEST PASSED";
-                  run    <= false;
+                  if ( restore(0) = '1' ) then
+                     restore <= "000";
+                     report "TEST PASSED";
+                     run    <= false;
+                  else
+                     restore(0) <= '1';
+                     rwrdno     <= 0;
+                  end if;
                else
                   rframno <= rframno + 1;
                   rwrdno  <= 0;
@@ -147,9 +158,9 @@ begin
       end if;
    end process P_CMP;
 
-   P_RDY : process ( rdylo ) is
+   P_RDY : process ( rdylo, restore ) is
    begin
-      if ( rdylo /= 0 ) then
+      if ( rdylo /= 0 or ( restore /= "000" and restore /= "111" ) ) then
          strmRdyOb <= '0';
       else
          strmRdyOb <= '1';
