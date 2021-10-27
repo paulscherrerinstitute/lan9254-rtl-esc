@@ -117,11 +117,11 @@ architecture rtl of Udp2Bus is
    signal memRdyIb    : std_logic;
    signal memMstOb    : Lan9254StrmMstType;
    signal memRdyOb    : std_logic := '0';
-   signal memReplay   : std_logic;
+   signal memReplay   : std_logic := '0';
 
 begin
 
-   P_COMB : process ( r, rep, strmMstIb, memRdyIb, strmRdyOb, memMstOb ) is
+   P_COMB : process ( r, rep, strmMstIb, strmRdyOb, memRdyIb, memMstOb ) is
       variable v      : RegType;
       variable replay : std_logic;
    begin
@@ -138,32 +138,38 @@ begin
 
       case ( r.state ) is
          when IDLE  =>
+            -- strmRdyIb = '1' at this point
             if ( strmMstIb.valid = '1' ) then
                v.skip    := ( strmMstIb.last = '0' );
                v.err     := '0';
                v.numCmds := (others => '0');
                if ( not r.skip ) then
-                  -- copy data to storage
+                  -- give time copy data to storage in case we have a replay or short command
                   v.replyDelay   := (others => '1');
+                  -- write header to memory
                   memMstIb.data  <= strmMstIb.data;
                   memMstIb.valid <= '1';
-                  v.sig         := strmMstIb.data(11 downto 0);
+                  -- record this message's signature
+                  v.sig          := strmMstIb.data(11 downto 0);
                   if    ( strmMstIb.data(MSG_VER_C'range) = MSG_VER_C ) then
                      -- supply the protocol version we support
                      memMstIb.data(PROTO_VER_C'range) <= PROTO_VER_C;
                      memMstIb.last                    <= '1';
                   elsif ( strmMstIb.data(MSG_VER_C'range) = MSG_RDW_C ) then
                      if ( r.sig = v.sig ) then
-                        -- FIXME REPLAY
-                        replay         := '1';
-                        memMstIb.valid <= '0';
+                        -- same signature; replay from memory
+                        replay           := '1';
+                        memMstIb.valid   <= '0';
                      else
                         -- ordinary R/W command
                         if ( v.skip ) then
-                           v.state    := CMD1;
-                           v.skip     := false;
+                           v.state       := CMD1;
+                           v.skip        := false;
                         else
                            -- empty RDWR cmd
+                           v.state       := STATUS;
+                           v.rdy         := '0';
+                           memMstIb.last <= '1';
                         end if;
                      end if;
                   else
@@ -217,7 +223,6 @@ begin
                            v.state := XFER;
                         end if;
                      end if;
-                     
                   when others      =>
                      v.req.data(31 downto 16) := strmMstIb.data;
                      v.state                  := XFER;
@@ -228,6 +233,7 @@ begin
                   v.req.valid := '1';
                   v.rdy       := '0';
                elsif ( strmMstIb.last = '1' ) then
+                  -- incomplete message; flag error and send reply
                   v.err   := '1';
                   v.state := REPLY;
                   v.rdy   := '0';
@@ -239,9 +245,12 @@ begin
             if ( ( rep.valid and r.req.valid ) = '1' ) then
                v.req.valid := '0';
                if ( rep.berr = '0' ) then
+                  -- keep track of number of commands successfully executed
                   v.numCmds := r.numCmds + 1;
+                  -- by default proceed to read the next command
                   v.state   := CMD1;
                   if ( r.req.rdnwr = '1' ) then
+                     -- write read reply to memory
                      memMstIb.valid <= '1';
                      if    ( r.req.be(0) = '1' ) then
                         memMstIb.data             <= rep.rdata(15 downto 0);
@@ -263,6 +272,9 @@ begin
                   v.err   := rep.berr;
                   v.state := STATUS;
                end if;
+               if ( v.state = CMD1 ) then
+                  v.rdy   := '1';
+               end if;
             end if;
 
          when XFER2 =>
@@ -272,6 +284,7 @@ begin
                v.state := STATUS;
             else
                v.state := CMD1;
+               v.rdy   := '1';
             end if;
 
          when STATUS =>
