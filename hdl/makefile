@@ -18,6 +18,7 @@ OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
 OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
 OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o StrmFrameBuf.o
+OBJS+=Udp2BusPkg.o Udp2Bus.o
 
 TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 
@@ -102,6 +103,7 @@ StrmFrameBuf.o ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 MicroUDPIPMux.o MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
 Lan9254ESCWrapper.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o MicroUDPPkg.o Lan9254ESC.o ESCTxMbxMux.o ESCRxMbxMux.o ESCTxMbxErr.o ESCEoERx.o ESCEoETx.o MicroUDPRx.o MicroUDPTx.o MicroUDPIPMux.o
 ESCEoETx.o ESCEoERx.o: StrmFrameBuf.o
+Udp2Bus.o: Udp2BusPkg.o Lan9254Pkg.o
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin
 
