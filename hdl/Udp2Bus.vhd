@@ -78,7 +78,7 @@ architecture rtl of Udp2Bus is
 
    -- memory buffer needs a minimal delay between write and readback when
    -- messages are small.
-   constant REPLAY_DELAY_C : natural := 3;
+   constant REPLAY_DELAY_C : natural := 2;
 
    type RegType is record
       state           : StateType;
@@ -155,7 +155,7 @@ begin
                      -- supply the protocol version we support
                      memMstIb.data(PROTO_VER_C'range) <= PROTO_VER_C;
                      memMstIb.last                    <= '1';
-                  elsif ( strmMstIb.data(MSG_VER_C'range) = MSG_RDW_C ) then
+                  elsif ( strmMstIb.data(7 downto 0) = MSG_RDW_C & MSG_VER_C ) then
                      if ( r.sig = v.sig ) then
                         -- same signature; replay from memory
                         replay           := '1';
@@ -173,9 +173,12 @@ begin
                         end if;
                      end if;
                   else
-                     -- unsupported command; drop
-                     v.sig(MSG_NON_C'range) := MSG_NON_C;
-                     v.err                  := '1';
+                     -- unsupported command or version
+                     memMstIb.data(PROTO_VER_C'range) <= PROTO_VER_C;
+                     memMstIb.data(MSG_NON_C'range)   <= MSG_NON_C;
+                     memMstIb.last                    <= '1';
+                     v.sig(MSG_NON_C'range)           := MSG_NON_C;
+                     v.err                            := '1';
                   end if;
                end if;
 
@@ -234,9 +237,10 @@ begin
                   v.rdy       := '0';
                elsif ( strmMstIb.last = '1' ) then
                   -- incomplete message; flag error and send reply
-                  v.err   := '1';
-                  v.state := REPLY;
-                  v.rdy   := '0';
+                  v.done      := '1';
+                  v.err       := '1';
+                  v.state     := STATUS;
+                  v.rdy       := '0';
                end if;
 
             end if;
@@ -271,6 +275,11 @@ begin
                if ( ( rep.berr = '1' ) or ( (r.done = '1') and (v.state /= XFER2) ) ) then
                   v.err   := rep.berr;
                   v.state := STATUS;
+                  if ( r.done = '0' ) then
+                     -- if we are not done and there was an error 
+                     -- we are going to discard input in the 'STATUS' state
+                     v.rdy := '1';
+                  end if;
                end if;
                if ( v.state = CMD1 ) then
                   v.rdy   := '1';
@@ -288,10 +297,22 @@ begin
             end if;
 
          when STATUS =>
-            memMstIb.data                  <= (15 => r.err, others => '0');
-            memMstIb.data(r.numCmds'range) <= std_logic_vector(r.numCmds);
-            memMstIb.valid                 <= '1';
-            v.state                        := REPLY;
+            if ( r.done = '0' ) then
+               -- must discard remaining input
+               if ( ( strmMstIb.valid and strmMstIb.last ) = '1' ) then
+                  v.done := '1';
+                  v.rdy  := '0';
+               end if;
+            else
+               -- write status footer to memory
+               memMstIb.data                  <= (15 => r.err, others => '0');
+               memMstIb.data(r.numCmds'range) <= std_logic_vector(r.numCmds);
+               memMstIb.valid                 <= '1';
+               memMstIb.last                  <= '1';
+               v.state                        := REPLY;
+               -- delay in case the reply is short
+               v.replyDelay                   := (others => '1');
+            end if;
 
          when REPLY =>
             if ( r.replyDelay(r.replyDelay'left) = '0' ) then
