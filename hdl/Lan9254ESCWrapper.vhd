@@ -18,6 +18,7 @@ entity Lan9254ESCWrapper is
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
+      NUM_EXT_HBI_MASTERS_G   : natural := 1;
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false
    );
@@ -54,8 +55,8 @@ entity Lan9254ESCWrapper is
       udpTxRdy                : out std_logic      := '1';
 
       -- HBI access by an external agent
-      extHBIReq               : in  Lan9254ReqType    := LAN9254REQ_INIT_C;
-      extHBIRep               : out Lan9254RepType;
+      extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
+      extHBIRep               : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
 
       -- debugging
       escState                : out ESCStateType;

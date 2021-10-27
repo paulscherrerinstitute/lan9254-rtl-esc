@@ -22,7 +22,8 @@ entity Lan9254ESC is
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       -- disable some things to just run the TXMBX test
-      TXMBX_TEST_G            : boolean := false
+      TXMBX_TEST_G            : boolean := false;
+      NUM_EXT_HBI_MASTERS_G   : natural := 1
    );
    port (
       clk         : in  std_logic;
@@ -31,8 +32,8 @@ entity Lan9254ESC is
       req         : out Lan9254ReqType;
       rep         : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
-      extHBIReq   : in  Lan9254ReqType    := LAN9254REQ_INIT_C;
-      extHBIRep   : out Lan9254RepType;
+      extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0) := (others => LAN9254REQ_INIT_C);
+      extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
 
       escState    : out ESCStateType;
       debug       : out std_logic_vector(23 downto 0);
@@ -327,6 +328,16 @@ architecture rtl of Lan9254ESC is
       hbiWaitTimer         => 0
    );
 
+   type HBIMuxRegType is record
+      hbiState             : HBIMuxStateType;
+      extSel               : integer range extHBIReq'low to extHBiReq'high;
+   end record HBIMuxRegType;
+
+   constant HBIMUX_REG_INIT_C : HBIMuxRegType := (
+      hbiState             => IDLE,
+      extSel               => extHBIReq'low
+   );
+
    procedure scheduleRegXact(
       variable endp : inout RegType;
       constant prog : in    RWXactArray;
@@ -537,7 +548,10 @@ architecture rtl of Lan9254ESC is
 
    signal     eeprom          : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
 
-   signal     r               : RegType := REG_INIT_C;
+   signal     rHBIMux         : HBIMuxRegType                 := HBIMUX_REG_INIT_C;
+   signal     rinHBIMux       : HBIMuxRegType;
+
+   signal     r               : RegType                       := REG_INIT_C;
    signal     rin             : RegType;
 
    signal     probe0          : std_logic_vector(63 downto 0) := (others => '0');
@@ -574,9 +588,6 @@ architecture rtl of Lan9254ESC is
    signal     reqLoc          : Lan9254ReqType;
    signal     repLoc          : Lan9254RepType;
 
-   signal     hbiState        : HBIMuxStateType := IDLE;
-   signal     hbiStateNew     : HBIMuxStateType;
-
 begin
 
    assert ESC_SM1_SMA_C(0) = '0' report "TXMBX address must be word aligned" severity failure;
@@ -588,10 +599,10 @@ begin
    txMBXBufWBEh <= ( not r.txMBXRdy ) or txMBXMst.ben(1);
    txMBXRdy     <= r.txMBXRdy;
 
-   P_HBI_COMB : process ( hbiState, r, rep, rxPDOReq, rxMBXReq, txPDOReq, extHBIReq ) is
-      variable v : HBIMuxStateType;
+   P_HBI_COMB : process ( rHBIMux, r, rep, rxPDOReq, rxMBXReq, txPDOReq, extHBIReq ) is
+      variable v : HBIMuxRegType;
    begin
-      v               := hbiState;
+      v               := rHBIMux;
 
       rxPDORep        <= rep;
       rxPDORep.valid  <= '0';
@@ -601,27 +612,35 @@ begin
       rxMBXRep.valid  <= '0';
       repLoc          <= rep;
       repLoc.valid    <= '0';
-      extHBIRep       <= rep;
-      extHBIRep.valid <= '0';
+      for i in extHBIRep'range loop
+         extHBIRep(i)       <= rep;
+         extHBIRep(i).valid <= '0';
+      end loop;
 
       reqLoc          <= r.ctlReq;
 
-      if ( hbiState = IDLE ) then
+      if ( rHBIMux.hbiState = IDLE ) then
          -- if the HBI is free then arbitrate access
          if    ( txPDOReq.valid  = '1' ) then
-            v       := SM3;
+            v.hbiState := SM3;
          elsif ( rxPDOReq.valid  = '1' ) then
-            v       := SM2;
+            v.hbiState := SM2;
          elsif ( rxMBXReq.valid  = '1' ) then
-            v       := SM0;
+            v.hbiState := SM0;
          elsif ( r.ctlReq.valid  = '1' ) then
-            v       := ESC;
-         elsif ( extHBIReq.valid = '1' ) then
-            v       := EXT;
+            v.hbiState := ESC;
+         else
+            L_ARB_EXT : for i in extHBIReq'range loop
+              if ( extHBIReq(i).valid = '1' ) then
+                 v.hbiState := EXT;
+                 v.extSel   := i;
+                 exit L_ARB_EXT;
+              end if;
+            end loop L_ARB_EXT;
          end if;
       end if;
 
-      case ( v ) is
+      case ( v.hbiState ) is
          when SM3 =>
             reqLoc         <= txPDOReq;
             txPDORep.valid <= rep.valid;
@@ -635,8 +654,8 @@ begin
             rxMBXRep.valid <= rep.valid;
 
          when EXT =>
-            reqLoc          <= extHBIReq;
-            extHBIRep.valid <= rep.valid;
+            reqLoc                    <= extHBIReq(v.extSel);
+            extHBIRep(v.extSel).valid <= rep.valid;
 
          when others =>
             repLoc.valid   <= rep.valid;
@@ -644,19 +663,19 @@ begin
 
       if ( rep.valid = '1' ) then
          -- HBI access terminated; release the HBI
-         v                 := IDLE;
+         v.hbiState        := IDLE;
       end if;
 
-      hbiStateNew   <= v;
+      rinHBIMux  <= v;
    end process P_HBI_COMB;
 
    P_HBI_SEQ : process ( clk ) is
    begin
       if ( rising_edge( clk ) ) then
          if ( rst = '1' ) then
-              hbiState <= IDLE;
+              rHBIMux <= HBIMUX_REG_INIT_C;
          else
-              hbiState <= hbiStateNew;
+              rHBIMux <= rinHBIMux;
          end if;
       end if;
    end process P_HBI_SEQ;
@@ -1632,7 +1651,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
             if ( (r.state /= TXMBX_SEND) ) then
                stalledCount <= 0;
             elsif ( stalledCount < STALL_C ) then
-               if ( hbiState = IDLE ) then
+               if ( rHBIMux.hbiState = IDLE ) then
                   stalledCount <= stalledCount + 1;
                end if;
             end if;
@@ -1683,7 +1702,7 @@ debug(23)           <= rep.valid;
    probe2(19 downto 16) <= r.program.seq(1).reg.bena;
    probe2(23 downto 20) <= r.program.seq(2).reg.bena;
    probe2(27 downto 24) <= reqLoc.be;
-   probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIMuxStateType'pos( hbiState ) , 3 ) );
+   probe2(30 downto 28) <= std_logic_vector( to_unsigned( HBIMuxStateType'pos( rHBIMux.hbiState ) , 3 ) );
    probe2(31          ) <= rxMBXDebug(2);
 
 
