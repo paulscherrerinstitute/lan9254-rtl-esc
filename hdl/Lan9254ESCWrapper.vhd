@@ -269,6 +269,7 @@ begin
       signal   uUDPDbg         : std_logic_vector(15 downto 0);
 
       signal   udpMuxState     : std_logic_vector( 1 downto 0);
+      signal   udpMuxDebug     : std_logic_vector( 7 downto 0);
 
    begin
 
@@ -455,9 +456,10 @@ begin
             udpTxMst          => udpTxMst,
             udpTxRdy          => udpTxRdy,
 
-            debug(1 downto 0) => udpMuxState,
-            debug(7 downto 2) => open
+            debug             => udpMuxDebug
          );
+
+         udpMuxState <= udpMuxDebug(1 downto 0);
 
    end generate GEN_EOE;
 
