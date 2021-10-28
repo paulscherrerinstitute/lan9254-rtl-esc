@@ -93,6 +93,7 @@ package body MicroUDPPkg is
       rv.length    := u.length;
       rv.typ       := UDP;
       rv.valid     := '0';
+      return rv;
    end function toEthTxReq;
 
 end package body MicroUDPPkg;
