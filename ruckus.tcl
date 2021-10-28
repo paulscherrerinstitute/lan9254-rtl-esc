@@ -31,9 +31,10 @@ foreach f {
   SynchronizerBit.vhd
   Lan9254Pkg.vhd
   StrmFrameBuf.vhd
+  Udp2BusPkg.vhd
+  Udp2BusTb.vhd
+  Udp2Bus.vhd
+  Lan9254UdpBusPkg.vhd
 } {
   loadSource    -path "$::DIR_PATH/hdl/$f"
 }
-
-
-

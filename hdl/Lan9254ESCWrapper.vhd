@@ -8,6 +8,8 @@ use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
 use work.MicroUDPPkg.all;
 use work.IlaWrappersPkg.all;
+use work.Udp2BusPkg.all;
+use work.Lan9254UdpBusPkg.all;
 
 entity Lan9254ESCWrapper is
    generic (
@@ -46,13 +48,6 @@ entity Lan9254ESCWrapper is
       myMac                   : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
       myIp                    : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
       myPort                  : in  std_logic_vector(15 downto 0) := x"0010"; -- 4096
-
-      -- UDP stream I/O
-      udpRxMst                : out UdpStrmMstType := UDP_STRM_MST_INIT_C;
-      udpRxRdy                : in  std_logic      := '1';
-
-      udpTxMst                : in  UdpStrmMstType := UDP_STRM_MST_INIT_C;
-      udpTxRdy                : out std_logic      := '1';
 
       -- HBI access by an external agent
       extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
@@ -94,6 +89,9 @@ architecture rtl of Lan9254ESCWrapper is
    constant EOE_TX_STRM_IDX_C : natural := 0;
    constant ERR_TX_STRM_IDX_C : natural := 1;
 
+   constant NUM_HBI_MASTERS_C : natural := NUM_EXT_HBI_MASTERS_G + ite( ENABLE_EOE_G, 1, 0 );
+
+   constant NUM_ILAS_C        : natural := 3;
 
    signal   txMbxMst          : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
    signal   txMbxRdy          : std_logic;
@@ -109,15 +107,18 @@ architecture rtl of Lan9254ESCWrapper is
    signal   rxStmMst          : Lan9254StrmMstArray(NUM_RXMBX_PROTO_C - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
    signal   rxStmRdy          : std_logic_vector(NUM_RXMBX_PROTO_C - 1 downto 0)    := (others => '1'                   );
 
-   signal   ilaTrigEoE2ESC    : std_logic := '0';
-   signal   ilaTackEoE2ESC    : std_logic := '1';
-
-   signal   ilaTrigESC2EoE    : std_logic := '0';
-   signal   ilaTackESC2EoE    : std_logic := '1';
+   signal   ilaTrg            : std_logic_vector(NUM_ILAS_C - 1 downto 0) := (others => '0');
+   signal   ilaAck            : std_logic_vector(NUM_ILAS_C - 1 downto 0) := (others => '1');
 
    signal   reqLoc            : Lan9254ReqType;
 
+   signal   locHBIReq         : Lan9254ReqArray(NUM_HBI_MASTERS_C - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
+   signal   locHBIRep         : Lan9254RepArray(NUM_HBI_MASTERS_C - 1 downto 0);
+
 begin
+
+   locHBIReq(NUM_EXT_HBI_MASTERS_G - 1 downto 0) <= extHBIReq;
+   extHBIRep                                     <= locHBIRep(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
 
    U_ESC : entity work.Lan9254ESC
       generic map (
@@ -127,6 +128,7 @@ begin
          ENABLE_EOE_G            => ENABLE_EOE_G,
          TXPDO_MAX_UPDATE_FREQ_G => TXPDO_MAX_UPDATE_FREQ_G,
          REG_IO_TEST_ENABLE_G    => REG_IO_TEST_ENABLE_G,
+         NUM_EXT_HBI_MASTERS_G   => NUM_HBI_MASTERS_C,
          TXMBX_TEST_G            => TXMBX_TEST_G
       )
       port map (
@@ -154,8 +156,8 @@ begin
          mbxErrMst   => errMst(0),
          mbxErrRdy   => errRdy(0),
 
-         extHBIReq   => extHBIReq,
-         extHBIRep   => extHBIRep,
+         extHBIReq   => locHBIReq,
+         extHBIRep   => locHBIRep,
 
          escState    => escState,
          debug       => debug(23 downto 0),
@@ -163,11 +165,11 @@ begin
          testFailed  => testFailed,
          stats       => stats(1 downto 0),
 
-         ilaTrigOb   => ilaTrigESC2EoE,
-         ilaTackOb   => ilaTackESC2EoE,
+         ilaTrigOb   => ilaTrg(0),
+         ilaTackOb   => ilaAck(0),
 
-         ilaTrigIb   => ilaTrigEoE2ESC,
-         ilaTackIb   => ilaTackEoE2ESC
+         ilaTrigIb   => ilaTrg(NUM_ILAS_C - 1),
+         ilaTackIb   => ilaAck(NUM_ILAS_C - 1)
       );
 
       req <= reqLoc;
@@ -239,6 +241,9 @@ begin
          state                 => IDLE
       );
 
+      constant MAX_UDP_SIZE_C  : natural   :=
+         EOE_MAX_FRAME_SIZE_C - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C - UDP_HDR_SIZE_C;
+
       signal   r               : RegType   := REG_INIT_C;
       signal   rin             : RegType;
 
@@ -272,6 +277,18 @@ begin
       signal   udpMuxState     : std_logic_vector( 1 downto 0);
       signal   udpMuxDebug     : std_logic_vector( 7 downto 0);
 
+      -- UDP stream I/O
+      signal   udpRxMst        : UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      signal   udpRxRdy        : std_logic      := '1';
+
+      signal   udpTxMst        : UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      signal   udpTxRdy        : std_logic      := '1';
+
+      signal   udpFrameSize    : unsigned(10 downto 0);
+
+      signal   udpBusReq       : Udp2BusReqType;
+      signal   udpBusRep       : Udp2BusRepType;
+
    begin
 
       GEN_ILA : if ( GEN_EOE_ILA_G ) generate
@@ -282,12 +299,17 @@ begin
                probe1       => probe1,
                probe2       => probe2,
                probe3       => probe3,
-               trig_out     => ilaTrigEoE2ESC,
-               trig_out_ack => ilaTackEoE2ESC,
-               trig_in      => ilaTrigESC2EoE,
-               trig_in_ack  => ilaTackESC2EoE
+               trig_out     => ilaTrg(1),
+               trig_out_ack => ilaAck(1),
+               trig_in      => ilaTrg(0),
+               trig_in_ack  => ilaAck(0)
             );
       end generate GEN_ILA;
+
+      GEN_NO_ILA : if ( not GEN_EOE_ILA_G ) generate
+         ilaTrg(1) <= ilaTrg(0);
+         ilaAck(0) <= ilaAck(1);
+      end generate GEN_NO_ILA;
 
       probe0( 15 downto  0 ) <= rxStmMst(EOE_RX_STRM_IDX_C).data;
       probe0( 16           ) <= rxStmMst(EOE_RX_STRM_IDX_C).valid;
@@ -460,7 +482,42 @@ begin
             debug             => udpMuxDebug
          );
 
-         udpMuxState <= udpMuxDebug(1 downto 0);
+      udpMuxState <= udpMuxDebug(1 downto 0);
+
+      udpTxMst.macAddr <= udpRxMst.macAddr;
+      udpTxMst.ipAddr  <= udpRxMst.ipAddr;
+      udpTxMst.udpPort <= udpRxMst.udpPort;
+
+      udpTxMst.length  <= resize( udpFrameSize, udpTxMst.length'length ) + MAC_HDR_SIZE_C + IP4_HDR_SIZE_C + UDP_HDR_SIZE_C;
+
+      udpBusRep                        <= to_Udp2BusRepType( locHBIRep(NUM_HBI_MASTERS_C - 1) );
+      locHBIReq(NUM_HBI_MASTERS_C - 1) <= to_Lan9254ReqType( udpBusReq                        );
+
+      U_BUS_MST : entity work.Udp2Bus
+         generic map (
+            MAX_FRAME_SIZE_G  => MAX_UDP_SIZE_C
+         )
+         port map (
+            clk               => clk,
+            rst               => rst,
+
+            req               => udpBusReq,
+            rep               => udpBusRep,
+
+            strmMstIb         => udpRxMst.strm,
+            strmRdyIb         => udpRxRdy,
+
+            strmMstOb         => udpTxMst.strm,
+            strmRdyOb         => udpTxRdy,
+
+            frameSize         => udpFrameSize,
+
+            ilaTrgOb          => ilaTrg(2),
+            ilaAckOb          => ilaAck(2),
+
+            ilaTrgIb          => ilaTrg(1),
+            ilaAckIb          => ilaAck(1)
+         );
 
    end generate GEN_EOE;
 

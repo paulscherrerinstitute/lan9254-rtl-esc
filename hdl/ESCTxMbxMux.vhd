@@ -57,13 +57,13 @@ begin
                if ( mbxIb(i).valid = '1' ) then
                   v.sel   := i;
                   v.state := FORWARD;
-                  if ( rdyOb = '1' ) then
-                     m     := mbxIb(i);
-                     y(i)  := rdyOb;
-                     if ( mbxIb(i).last = '1' ) then
-                        v.state := ARBITRATE;
-                     end if;
-                  end if;
+--                  if ( rdyOb = '1' ) then
+--                     m     := mbxIb(i);
+--                     y(i)  := rdyOb;
+--                     if ( mbxIb(i).last = '1' ) then
+--                        v.state := ARBITRATE;
+--                     end if;
+--                  end if;
                   exit FOR_SEL;
                end if;
             end loop FOR_SEL;

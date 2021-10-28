@@ -99,6 +99,35 @@ architecture sim of Udp2BusTb is
       , "0" & x"6000"
       , "0" & x"cafe"
       , "1" & x"affe"
+      -- try bursts
+      -- read burst
+      , "0" & x"0521"
+      , "0" & x"0000"
+      , "1" & x"8020"
+      -- write bursts
+      , "0" & x"0621"
+      , "0" & x"0008"
+      , "0" & x"5030"
+      , "0" & x"aaaa"
+      , "0" & x"bbbb"
+      , "0" & x"cccc"
+      , "0" & x"dddd"
+      , "0" & x"000C"
+      , "0" & x"6010"
+      , "0" & x"fafa"
+      , "0" & x"caca"
+      , "0" & x"bebe"
+      , "0" & x"feef"
+      , "0" & x"0008"
+      , "0" & x"0010"
+      , "0" & x"FF02"
+      , "0" & x"FF01"
+      , "0" & x"000A"
+      , "0" & x"2030"
+      , "0" & x"FF04"
+      , "0" & x"FF03"
+      , "0" & x"FF08"
+      , "1" & x"FF07"
 );
 
    constant expVec       : ExpArray := (
@@ -124,6 +153,13 @@ architecture sim of Udp2BusTb is
       , "1" & x"8000" & "0"
       , "0" & x"0421" & "0"
       , "1" & x"0007" & "0"
+      , "0" & x"0521" & "0"
+      , "0" & x"00A0" & "1"
+      , "0" & x"0003" & "1"
+      , "0" & x"0002" & "1"
+      , "1" & x"0003" & "0"
+      , "0" & x"0621" & "0"
+      , "1" & x"000c" & "0"
    );
 
    signal wrIdx          : natural := 0;
@@ -148,6 +184,15 @@ architecture sim of Udp2BusTb is
       , x"090a4321"
       , x"8765beef"
       , x"affecafe"
+
+      , x"00000000"
+
+      , x"aaaa0102"
+      , x"ccccbbbb"
+      , x"0304dddd"
+      , x"00000708"
+      , x"cacafafa"
+      , x"feefbebe"
    );
 
 begin
@@ -188,13 +233,13 @@ begin
             else
                d := strmMstOb.data;
             end if;
-            assert d              = expVec(rdIdx)(16 downto 1) report "stream data mismatch" & "EXP " & integer'image(to_integer(unsigned(expVec(rdIdx)(16 downto 1)))) & " got " & integer'image(to_integer(unsigned(d))) severity failure;
+            assert d              = expVec(rdIdx)(16 downto 1) report "stream data mismatch" severity failure;
             assert strmMstOb.last = expVec(rdIdx)(         17) report "stream last mismatch" severity failure;
             assert strmMstOb.ben  = "11"                       report "stream ben  mismatch" severity failure;
             if ( rdIdx = expVec'high ) then
                run   <= false;
                for i in datExp'range loop
-                  assert datVec(i) = datExp(i) report "write data mismatch" severity failure;
+                  assert datVec(i) = datExp(i) report "write data mismatch @ word " & integer'image(i) severity failure;
                end loop;
                report "Test PASSED";
             else
@@ -235,6 +280,9 @@ begin
    end process P_MEM;
 
    U_DUT : entity work.Udp2Bus
+      generic map (
+         MAX_FRAME_SIZE_G => 128
+      )
       port map (
          clk       => clk,
          rst       => rst,

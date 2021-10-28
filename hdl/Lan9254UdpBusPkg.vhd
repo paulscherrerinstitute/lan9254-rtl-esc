@@ -10,7 +10,7 @@ use     work.Udp2BusPkg.all;
 -- the logic levels used by Lan9254 are configurable
 -- but Udp2Bus uses fixed levels (easier on humans)
 
-package Lan9254UdpBusPkt is
+package Lan9254UdpBusPkg is
 
    function to_Lan9254ReqType (constant x : in Udp2BusReqType)
    return Lan9254ReqType;
@@ -18,9 +18,9 @@ package Lan9254UdpBusPkt is
    function to_Udp2BusRepType (constant x : in Lan9254RepType)
    return Udp2BusRepType;
 
-end package Lan9254UdpBusPkt;
+end package Lan9254UdpBusPkg;
 
-package body Lan9254UdpBusPkt is
+package body Lan9254UdpBusPkg is
 
    function to_Lan9254ReqType (constant x : in Udp2BusReqType)
    return Lan9254ReqType is
@@ -29,8 +29,9 @@ package body Lan9254UdpBusPkt is
       v         := LAN9254REQ_INIT_C;
       v.addr    := resize( unsigned(x.dwaddr) & "00", v.addr'length );
       v.data    := x.data;
-      v.rdnwr   := x.rdnwr;
       v.be      := (others => not HBI_BE_ACT_C);
+      v.valid   := x.valid;
+      v.rdnwr   := x.rdnwr;
       for i in x.be'range loop
          if ( x.be(i) = '1' ) then
             v.be(i) := HBI_BE_ACT_C;
@@ -56,4 +57,4 @@ package body Lan9254UdpBusPkt is
       return v;
    end function to_Udp2BusRepType;
 
-end package body Lan9254UdpBusPkt;
+end package body Lan9254UdpBusPkg;
