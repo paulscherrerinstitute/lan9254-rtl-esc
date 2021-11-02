@@ -31,4 +31,14 @@ package Udp2BusPkg is
       berr   => '0'
    );
 
+   constant UDP2BUSREP_ERROR_C : Udp2BusRepType := (
+      valid  => '1',
+      rdata  => x"deadbeef",
+      berr   => '1'
+   );
+
+
+   type Udp2BusReqArray is array ( natural range <> ) of Udp2BusReqType;
+   type Udp2BusRepArray is array ( natural range <> ) of Udp2BusRepType;
+
 end package Udp2BusPkg;
