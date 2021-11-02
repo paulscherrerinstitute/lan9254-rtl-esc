@@ -146,6 +146,7 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -h            : this message\n");
 	fprintf(stderr, "       -t            : run basic test (connection to target required)\n");
 	fprintf(stderr, "       -s            : print networking stats for target\n");
+	fprintf(stderr, "       -v            : increase verbosity\n");
 	fprintf(stderr, "       -a dst_ip     : set target ip (dot notation)\n");
 }
 
@@ -160,9 +161,10 @@ uint32_t            hbibas        = (7<<19);
 uint32_t            locbas        = (6<<19);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
+int                 verbose       = 0;
 int                 opt;
 
-	while ( (opt = getopt(argc, argv, "ha:ts")) > 0 ) {
+	while ( (opt = getopt(argc, argv, "ha:tsv")) > 0 ) {
 		switch ( opt ) {
 			case 'h':
 				rval = 0;
@@ -181,10 +183,14 @@ int                 opt;
 			case 's':
 				printNetStats = 1;
 				break;
+
+			case 'v':
+				verbose++;
+				break;
 		}
 	}
 
-	if ( ! (e = ecurOpen( dip, dprt, 1 )) ) {
+	if ( ! (e = ecurOpen( dip, dprt, verbose )) ) {
 		fprintf(stderr, "Unable to connect to Firmware\n");
 		goto bail;
 	}
