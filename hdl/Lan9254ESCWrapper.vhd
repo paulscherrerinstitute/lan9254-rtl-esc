@@ -21,6 +21,7 @@ entity Lan9254ESCWrapper is
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
       NUM_EXT_HBI_MASTERS_G   : natural := 1;
+      NUM_UDP_SUBS_G          : natural range 0 to 4 := 0;
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false
    );
@@ -52,6 +53,10 @@ entity Lan9254ESCWrapper is
       -- HBI access by an external agent
       extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
       extHBIRep               : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
+
+      -- Register access via UDP
+      udp2BusReq              : out Udp2BusReqArray(NUM_UDP_SUBS_G - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
+      udp2BusRep              : in  Udp2BusRepArray(NUM_UDP_SUBS_G - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
 
       -- debugging
       escState                : out ESCStateType;
@@ -115,6 +120,8 @@ architecture rtl of Lan9254ESCWrapper is
    signal   locHBIReq         : Lan9254ReqArray(NUM_HBI_MASTERS_C - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
    signal   locHBIRep         : Lan9254RepArray(NUM_HBI_MASTERS_C - 1 downto 0);
 
+   signal   statsLoc          : StatCounterArray(stats'range) := (others => STAT_COUNTER_INIT_C);
+
 begin
 
    locHBIReq(NUM_EXT_HBI_MASTERS_G - 1 downto 0) <= extHBIReq;
@@ -163,7 +170,7 @@ begin
          debug       => debug(23 downto 0),
 
          testFailed  => testFailed,
-         stats       => stats(1 downto 0),
+         stats       => statsLoc(1 downto 0),
 
          ilaTrigOb   => ilaTrg(0),
          ilaTackOb   => ilaAck(0),
@@ -244,6 +251,11 @@ begin
       constant MAX_UDP_SIZE_C  : natural   :=
          EOE_MAX_FRAME_SIZE_C - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C - UDP_HDR_SIZE_C;
 
+      constant NUM_UDP_SUBS_C  : natural   := 8;
+
+      constant UDP_IDX_ESC_C   : natural   := 7;
+      constant UDP_IDX_LOC_C   : natural   := 6;
+
       signal   r               : RegType   := REG_INIT_C;
       signal   rin             : RegType;
 
@@ -288,6 +300,9 @@ begin
 
       signal   udpBusReq       : Udp2BusReqType;
       signal   udpBusRep       : Udp2BusRepType;
+
+      signal   udp2BusReqOb    : Udp2BusReqArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
+      signal   udp2BusRepOb    : Udp2BusRepArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
 
    begin
 
@@ -380,7 +395,7 @@ begin
             eoeErrOb    => eoeErrOb,
 
             debug       => eoeRxDbg,
-            stats       => stats(4 downto 2)
+            stats       => statsLoc(4 downto 2)
          );
 
       U_EOE_TX: entity work.ESCEoETx
@@ -422,7 +437,7 @@ begin
             pldRdyOb         => ipPldRxRdy,
 
             debug            => uUDPDbg,
-            stats            => stats(21 downto 5)
+            stats            => statsLoc(21 downto 5)
          );
 
       U_IP_TX : entity work.MicroUDPTx
@@ -490,8 +505,28 @@ begin
 
       udpTxMst.length  <= resize( udpFrameSize, udpTxMst.length'length ) + MAC_HDR_SIZE_C + IP4_HDR_SIZE_C + UDP_HDR_SIZE_C;
 
-      udpBusRep                        <= to_Udp2BusRepType( locHBIRep(NUM_HBI_MASTERS_C - 1) );
-      locHBIReq(NUM_HBI_MASTERS_C - 1) <= to_Lan9254ReqType( udpBusReq                        );
+      -- external subordinates
+      udp2BusRepOb(udp2BusRep'range)   <= udp2BusRep;
+      udp2BusReq                       <= udp2BusReqOb( udp2BusReq'range );
+
+      -- local subordinates
+      udp2BusRepOb(UDP_IDX_ESC_C)      <= to_Udp2BusRepType( locHBIRep(NUM_HBI_MASTERS_C - 1) );
+      locHBIReq(NUM_HBI_MASTERS_C - 1) <= to_Lan9254ReqType( udp2BusReqOb(UDP_IDX_ESC_C)       );
+
+      U_BUS_MUX : entity work.Udp2BusMux
+         generic map (
+            NUM_SUBS_G        => NUM_UDP_SUBS_C
+         )
+         port map (
+            clk               => clk,
+            rst               => rst,
+
+            reqIb             => udpBusReq,
+            repIb             => udpBusRep,
+
+            reqOb             => udp2BusReqOb,
+            repOb             => udp2BusRepOb
+         );
 
       U_BUS_MST : entity work.Udp2Bus
          generic map (
@@ -519,6 +554,20 @@ begin
             ilaAckIb          => ilaAck(1)
          );
 
+      P_LOC_STAT_REGS : process ( udp2BusReqOb( UDP_IDX_LOC_C ), statsLoc ) is
+         variable idx : natural range 0 to 31;
+      begin
+         udp2BusRepOb( UDP_IDX_LOC_C ) <= UDP2BUSREP_ERROR_C;
+         if ( ( udp2BusReqOb(UDP_IDX_LOC_C).valid and udp2BusReqOb(UDP_IDX_LOC_C).rdnwr ) = '1' ) then
+            idx := to_integer( unsigned( udp2BusReqOb( UDP_IDX_LOC_C ).dwaddr(4 downto 0) ) );
+            if ( idx <= statsLoc'high ) then
+               udp2BusRepOb(UDP_IDX_LOC_C).rdata                        <= (others => '0');
+               udp2BusRepOb(UDP_IDX_LOC_C).rdata( statsLoc(idx)'range ) <= std_logic_vector( statsLoc(idx) );
+               udp2BusRepOb(UDP_IDX_LOC_C).berr                         <= '0';
+            end if;
+         end if;
+      end process P_LOC_STAT_REGS;
+
    end generate GEN_EOE;
 
    NO_GEN_EOE : if ( not ENABLE_EOE_G ) generate
@@ -527,5 +576,7 @@ begin
       rxStmRdy(EOE_RX_STRM_IDX_C) <= '1';
 
    end generate;
+
+   stats <= statsLoc;
 
 end architecture rtl;
