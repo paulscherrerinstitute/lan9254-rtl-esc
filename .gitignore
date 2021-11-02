@@ -6,3 +6,4 @@ eeprom.bin
 work-*.cf
 hdl/*tb
 hdl/lan9254escrun
+sw/ecurcli
