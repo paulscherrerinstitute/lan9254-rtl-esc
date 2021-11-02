@@ -2,3 +2,7 @@ EEPROMContentPkg.vhd
 config.local.mk
 eeprom.bin
 *.swp
+*.o
+work-*.cf
+hdl/*tb
+hdl/lan9254escrun
