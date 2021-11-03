@@ -310,7 +310,9 @@ begin
       probe0( 63 downto 56 ) <= (others => '0');
 
       probe1( 10 downto  0 ) <= std_logic_vector( frameSizeLoc );
-      probe1( 63 downto 11 ) <= (others => '0');
+      probe1(           11 ) <= memReplay;
+      probe1( 23 downto 12 ) <= r.sig;
+      probe1( 63 downto 24 ) <= (others => '0');
 
    end generate GEN_ILA;
 
