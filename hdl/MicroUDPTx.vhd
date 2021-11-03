@@ -34,7 +34,6 @@ architecture rtl of MicroUdpTx is
    type RegType   is record
       state       : StateType;
       cnt         : natural range 0 to 1500;
-      txRdy       : std_logic;
       mstOb       : Lan9254StrmMstType;
       hdrCsumRst  : std_logic;
    end record RegType;
@@ -54,7 +53,6 @@ architecture rtl of MicroUdpTx is
    constant REG_INIT_C : RegType := (
       state       => IDLE,
       cnt         => 0,
-      txRdy       => '0',
       mstOb       => resetStreamMaster,
       hdrCsumRst  => '1'
    );
@@ -79,7 +77,6 @@ architecture rtl of MicroUdpTx is
       v.mstOb.valid           := '0';
       v.mstOb.usr(3 downto 0) := MBX_TYP_EOE_C;
       v.cnt                   :=  0;
-      v.txRdy                 := '0';
       v.hdrCsumRst            := '1';
    end procedure resetState;
 
@@ -101,7 +98,7 @@ begin
       v4HdrCsumMux <= (others => '0');
       pldRdyIb     <= '0';
 
-      v.txRdy      := '0';
+      txRdy        <= '0';
 
       case ( r.state ) is
          when IDLE =>
@@ -162,9 +159,9 @@ begin
                   when 19 =>     v.mstOb.data := txReq.dstIp (15 + 0*16 downto 0*16);
                   when 20 =>     v.mstOb.data := txReq.dstIp (15 + 1*16 downto 1*16);
                                  v.mstOb.last := '1';
-                                 v.txRdy      := '1';
                   when others =>
 report "Sent ARP REP";
+                     txRdy <= '1';
                      resetState( v );
                end case;
             end if;
@@ -208,7 +205,6 @@ report "Sent ARP REP";
                              -- checksum carry mop-up cycle
                   when 18 =>
                              v.mstOb.data := not v4HdrCsum;
-                             v.txRdy      := '1';
                   when others =>
                              v.state      := FWD;
                end case;
@@ -222,7 +218,6 @@ report "Sent ARP REP";
                   when 18 => v.mstOb.data := txReq.protoData;
                   when 19 => v.mstOb.data := bswap(txReq.length - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C);
                   when 20 => v.mstOb.data := x"0000"; -- no checksum
-                             v.txRdy      := '1';
                   when others =>
                              v.state      := FWD;
                end case;
@@ -232,6 +227,7 @@ report "Sent ARP REP";
             mstOb    <= pldMstIb;
             pldRdyIb <= rdyOb;
             if ( ( rdyOb and pldMstIb.valid and pldMstIb.last ) = '1' ) then
+               txRdy <= '1';
                resetState( v );
             end if;
 
@@ -239,8 +235,6 @@ report "Sent ARP REP";
 
       rin <= v;
    end process P_COMB;
-
-   txRdy <= r.txRdy;
 
    P_SEQ : process ( clk ) is
    begin

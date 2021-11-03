@@ -123,7 +123,7 @@ begin
             ipRxAck             <= ipTxAck;
             v.udpTxInProgress   := false;
             v.udpTxReqVld       := '0';
-            if ( ( ipRxMst.valid and ipRxMst.last and ipTxRdy ) = '1' ) then
+            if ( (ipTxAck and ipRxReq.valid ) = '1' ) then
                v.state := IDLE;
             end if;
 
