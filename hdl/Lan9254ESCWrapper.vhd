@@ -345,10 +345,10 @@ begin
       probe0( 53 downto 52 ) <= eoeMstOb.ben;
       probe0( 63 downto 54 ) <= uUDPDbg(9 downto 0);
 
-      probe1( 15 downto  0 ) <= txStmMst(EOE_RX_STRM_IDX_C).data;
-      probe1( 16           ) <= txStmMst(EOE_RX_STRM_IDX_C).valid;
-      probe1( 17           ) <= txStmRdy(EOE_RX_STRM_IDX_C);
-      probe1( 18           ) <= txStmMst(EOE_RX_STRM_IDX_C).last;
+      probe1( 15 downto  0 ) <= txStmMst(EOE_TX_STRM_IDX_C).data;
+      probe1( 16           ) <= txStmMst(EOE_TX_STRM_IDX_C).valid;
+      probe1( 17           ) <= txStmRdy(EOE_TX_STRM_IDX_C);
+      probe1( 18           ) <= txStmMst(EOE_TX_STRM_IDX_C).last;
       probe1( 19 downto 19 ) <= (others => '0');
       probe1( 20           ) <= txMbxMst.valid;
       probe1( 21           ) <= txMbxRdy;
