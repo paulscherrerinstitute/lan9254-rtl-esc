@@ -142,30 +142,86 @@ uint32_t            a;
 
 static void usage(const char *nm)
 {
-	fprintf(stderr, "usage: %s [-hst] [-a <dst_ip>]\n", nm);
-	fprintf(stderr, "       -h            : this message\n");
-	fprintf(stderr, "       -t            : run basic test (connection to target required)\n");
-	fprintf(stderr, "       -s            : print networking stats for target\n");
-	fprintf(stderr, "       -v            : increase verbosity\n");
-	fprintf(stderr, "       -a dst_ip     : set target ip (dot notation)\n");
+	fprintf(stderr, "usage: %s [-hst] [-a <dst_ip>] [-e <evr_reg>[=<value>]]\n", nm);
+	fprintf(stderr, "       -h                       : this message\n");
+	fprintf(stderr, "       -t                       : run basic test (connection to target required)\n");
+	fprintf(stderr, "       -s                       : print networking stats for target\n");
+	fprintf(stderr, "       -v                       : increase verbosity\n");
+	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation)\n");
+	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
+}
+
+static int
+reg(Ecur e, const char *s, uint32_t bas)
+{
+char                *ep = 0;
+unsigned long       reg;
+unsigned long       val;
+int                 haveVal = 0;
+uint32_t            a;
+uint32_t            v;
+
+	reg = strtoul(s, &ep, 0);
+	if ( ep == s ) {
+		fprintf(stderr, "Error: invalid EVR register (unable to scan)\n");
+		return -1;
+	}
+	while ( ' ' == *ep ) ep++;
+	if ( *ep ) {
+		if ( '=' != *ep ) {
+			fprintf(stderr, "Error: invalid EVR assigment ('=' expected)\n");
+			return -1;
+		}
+		s = ep + 1;
+		val = strtoul(s, &ep, 0);
+		if ( ep == s ) {
+			fprintf(stderr, "Error: invalid EVR register value (unable to scan)\n");
+			return -1;
+		}
+		haveVal = 1;
+	}
+
+	a = bas | (reg << 2);
+	if ( haveVal ) {
+		v = val;
+printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
+		if ( ecurWrite32( e, a, &v, 1 ) < 0 ) {
+			fprintf(stderr, "Error: ecurWrite32() failed (address 0x%08" PRIx32 ")\n", a);
+			return -1;
+		}
+	} else {
+		if ( ecurRead32( e, a, &v, 1 ) < 1 ) {
+			fprintf(stderr, "Error: ecurRead32() failed (address 0x%08" PRIx32 ")\n", a);
+			return -1;
+		} else {
+			printf("0x%08" PRIx32 ": 0x%08" PRIx32 " (%" PRId32 ")\n", a, v, v);
+		}
+	}
+
+	return 0;
 }
 
 int
 main(int argc, char **argv)
 {
+char               *optstr        = "ha:tsve:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
 Ecur                e             = 0;
 uint32_t            hbibas        = (7<<19);
 uint32_t            locbas        = (6<<19);
+uint32_t            evrbas        = (0<<19);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
 int                 verbose       = 0;
+uint32_t           *u32_p         = 0;
 int                 opt;
 
-	while ( (opt = getopt(argc, argv, "ha:tsv")) > 0 ) {
+	while ( (opt = getopt(argc, argv, optstr)) > 0 ) {
+        u32_p = 0;
 		switch ( opt ) {
+
 			case 'h':
 				rval = 0;
 			default:
@@ -187,6 +243,13 @@ int                 opt;
 			case 'v':
 				verbose++;
 				break;
+
+			case 'e': /* deal with that later */
+				break;
+		}
+		if ( u32_p && ( 1 != sscanf(optarg, "%" SCNi32, u32_p) ) ) {
+			fprintf(stderr, "Error: Unable to scan argument to option %d\n", opt);
+			goto bail;
 		}
 	}
 
@@ -201,6 +264,20 @@ int                 opt;
 
 	if ( printNetStats ) {
 		ecurPrintNetStats( e, locbas );
+	}
+
+	optind = 1;
+	while ( (opt = getopt( argc, argv, optstr )) > 0 ) {
+		switch ( opt ) {
+			default:
+				break;
+
+			case 'e':
+				if ( reg( e, optarg, evrbas ) ) {
+					goto bail;
+				}
+				break;
+		}
 	}
 
 	if ( ! testFailed ) {
