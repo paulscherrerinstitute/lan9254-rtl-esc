@@ -55,6 +55,15 @@ ecurRead16(Ecur e, uint32_t addr, uint16_t *data, unsigned n);
 int
 ecurRead32(Ecur e, uint32_t addr, uint32_t *data, unsigned n);
 
+int
+ecurWrite8(Ecur e, uint32_t addr, uint8_t *data, unsigned n);
+
+int
+ecurWrite16(Ecur e, uint32_t addr, uint16_t *data, unsigned n);
+
+int
+ecurWrite32(Ecur e, uint32_t addr, uint32_t *data, unsigned n);
+
 void
 ecurPrintNetStats(Ecur e, uint32_t locbas);
 

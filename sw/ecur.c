@@ -508,6 +508,7 @@ ecurRead8(Ecur e, uint32_t addr, uint8_t *data, unsigned n)
 int got;
 	if ( ecurQRead8( e, addr, data, n, cbGetN, (void*)&got ) ) {
 		fprintf(stderr, "ecurRead8() Error -- failed to queue request\n");
+		return -1;
 	}
 	return ecurExecute( e );
 }
@@ -518,6 +519,7 @@ ecurRead16(Ecur e, uint32_t addr, uint16_t *data, unsigned n)
 int got;
 	if ( ecurQRead16( e, addr, data, n, cbGetN, (void*)&got ) ) {
 		fprintf(stderr, "ecurRead16() Error -- failed to queue request\n");
+		return -1;
 	}
 	return ecurExecute( e );
 }
@@ -529,9 +531,42 @@ ecurRead32(Ecur e, uint32_t addr, uint32_t *data, unsigned n)
 int got;
 	if ( ecurQRead32( e, addr, data, n, cbGetN, (void*)&got ) ) {
 		fprintf(stderr, "ecurRead32() Error -- failed to queue request\n");
+		return -1;
 	}
 	return ecurExecute( e );
 }
+
+int
+ecurWrite8(Ecur e, uint32_t addr, uint8_t *data, unsigned n)
+{
+	if ( ecurQWrite8( e, addr, data, n ) ) {
+		fprintf(stderr, "ecurWrite8() Error -- failed to queue request\n");
+		return -1;
+	}
+	return ecurExecute( e );
+}
+
+int
+ecurWrite16(Ecur e, uint32_t addr, uint16_t *data, unsigned n)
+{
+	if ( ecurQWrite16( e, addr, data, n ) ) {
+		fprintf(stderr, "ecurWrite16() Error -- failed to queue request\n");
+		return -1;
+	}
+	return ecurExecute( e );
+}
+
+
+int
+ecurWrite32(Ecur e, uint32_t addr, uint32_t *data, unsigned n)
+{
+	if ( ecurQWrite32( e, addr, data, n ) ) {
+		fprintf(stderr, "ecurWrite32() Error -- failed to queue request\n");
+		return -1;
+	}
+	return ecurExecute( e );
+}
+
 
 static const char *statLbl[] = {
 	"mbxPkts",
