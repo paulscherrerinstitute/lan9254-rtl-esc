@@ -59,13 +59,11 @@ typedef struct EcurRec {
 
 static void flushReaders(Ecur e, unsigned from)
 {
-	if ( e->numReaders ) {
-		while ( from < e->numReaders ) {
-			if ( e->readers[from].cb ) {
-				e->readers[from].cb( e->readers[from].datp.vp, -1, e->readers[from].closure );
-			}
-			from++;
+	while ( from < e->numReaders ) {
+		if ( e->readers[from].cb ) {
+			e->readers[from].cb( e->readers[from].datp.vp, -1, e->readers[from].closure );
 		}
+		from++;
 	}
 	e->numReaders = 0;
 }
@@ -235,7 +233,7 @@ ecurQOp(
 	void               *closure)
 {
 unsigned reqSz, datSz, repSz;
-int         i;
+int         i,j;
 uint16_t    d16;
 uint32_t    d32;
 EcurReader *reader;
@@ -321,7 +319,7 @@ EcurReader *reader;
 			case LC_DW:
 				for ( i = 0; i < burstCnt; i++ ) {
 					d32 = ((uint32_t*) data)[i];
-					for ( i = 0; i < sizeof( d32 ); i++ ) {
+					for ( j = 0; j < sizeof( d32 ); j++ ) {
 						e->xbuf[e->xlen] = (d32 & 0xff);
 						e->xlen++;
 						d32              = (d32 >> 8);
