@@ -90,9 +90,10 @@ architecture rtl of Lan9254ESCWrapper is
 
    constant EOE_RX_STRM_IDX_C : natural := 0;
 
-   constant NUM_TXMBX_PROTO_C : natural := 2;
-   constant EOE_TX_STRM_IDX_C : natural := 0;
-   constant ERR_TX_STRM_IDX_C : natural := 1;
+   constant NUM_TXMBX_PROTO_C : natural := 3;
+   constant ERR_TX_STRM_IDX_C : natural := 0;
+   constant EOE_RP_STRM_IDX_C : natural := 1;
+   constant EOE_TX_STRM_IDX_C : natural := 2;
 
    constant NUM_HBI_MASTERS_C : natural := NUM_EXT_HBI_MASTERS_G + ite( ENABLE_EOE_G, 1, 0 );
 
@@ -389,6 +390,8 @@ begin
             mbxMstIb    => rxStmMst(EOE_RX_STRM_IDX_C),
             mbxRdyIb    => rxStmRdy(EOE_RX_STRM_IDX_C),
 
+            mbxMstOb    => txStmMst(EOE_RP_STRM_IDX_C),
+            mbxRdyOb    => txStmRdy(EOE_RP_STRM_IDX_C),
 
             eoeMstOb    => eoeMstOb,
             eoeRdyOb    => eoeRdyOb,

@@ -17,8 +17,11 @@ entity ESCEoERx is
       clk               : in  std_logic;
       rst               : in  std_logic;
 
-      mbxMstIb          : in  Lan9254StrmMstType  := LAN9254STRM_MST_INIT_C;
+      mbxMstIb          : in  Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       mbxRdyIb          : out std_logic;
+
+      mbxMstOb          : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      mbxRdyOb          : in  std_logic          := '1';
 
       eoeMstOb          : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       eoeErrOb          : out std_logic;
@@ -26,6 +29,14 @@ entity ESCEoERx is
       eoeFrameSz        : out unsigned(10 downto 0);
 
       debug             : out std_logic_vector(15 downto 0);
+
+      macAddr           : out std_logic_vector(47 downto 0); -- network byte order
+      macAddrVld        : out std_logic;
+      macAddrAck        : in  std_logic := '1';
+
+      ipAddr            : out std_logic_vector(31 downto 0); -- network byte order
+      ipAddrVld         : out std_logic;
+      ipAddrAck         : in  std_logic := '1';
 
       stats             : out StatCounterArray(2 downto 0)
    );
@@ -37,9 +48,12 @@ architecture rtl of ESCEoERx is
 
    subtype FrameTimeoutType is natural range 0 to FRAME_TIMEOUT_C;
 
-   type StateType is (IDLE, HDR, FWD, DROP);
+   type StateType is (IDLE, HDR, FWD, GET_PARAMS, GET_MAC, GET_IP, RESP, DROP);
 
-   type DelayArray is array (natural range 1 downto 0) of std_logic_vector(15 downto 0);
+   type Slv16Array is array (natural range <> )        of std_logic_vector(15 downto 0);
+
+   subtype DelayArray is Slv16Array(1 downto 0);
+
 
    type RegType is record
       state                   : StateType;
@@ -53,6 +67,17 @@ architecture rtl of ESCEoERx is
       fragNo                  : unsigned(5 downto 0);
       frameOff                : unsigned(5 downto 0);
       frameNo                 : unsigned(3 downto 0);
+      wordCount               : natural range 0 to 2;
+      hasMac                  : boolean;
+      macAddr                 : Slv16Array(2 downto 0);
+      macAddrVld              : std_logic;
+      macAddrTmp              : Slv16Array(1 downto 0);
+      hasIp                   : boolean;
+      ipAddr                  : Slv16Array(1 downto 0);
+      ipAddrTmp               : Slv16Array(0 downto 0);
+      ipAddrVld               : std_logic;
+      rspMst                  : Lan9254StrmMstType;
+      rspStatus               : std_logic_vector(15 downto 0);
       eoeErr                  : std_logic;
       drained                 : std_logic;
       frameTimeout            : FrameTimeoutType;
@@ -73,6 +98,17 @@ architecture rtl of ESCEoERx is
       fragNo                  => (others => '0'),
       frameOff                => (others => '0'),
       frameNo                 => (others => '0'),
+      wordCount               => 0,
+      hasMac                  => false,
+      macAddr                 => (others => (others => '0')),
+      macAddrVld              => '0',
+      macAddrTmp              => (others => (others => '0')),
+      hasIp                   => false,
+      ipAddr                  => (others => (others => '0')),
+      ipAddrVld               => '0',
+      ipAddrTmp               => (others => (others => '0')),
+      rspMst                  => LAN9254STRM_MST_INIT_C,
+      rspStatus               => (others => '0'),
       eoeErr                  => '0',
       drained                 => '1',
       frameTimeout            => 0,
@@ -96,7 +132,7 @@ begin
    debug(14          ) <= r.timeAppend;
    debug(15 downto 15) <= (others => '0');
 
-   P_COMB : process ( r, mbxMstIb, eoeRdyLoc ) is
+   P_COMB : process ( r, mbxMstIb, eoeRdyLoc, mbxRdyOb, macAddrAck, ipAddrAck ) is
       variable v   : RegType;
       variable m   : Lan9254StrmMstType;
       variable rdy : std_logic;
@@ -114,9 +150,19 @@ begin
          v.frameTimeout := r.frameTimeout - 1;
       end if;
 
+      if ( macAddrAck = '1' ) then
+         v.macAddrVld := '0';
+      end if;
+
+      if ( ipAddrAck = '1' ) then
+         v.ipAddrVld := '0';
+      end if;
+
       C_STATE : case ( r.state ) is
 
          when IDLE =>
+            v.drained   := '1';
+            v.wordCount := 0;
             if ( ( mbxMstIb.valid and rdy ) = '1' ) then
                if ( mbxMstIb.last = '1' ) then
                   -- too short; drop
@@ -127,13 +173,15 @@ begin
                   v.lastFrag       := mbxMstIb.data( 8          );
                   v.timeAppend     := mbxMstIb.data( 9          );
                   v.timeRequest    := mbxMstIb.data(10          );
-                  if ( EOE_TYPE_FRAG_C = v.frameType ) then
+                  if (    ( EOE_TYPE_FRAG_C            = v.frameType )
+                       or ( EOE_TYPE_SET_IP_PARM_REQ_C = v.frameType ) ) then
                      v.state       := HDR;
-report "FRAME TYPE FRAG " & toString(v.frameType);
+report "FRAME TYPE " & toString(v.frameType);
                   else
 -- FIXME: handle sending response!
 report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
-                     v.state       := DROP;
+                     v.state       := RESP;
+                     v.rspStatus   := EOE_ERR_CODE_UNSUP_FRAME_TYPE_C;
                      v.drained     := '0';
                   end if;
                end if;
@@ -144,23 +192,34 @@ report "UNSUPPORTED EeE FRAME TYPE " & toString(v.frameType);
             if ( ( mbxMstIb.valid and rdy ) = '1' ) then
                if ( mbxMstIb.last = '1' ) then
                   -- too short; drop
-                  v.state          := IDLE;
+                  if ( EOE_TYPE_SET_IP_PARM_REQ_C = r.frameType ) then
+                     v.rspStatus := EOE_ERR_CODE_UNSPEC_ERROR_C;
+                     v.state     := RESP;
+                  else 
+                     v.state          := IDLE;
+                  end if;
                else
                   v.fragNo         := unsigned(mbxMstIb.data( 5 downto  0));
                   v.frameOff       := unsigned(mbxMstIb.data(11 downto  6));
                   v.frameNo        := unsigned(mbxMstIb.data(15 downto 12));
- --- TODO : CHECK
-                  v.state          := FWD;
-                  v.frameTimeout   := FRAME_TIMEOUT_C;
+                  if ( EOE_TYPE_FRAG_C = v.frameType ) then
+                     v.state          := FWD;
+                     v.frameTimeout   := FRAME_TIMEOUT_C;
+                  else
+                     v.state          := GET_PARAMS;
+report "SET_IP_PARAMS";
+                  end if;
                   if ( v.fragNo /= r.fragNo ) then
 report "Unexpected fragment # " & integer'image(to_integer(v.fragNo)) & " exp " & integer'image(to_integer(r.fragNo));
-                     v.state  := DROP;
-                     v.eoeErr := '1';
+                     v.state   := DROP;
+                     v.drained := '0';
+                     v.eoeErr  := '1';
                   end if;
                   if ( ( v.fragNo /= 0 ) and ( v.frameNo /= r.frameNo ) ) then
 report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & integer'image(to_integer(r.frameNo));
-                     v.state  := DROP;
-                     v.eoeErr := '1';
+                     v.state   := DROP;
+                     v.drained := '0';
+                     v.eoeErr  := '1';
                   end if;
                end if;
             end if;
@@ -196,6 +255,119 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                v.state  := DROP;
             end if;
 
+         when GET_PARAMS =>
+            if ( ( mbxMstIb.valid and rdy ) = '1' ) then
+               if ( mbxMstIb.last = '1' ) then
+                  -- too short; drop
+                  v.state     := RESP;
+                  v.rspStatus := EOE_ERR_CODE_UNSPEC_ERROR_C;
+               else
+                  if ( 0 = r.wordCount ) then
+                     v.hasMac    := ( mbxMstIb.data(0) = '1' );
+                     v.hasIp     := ( mbxMstIb.data(1) = '1' );
+                     v.wordCount := 1;
+                  else
+                     v.wordCount := 0;
+                     if    ( r.hasMac ) then
+                        v.state := GET_MAC;
+                     elsif ( r.hasIp ) then
+                        v.state := GET_IP;
+                     else
+                        v.state     := RESP;
+                        v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
+                        v.drained   := '0';
+                     end if;
+                  end if;
+               end if;
+            end if;
+
+         when GET_MAC =>
+            if ( ( mbxMstIb.valid and rdy ) = '1' ) then
+
+               if ( mbxMstIb.last = '1' ) then
+                  v.state     := RESP;
+                  -- reset if this is the last word
+                  v.rspStatus := EOE_ERR_CODE_UNSPEC_ERROR_C;
+               end if;
+
+               if ( 2 = r.wordCount ) then
+                  v.macAddr(1 downto 0) := r.macAddrTmp(1 downto 0);
+                  v.macAddr(         2) := mbxMstIb.data;
+                  v.wordCount           := 0;
+                  v.macAddrVld          := '1';
+report "SET IP PARAMS -- NEW MAC";
+                  if ( r.hasIp ) then
+                     v.state := GET_IP;
+                  else
+                     v.state     := RESP;
+                     v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
+                     v.drained   := mbxMstIb.last;
+                  end if;
+               else
+                  v.macAddrTmp( r.wordCount ) := mbxMstIb.data;
+                  v.wordCount                 := r.wordCount + 1;
+               end if;
+                  
+            end if;
+
+         when GET_IP =>
+            if ( ( mbxMstIb.valid and rdy ) = '1' ) then
+
+               if ( mbxMstIb.last = '1' ) then
+                  v.state     := RESP;
+                  -- reset if this is the last word
+                  v.rspStatus := EOE_ERR_CODE_UNSPEC_ERROR_C;
+               end if;
+
+               if ( 1 = r.wordCount ) then
+report "SET IP PARAMS -- NEW IP: "
+       & integer'image(to_integer(unsigned(r.ipAddrTmp(0)( 7 downto  0)))) & "."
+       & integer'image(to_integer(unsigned(r.ipAddrTmp(0)(15 downto  8)))) & "."
+       & integer'image(to_integer(unsigned(mbxMstIb.data ( 7 downto  0)))) & "."
+       & integer'image(to_integer(unsigned(mbxMstIb.data (15 downto  8))));
+                  if ( ( r.ipAddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
+                     v.ipAddr(0) := r.ipAddrTmp(0);
+                     v.ipAddr(1) := mbxMstIb.data;
+                     v.ipAddrVld := '1';
+                     v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
+                  else
+                     v.rspStatus := EOE_ERR_CODE_UNSUP_DHCP_C;
+                  end if;
+                  v.wordCount    := 0;
+                  v.state        := RESP;
+                  v.drained      := mbxMstIb.last;
+               else
+                  v.ipAddrTmp(0) := mbxMstIb.data;
+                  v.wordCount    := 1;
+               end if;
+
+            end if;
+
+         when RESP =>
+            if ( '0' = r.rspMst.valid ) then
+                  v.rspMst.data( 3 downto 0)        := EOE_TYPE_SET_IP_PARM_RSP_C;
+                  v.rspMst.data( 7 downto 4)        := x"0";  -- port
+                  v.rspMst.data(          8)        := '1';   -- last
+                  v.rspMst.data(15 downto 9)        := (others => '0');
+                  v.rspMst.ben                      := "11";
+                  v.rspMst.last                     := '0';
+                  v.rspMst.usr(MBX_TYP_EOE_C'range) := MBX_TYP_EOE_C;
+                  v.rspMst.valid                    := '1';
+            elsif ( mbxRdyOb = '1' ) then
+               if ( r.rspMst.last = '1' ) then
+                  v.rspMst.last  := '0';
+                  v.rspMst.valid := '0';
+                  if ( r.drained = '1' ) then
+                     v.state := IDLE;
+                  else
+                     v.state := DROP;
+                  end if;
+               else
+                  v.rspMst.data := r.rspStatus;
+                  v.rspMst.last := '1';
+               end if;
+            end if;
+
          when DROP =>
             m.valid  := r.eoeErr;
             m.last   := r.eoeErr;
@@ -207,7 +379,9 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                v.drained := '1';
             end if;
             if ( ( v.drained and not v.eoeErr ) = '1' ) then
-               v.numDrops := r.numDrops + 1;
+               if ( EOE_TYPE_SET_IP_PARM_REQ_C /= r.frameType ) then
+                  v.numDrops := r.numDrops + 1;
+               end if;
                v.state    := IDLE;
             end if;
 
@@ -272,8 +446,15 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
 
    end generate GEN_STORE;
 
-   stats(0) <= r.numFrags;
-   stats(1) <= r.numFrams;
-   stats(2) <= r.numDrops;
+   mbxMstOb    <= r.rspMst;
+
+   macAddr     <= r.macAddr(2) & r.macAddr(1) & r.macAddr(0);
+   macAddrVld  <= r.macAddrVld;
+   ipAddr      <= r.ipAddr(1) & r.ipAddr(0);
+   ipAddrVld   <= r.ipAddrVld;
+
+   stats(0)    <= r.numFrags;
+   stats(1)    <= r.numFrams;
+   stats(2)    <= r.numDrops;
 
 end architecture rtl;

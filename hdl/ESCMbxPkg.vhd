@@ -36,14 +36,21 @@ package ESCMbxPkg is
 
    constant EOE_TYPE_FRAG_C                       : std_logic_vector(3 downto 0)   := x"0";
    constant EOE_TYPE_INIT_RESP_TS_C               : std_logic_vector(3 downto 0)   := x"1";
-   constant EOE_TYPE_INIT_REQ_C                   : std_logic_vector(3 downto 0)   := x"2";
-   constant EOE_TYPE_INIT_RSP_C                   : std_logic_vector(3 downto 0)   := x"3";
+   constant EOE_TYPE_SET_IP_PARM_REQ_C            : std_logic_vector(3 downto 0)   := x"2";
+   constant EOE_TYPE_SET_IP_PARM_RSP_C            : std_logic_vector(3 downto 0)   := x"3";
    constant EOE_TYPE_SET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0)   := x"4";
    constant EOE_TYPE_SET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0)   := x"5";
    constant EOE_TYPE_GET_IP_PARAM_REQ_C           : std_logic_vector(3 downto 0)   := x"6";
    constant EOE_TYPE_GET_IP_PARAM_RSP_C           : std_logic_vector(3 downto 0)   := x"7";
    constant EOE_TYPE_GET_ADDR_FILT_REQ_C          : std_logic_vector(3 downto 0)   := x"8";
    constant EOE_TYPE_GET_ADDR_FILT_RSP_C          : std_logic_vector(3 downto 0)   := x"9";
+
+   constant EOE_ERR_CODE_SUCCESS_C                : std_logic_vector(15 downto  0) := x"0000";
+   constant EOE_ERR_CODE_UNSPEC_ERROR_C           : std_logic_vector(15 downto  0) := x"0001";
+   constant EOE_ERR_CODE_UNSUP_FRAME_TYPE_C       : std_logic_vector(15 downto  0) := x"0002";
+   constant EOE_ERR_CODE_UNSUP_IP_C               : std_logic_vector(15 downto  0) := x"0201";
+   constant EOE_ERR_CODE_UNSUP_DHCP_C             : std_logic_vector(15 downto  0) := x"0202";
+   constant EOE_ERR_CODE_UNSUP_FILTER_C           : std_logic_vector(15 downto  0) := x"0401";
 
    constant EOE_HDR_SIZE_C                        : natural                        := 4;
    constant EOE_MAX_FRAME_SIZE_C                  : natural                        := 1472;
