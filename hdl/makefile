@@ -7,20 +7,22 @@
 CROSS=
 GHDL=$(CROSS)ghdl
 CXX=$(CROSS)g++
-GHDLFLAGS=
+GHDLFLAGS=$(addprefix -P,$(UNISIM))
+
 SIITOOL=siitool
 
 -include config.local.mk
 
-PROG=lan9254escrun lan9254esctb txmbxtb eoetb strmframebuftb udp2bustb
+PROG=lan9254escrun lan9254esctb txmbxtb eoetb strmframebuftb udp2bustb devicedna7tb
 OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
 OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
 OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o StrmFrameBuf.o
-OBJS+=Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o
+OBJS+=Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o DeviceDna7.o
+OBJS+=AddressGenerator.o IPAddrConfigPkg.o
 
-TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o Udp2BusTb.o
+TOPS=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o Udp2BusTb.o DeviceDna7Tb.o
 
 # Default target
 all: $(PROG)
@@ -46,6 +48,9 @@ strmframebuftb: StrmFrameBufTb.o $(OBJS)
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 udp2bustb: Udp2BusTb.o $(OBJS)
+	$(GHDL) -e $(GHDLFLAGS) $@
+
+devicedna7tb: DeviceDna7Tb.o DeviceDna7.o
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 # Run target
@@ -104,12 +109,14 @@ ESCMbxPkg.o: Lan9254ESCPkg.o
 ESCTxMbxMux.o: Lan9254Pkg.o
 StrmFrameBuf.o ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 MicroUDPIPMux.o MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
-Lan9254ESCWrapper.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o MicroUDPPkg.o Lan9254ESC.o ESCTxMbxMux.o ESCRxMbxMux.o ESCTxMbxErr.o ESCEoERx.o ESCEoETx.o MicroUDPRx.o MicroUDPTx.o MicroUDPIPMux.o Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o
-MicroUDPPkg.o: Lan9254Pkg.o
+Lan9254ESCWrapper.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o MicroUDPPkg.o Lan9254ESC.o ESCTxMbxMux.o ESCRxMbxMux.o ESCTxMbxErr.o ESCEoERx.o ESCEoETx.o MicroUDPRx.o MicroUDPTx.o MicroUDPIPMux.o Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o AddressGenerator.o
+MicroUDPPkg.o: Lan9254Pkg.o IPAddrConfigPkg.o
 ESCEoETx.o ESCEoERx.o: StrmFrameBuf.o
 Udp2Bus.o: Udp2BusPkg.o Lan9254Pkg.o StrmFrameBuf.o
 Udp2BusMux.o: Udp2BusPkg.o
 Udp2BusTb.o: Udp2Bus.o
+DeviceDna7Tb.o: DeviceDna7.o
+AddressGenerator.o: DeviceDna7.o IPAddrConfigPkg.o
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin
 

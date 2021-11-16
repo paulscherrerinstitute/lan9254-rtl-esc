@@ -5,6 +5,7 @@ use     ieee.numeric_std.all;
 use     work.Lan9254Pkg.all;
 use     work.Lan9254ESCPkg.all;
 use     work.MicroUDPPkg.all;
+use     work.IPAddrConfigPkg.all;
 
 entity MicroUdpRx is
    generic (
@@ -14,9 +15,7 @@ entity MicroUdpRx is
       clk      : in  std_logic;
       rst      : in  std_logic;
 
-      myMac    : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
-      myIp     : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
-      myPort   : in  std_logic_vector(15 downto 0) := x"6688";
+      myAddr   : in  IPAddrConfigType;
 
       mstIb    : in  Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       errIb    : in  std_logic;
@@ -108,13 +107,13 @@ architecture rtl of MicroUdpRx is
       end case;
       case ( v.cnt ) is
          when 0 =>
-            v.maybeUcst := ( d  = myMac( 15 + 0*16 downto  0*16 ) );
+            v.maybeUcst := ( d  = myAddr.macAddr( 15 + 0*16 downto  0*16 ) );
          when 1 =>
-            if ( d /= myMac( 15 + 1*16 downto  1*16 ) ) then
+            if ( d /= myAddr.macAddr( 15 + 1*16 downto  1*16 ) ) then
                v.maybeUcst := false;
             end if;
          when 2 =>
-            if ( d /= myMac( 15 + 2*16 downto  2*16 ) ) then
+            if ( d /= myAddr.macAddr( 15 + 2*16 downto  2*16 ) ) then
                v.maybeUcst := false;
             end if;
          when others =>
@@ -140,7 +139,7 @@ architecture rtl of MicroUdpRx is
 
 begin
 
-   P_COMB : process (r, myMac, myIp, myPort, mstIb, txRdy, pldRdyOb, errIb) is
+   P_COMB : process (r, myAddr, mstIb, txRdy, pldRdyOb, errIb) is
       variable v  : RegType;
       variable ok : boolean;
       variable m  : Lan9254StrmMstType;
@@ -243,9 +242,9 @@ report "ARP_REQ early last drop";
                         v.txReq.dstIp(31 downto 16) := mstIb.data;
                      when 16 | 17 | 18 =>
                      when 19     =>
-                        if ( mstIb.data /= myIp(15 downto 0) ) then v.state := DROP; end if;
+                        if ( mstIb.data /= myAddr.ip4Addr(15 downto 0) ) then v.state := DROP; end if;
                      when others =>
-                        if ( mstIb.data /= myIp(31 downto 16) ) then
+                        if ( mstIb.data /= myAddr.ip4Addr(31 downto 16) ) then
                            v.state := DROP;
                         else
                            v.nArpReq     := r.nArpReq + 1;
@@ -305,12 +304,12 @@ report "IP_HDR early last drop";
                     when 14    =>
                        v.txReq.dstIp(31 downto 16) := mstIb.data;
                     when 15    =>
-                       if ( myIp( 15 downto  0 ) /= mstIb.data ) then
+                       if ( myAddr.ip4Addr( 15 downto  0 ) /= mstIb.data ) then
                           v.nIP4Mis    := r.nIP4Mis + 1;
                           v.state      := DROP;
                        end if;
                     when others  =>
-                       if ( myIp( 31 downto 16 ) /= mstIb.data ) then
+                       if ( myAddr.ip4Addr( 31 downto 16 ) /= mstIb.data ) then
                           v.nIP4Mis    := r.nIP4Mis + 1;
                           v.state      := DROP;
                        else
@@ -373,7 +372,7 @@ end if;
                      when 17 =>
                         v.txReq.protoData := mstIb.data;
                      when 18 =>
-                        if ( mstIb.data /= myPort ) then
+                        if ( mstIb.data /= myAddr.udpPort ) then
                            v.nUdpMis  := r.nUdpMis + 1;
                            v.state    := DROP;
                            -- should really send ICMP message

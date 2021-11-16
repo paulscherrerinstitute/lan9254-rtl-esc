@@ -6,6 +6,7 @@ use ieee.math_real.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
+use work.IPAddrConfigPkg.all;
 
 entity ESCEoERx is
    generic (
@@ -30,13 +31,8 @@ entity ESCEoERx is
 
       debug             : out std_logic_vector(15 downto 0);
 
-      macAddr           : out std_logic_vector(47 downto 0); -- network byte order
-      macAddrVld        : out std_logic;
-      macAddrAck        : in  std_logic := '1';
-
-      ipAddr            : out std_logic_vector(31 downto 0); -- network byte order
-      ipAddrVld         : out std_logic;
-      ipAddrAck         : in  std_logic := '1';
+      addrCfg           : out IPAddrConfigType;
+      addrCfgAck        : in  IPAddrConfigAckType := IP_ADDR_CONFIG_ACK_ASSERT_C;
 
       stats             : out StatCounterArray(2 downto 0)
    );
@@ -73,9 +69,9 @@ architecture rtl of ESCEoERx is
       macAddrVld              : std_logic;
       macAddrTmp              : Slv16Array(1 downto 0);
       hasIp                   : boolean;
-      ipAddr                  : Slv16Array(1 downto 0);
-      ipAddrTmp               : Slv16Array(0 downto 0);
-      ipAddrVld               : std_logic;
+      ip4Addr                 : Slv16Array(1 downto 0);
+      ip4AddrTmp              : Slv16Array(0 downto 0);
+      ip4AddrVld              : std_logic;
       rspMst                  : Lan9254StrmMstType;
       rspStatus               : std_logic_vector(15 downto 0);
       eoeErr                  : std_logic;
@@ -104,9 +100,9 @@ architecture rtl of ESCEoERx is
       macAddrVld              => '0',
       macAddrTmp              => (others => (others => '0')),
       hasIp                   => false,
-      ipAddr                  => (others => (others => '0')),
-      ipAddrVld               => '0',
-      ipAddrTmp               => (others => (others => '0')),
+      ip4Addr                 => (others => (others => '0')),
+      ip4AddrVld              => '0',
+      ip4AddrTmp              => (others => (others => '0')),
       rspMst                  => LAN9254STRM_MST_INIT_C,
       rspStatus               => (others => '0'),
       eoeErr                  => '0',
@@ -132,7 +128,7 @@ begin
    debug(14          ) <= r.timeAppend;
    debug(15 downto 15) <= (others => '0');
 
-   P_COMB : process ( r, mbxMstIb, eoeRdyLoc, mbxRdyOb, macAddrAck, ipAddrAck ) is
+   P_COMB : process ( r, mbxMstIb, eoeRdyLoc, mbxRdyOb, addrCfgAck ) is
       variable v   : RegType;
       variable m   : Lan9254StrmMstType;
       variable rdy : std_logic;
@@ -150,12 +146,12 @@ begin
          v.frameTimeout := r.frameTimeout - 1;
       end if;
 
-      if ( macAddrAck = '1' ) then
+      if ( addrCfgAck.macAddrAck = '1' ) then
          v.macAddrVld := '0';
       end if;
 
-      if ( ipAddrAck = '1' ) then
-         v.ipAddrVld := '0';
+      if ( addrCfgAck.ip4AddrAck = '1' ) then
+         v.ip4AddrVld := '0';
       end if;
 
       C_STATE : case ( r.state ) is
@@ -321,23 +317,23 @@ report "SET IP PARAMS -- NEW MAC";
 
                if ( 1 = r.wordCount ) then
 report "SET IP PARAMS -- NEW IP: "
-       & integer'image(to_integer(unsigned(r.ipAddrTmp(0)( 7 downto  0)))) & "."
-       & integer'image(to_integer(unsigned(r.ipAddrTmp(0)(15 downto  8)))) & "."
+       & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)( 7 downto  0)))) & "."
+       & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)(15 downto  8)))) & "."
        & integer'image(to_integer(unsigned(mbxMstIb.data ( 7 downto  0)))) & "."
        & integer'image(to_integer(unsigned(mbxMstIb.data (15 downto  8))));
-                  if ( ( r.ipAddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
-                     v.ipAddr(0) := r.ipAddrTmp(0);
-                     v.ipAddr(1) := mbxMstIb.data;
-                     v.ipAddrVld := '1';
-                     v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
+                  if ( ( r.ip4AddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
+                     v.ip4Addr(0) := r.ip4AddrTmp(0);
+                     v.ip4Addr(1) := mbxMstIb.data;
+                     v.ip4AddrVld := '1';
+                     v.rspStatus  := EOE_ERR_CODE_SUCCESS_C;
                   else
-                     v.rspStatus := EOE_ERR_CODE_UNSUP_DHCP_C;
+                     v.rspStatus  := EOE_ERR_CODE_UNSUP_DHCP_C;
                   end if;
-                  v.wordCount    := 0;
-                  v.state        := RESP;
-                  v.drained      := mbxMstIb.last;
+                  v.wordCount     := 0;
+                  v.state         := RESP;
+                  v.drained       := mbxMstIb.last;
                else
-                  v.ipAddrTmp(0) := mbxMstIb.data;
+                  v.ip4AddrTmp(0) := mbxMstIb.data;
                   v.wordCount    := 1;
                end if;
 
@@ -446,15 +442,15 @@ report "SET IP PARAMS -- NEW IP: "
 
    end generate GEN_STORE;
 
-   mbxMstOb    <= r.rspMst;
+   mbxMstOb            <= r.rspMst;
 
-   macAddr     <= r.macAddr(2) & r.macAddr(1) & r.macAddr(0);
-   macAddrVld  <= r.macAddrVld;
-   ipAddr      <= r.ipAddr(1) & r.ipAddr(0);
-   ipAddrVld   <= r.ipAddrVld;
+   addrCfg.macAddr     <= r.macAddr(2) & r.macAddr(1) & r.macAddr(0);
+   addrCfg.macAddrVld  <= r.macAddrVld;
+   addrCfg.ip4Addr     <= r.ip4Addr(1) & r.ip4Addr(0);
+   addrCfg.ip4AddrVld  <= r.ip4AddrVld;
 
-   stats(0)    <= r.numFrags;
-   stats(1)    <= r.numFrams;
-   stats(2)    <= r.numDrops;
+   stats(0)            <= r.numFrags;
+   stats(1)            <= r.numFrams;
+   stats(2)            <= r.numDrops;
 
 end architecture rtl;

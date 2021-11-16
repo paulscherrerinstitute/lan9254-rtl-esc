@@ -5,15 +5,14 @@ use     ieee.numeric_std.all;
 use     work.Lan9254Pkg.all;
 use     work.MicroUDPPkg.all;
 use     work.ESCMbxPkg.all;
+use     work.IPAddrConfigPkg.all;
 
 entity MicroUdpTx is
    port (
       clk      : in  std_logic;
       rst      : in  std_logic;
 
-      myMac    : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
-      myIp     : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
-      myPort   : in  std_logic_vector(15 downto 0) := x"6688";
+      myAddr   : in  IPAddrConfigType;
 
       mstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       rdyOb    : in  std_logic;
@@ -89,7 +88,7 @@ architecture rtl of MicroUdpTx is
 
 begin
 
-   P_COMB : process (r, myMac, myIp, myPort, rdyOb, txReq, pldMstIb, v4HdrCsum) is
+   P_COMB : process (r, myAddr, rdyOb, txReq, pldMstIb, v4HdrCsum) is
       variable v  : RegType;
    begin
       v            := r;
@@ -121,14 +120,14 @@ begin
                             else
                                v4HdrCsumMux <= x"1185";
                             end if;
-                  when 2 => v.mstOb.data := txReq.dstMac(15 + 2*16 downto 2*16);
-                            v4HdrCsumMux <= myIp(15 downto  0);
-                  when 3 => v.mstOb.data := myMac       (15 + 0*16 downto 0*16);
-                            v4HdrCsumMux <= myIp(31 downto 16);
-                  when 4 => v.mstOb.data := myMac       (15 + 1*16 downto 1*16);
-                            v4HdrCsumMux <= txReq.dstIp(15 downto  0);
-                  when 5 => v.mstOb.data := myMac       (15 + 2*16 downto 2*16);
-                            v4HdrCsumMux <= txReq.dstIp(31 downto 16);
+                  when 2 => v.mstOb.data := txReq.dstMac  (15 + 2*16 downto 2*16);
+                            v4HdrCsumMux <= myAddr.ip4Addr(15 downto  0);
+                  when 3 => v.mstOb.data := myAddr.macAddr(15 + 0*16 downto 0*16);
+                            v4HdrCsumMux <= myAddr.ip4Addr(31 downto 16);
+                  when 4 => v.mstOb.data := myAddr.macAddr(15 + 1*16 downto 1*16);
+                            v4HdrCsumMux <= txReq.dstIp   (15 downto  0);
+                  when 5 => v.mstOb.data := myAddr.macAddr(15 + 2*16 downto 2*16);
+                            v4HdrCsumMux <= txReq.dstIp   (31 downto 16);
                   when others =>
                     if ( txReq.typ = ARP_REP ) then
                        v.mstOb.data := x"0608";
@@ -148,11 +147,11 @@ begin
                   when  8 =>     v.mstOb.data := x"0008";
                   when  9 =>     v.mstOb.data := x"0406";
                   when 10 =>     v.mstOb.data := x"0200";
-                  when 11 =>     v.mstOb.data := myMac(15 + 0*16 downto 0*16);
-                  when 12 =>     v.mstOb.data := myMac(15 + 1*16 downto 1*16);
-                  when 13 =>     v.mstOb.data := myMac(15 + 2*16 downto 2*16);
-                  when 14 =>     v.mstOb.data := myIp (15 + 0*16 downto 0*16);
-                  when 15 =>     v.mstOb.data := myIp (15 + 1*16 downto 1*16);
+                  when 11 =>     v.mstOb.data := myAddr.macAddr(15 + 0*16 downto 0*16);
+                  when 12 =>     v.mstOb.data := myAddr.macAddr(15 + 1*16 downto 1*16);
+                  when 13 =>     v.mstOb.data := myAddr.macAddr(15 + 2*16 downto 2*16);
+                  when 14 =>     v.mstOb.data := myAddr.ip4Addr(15 + 0*16 downto 0*16);
+                  when 15 =>     v.mstOb.data := myAddr.ip4Addr(15 + 1*16 downto 1*16);
                   when 16 =>     v.mstOb.data := txReq.dstMac(15 + 0*16 downto 0*16);
                   when 17 =>     v.mstOb.data := txReq.dstMac(15 + 1*16 downto 1*16);
                   when 18 =>     v.mstOb.data := txReq.dstMac(15 + 2*16 downto 2*16);
@@ -182,9 +181,9 @@ report "Sent ARP REP";
                                   -- checksum carry mop-up cycle
                   when 12 =>      v.mstOb.data := not v4HdrCsum;
                                   v.hdrCsumRst := '1'; -- reset checksum calculator for ICMP
-                  when 13 =>      v.mstOb.data := myIp(15 downto  0);
+                  when 13 =>      v.mstOb.data := myAddr.ip4Addr(15 downto  0);
                                   v.hdrCsumRst := '0';
-                  when 14 =>      v.mstOb.data := myIp(31 downto 16);
+                  when 14 =>      v.mstOb.data := myAddr.ip4Addr(31 downto 16);
                   when 15 =>      v.mstOb.data := txReq.dstIp(15 downto  0);
                                   v4HdrCsumMux <= not txReq.protoData;
                   when others =>  v.mstOb.data := txReq.dstIp(31 downto 16);
@@ -214,7 +213,7 @@ report "Sent ARP REP";
             if ( rdyOb = '1' ) then
                v.cnt := r.cnt + 1;
                case ( r.cnt ) is
-                  when 17 => v.mstOb.data := myPort;
+                  when 17 => v.mstOb.data := myAddr.udpPort;
                   when 18 => v.mstOb.data := txReq.protoData;
                   when 19 => v.mstOb.data := bswap(txReq.length - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C);
                   when 20 => v.mstOb.data := x"0000"; -- no checksum

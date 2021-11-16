@@ -7,6 +7,7 @@ use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
 use work.MicroUDPPkg.all;
+use work.IPAddrConfigPkg.all;
 use work.IlaWrappersPkg.all;
 use work.Udp2BusPkg.all;
 use work.Lan9254UdpBusPkg.all;
@@ -22,6 +23,9 @@ entity Lan9254ESCWrapper is
       GEN_EOE_ILA_G           : boolean := true;
       NUM_EXT_HBI_MASTERS_G   : natural := 1;
       NUM_UDP_SUBS_G          : natural range 0 to 4 := 0;
+      DEFAULT_MAC_ADDR_G      : std_logic_vector(47 downto 0) := x"f106a98e0200";  -- 00:02:8e:a9:06:f1
+      DEFAULT_IP4_ADDR_G      : std_logic_vector(31 downto 0) := x"0A0A0A0A";      -- 10.10.10.10
+      DEFAULT_UDP_PORT_G      : std_logic_vector(15 downto 0) := x"0010";          -- 4096
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false
    );
@@ -46,9 +50,8 @@ entity Lan9254ESCWrapper is
       rxPDORdy                : in  std_logic         := '1';
 
       -- mac, ip and port in network-byte order!
-      myMac                   : in  std_logic_vector(47 downto 0) := x"f106a98e0200";
-      myIp                    : in  std_logic_vector(31 downto 0) := x"0a0a0a0a";
-      myPort                  : in  std_logic_vector(15 downto 0) := x"0010"; -- 4096
+      myAddr                  : in  IPAddrConfigType    := makeIpAddrConfig;
+      myAddrAck               : out IPAddrConfigAckType := IP_ADDR_CONFIG_ACK_ASSERT_C;
 
       -- HBI access by an external agent
       extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
@@ -99,6 +102,10 @@ architecture rtl of Lan9254ESCWrapper is
 
    constant NUM_ILAS_C        : natural := 3;
 
+   constant NUM_ADDR_CFGS_C   : natural := 2;
+   constant EXT_CFG_IDX_C     : natural := 0;
+   constant EOE_CFG_IDX_C     : natural := 1;
+
    signal   txMbxMst          : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
    signal   txMbxRdy          : std_logic;
    signal   rxMbxMst          : Lan9254StrmMstType;
@@ -122,6 +129,8 @@ architecture rtl of Lan9254ESCWrapper is
    signal   locHBIRep         : Lan9254RepArray(NUM_HBI_MASTERS_C - 1 downto 0);
 
    signal   statsLoc          : StatCounterArray(stats'range) := (others => STAT_COUNTER_INIT_C);
+
+   signal   myAddrLoc         : IPAddrConfigType              := myAddr;
 
 begin
 
@@ -245,65 +254,68 @@ begin
          state          : StateType;
       end record RegType;
 
-      constant REG_INIT_C      : RegType := (
+      constant REG_INIT_C        : RegType := (
          state                 => IDLE
       );
 
-      constant MAX_UDP_SIZE_C  : natural   :=
+      constant MAX_UDP_SIZE_C    : natural   :=
          EOE_MAX_FRAME_SIZE_C - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C - UDP_HDR_SIZE_C;
 
-      constant NUM_UDP_SUBS_C  : natural   := 8;
+      constant NUM_UDP_SUBS_C    : natural   := 8;
 
-      constant UDP_IDX_ESC_C   : natural   := 7;
-      constant UDP_IDX_LOC_C   : natural   := 6;
+      constant UDP_IDX_ESC_C     : natural   := 7;
+      constant UDP_IDX_LOC_C     : natural   := 6;
 
-      signal   r               : RegType   := REG_INIT_C;
-      signal   rin             : RegType;
+      signal   r                 : RegType   := REG_INIT_C;
+      signal   rin               : RegType;
 
-      signal   eoeMstOb        : Lan9254StrmMstType;
-      signal   eoeRdyOb        : std_logic := '1';
-      signal   eoeErrOb        : std_logic;
-      signal   eoeMstIb        : Lan9254StrmMstType;
-      signal   eoeRdyIb        : std_logic := '1';
+      signal   eoeMstOb          : Lan9254StrmMstType;
+      signal   eoeRdyOb          : std_logic := '1';
+      signal   eoeErrOb          : std_logic;
+      signal   eoeMstIb          : Lan9254StrmMstType;
+      signal   eoeRdyIb          : std_logic := '1';
 
-      signal   ipPldRxMst      : Lan9254StrmMstType;
-      signal   ipPldRxRdy      : std_logic := '0';
+      signal   ipPldRxMst        : Lan9254StrmMstType;
+      signal   ipPldRxRdy        : std_logic := '0';
 
-      signal   ipPldTxMst      : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      signal   ipPldTxRdy      : std_logic;
+      signal   ipPldTxMst        : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      signal   ipPldTxRdy        : std_logic;
 
-      signal   txReq           : EthTxReqType := ETH_TX_REQ_INIT_C;
-      signal   txRdy           : std_logic    := '0';
+      signal   txReq             : EthTxReqType := ETH_TX_REQ_INIT_C;
+      signal   txRdy             : std_logic    := '0';
 
-      signal   rxReq           : EthTxReqType := ETH_TX_REQ_INIT_C;
-      signal   rxRdy           : std_logic    := '0';
+      signal   rxReq             : EthTxReqType := ETH_TX_REQ_INIT_C;
+      signal   rxRdy             : std_logic    := '0';
 
-      signal   probe0          : std_logic_vector(63 downto 0) := (others => '0');
-      signal   probe1          : std_logic_vector(63 downto 0) := (others => '0');
-      signal   probe2          : std_logic_vector(63 downto 0) := (others => '0');
-      signal   probe3          : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe0            : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe1            : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe2            : std_logic_vector(63 downto 0) := (others => '0');
+      signal   probe3            : std_logic_vector(63 downto 0) := (others => '0');
 
-      signal   eoeTxDbg        : std_logic_vector(31 downto 0);
-      signal   eoeRxDbg        : std_logic_vector(15 downto 0);
-      signal   uUDPDbg         : std_logic_vector(15 downto 0);
+      signal   eoeTxDbg          : std_logic_vector(31 downto 0);
+      signal   eoeRxDbg          : std_logic_vector(15 downto 0);
+      signal   uUDPDbg           : std_logic_vector(15 downto 0);
 
-      signal   udpMuxState     : std_logic_vector( 1 downto 0);
-      signal   udpMuxDebug     : std_logic_vector( 7 downto 0);
+      signal   udpMuxState       : std_logic_vector( 1 downto 0);
+      signal   udpMuxDebug       : std_logic_vector( 7 downto 0);
 
       -- UDP stream I/O
-      signal   udpRxMst        : UdpStrmMstType := UDP_STRM_MST_INIT_C;
-      signal   udpRxRdy        : std_logic      := '1';
+      signal   udpRxMst          : UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      signal   udpRxRdy          : std_logic      := '1';
 
-      signal   udpTxMst        : UdpStrmMstType := UDP_STRM_MST_INIT_C;
-      signal   udpTxRdy        : std_logic      := '1';
+      signal   udpTxMst          : UdpStrmMstType := UDP_STRM_MST_INIT_C;
+      signal   udpTxRdy          : std_logic      := '1';
 
-      signal   udpFrameSize    : unsigned(10 downto 0);
+      signal   udpFrameSize      : unsigned(10 downto 0);
 
-      signal   udpBusReq       : Udp2BusReqType;
-      signal   udpBusRep       : Udp2BusRepType;
+      signal   udpBusReq         : Udp2BusReqType;
+      signal   udpBusRep         : Udp2BusRepType;
 
-      signal   udp2BusReqOb    : Udp2BusReqArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
-      signal   udp2BusRepOb    : Udp2BusRepArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
+      signal   udp2BusReqOb      : Udp2BusReqArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
+      signal   udp2BusRepOb      : Udp2BusRepArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
+
+      signal   addrCfgs          : IPAddrConfigArray   (NUM_ADDR_CFGS_C - 1 downto 0);
+      signal   addrCfgAcks       : IPAddrConfigAckArray(NUM_ADDR_CFGS_C - 1 downto 0);
 
    begin
 
@@ -397,6 +409,9 @@ begin
             eoeRdyOb    => eoeRdyOb,
             eoeErrOb    => eoeErrOb,
 
+            addrCfg     => addrCfgs   (EOE_CFG_IDX_C),
+            addrCfgAck  => addrCfgAcks(EOE_CFG_IDX_C),
+
             debug       => eoeRxDbg,
             stats       => statsLoc(4 downto 2)
          );
@@ -425,9 +440,7 @@ begin
             clk              => clk,
             rst              => rst,
 
-            myMac            => myMac,
-            myIp             => myIp,
-            myPort           => myPort,
+            myAddr           => myAddrLoc,
 
             mstIb            => eoeMstOb,
             errIb            => eoeErrOb,
@@ -448,9 +461,7 @@ begin
             clk              => clk,
             rst              => rst,
 
-            myMac            => myMac,
-            myIp             => myIp,
-            myPort           => myPort,
+            myAddr           => myAddrLoc,
 
             mstOb            => eoeMstIb,
             rdyOb            => eoeRdyIb,
@@ -462,8 +473,28 @@ begin
             pldRdyIb         => ipPldTxRdy
          );
 
-     -- for simulation/testing
-     GEN_EOE_MON : if ( false ) generate
+      addrCfgs( EXT_CFG_IDX_C ) <= myAddr;
+      myAddrAck                 <= addrCfgAcks( EXT_CFG_IDX_C );
+
+      U_GEN_ADDR : entity work.AddressGenerator
+         generic map (
+            DEFAULT_MAC_ADDR_G => DEFAULT_MAC_ADDR_G,
+            DEFAULT_IP4_ADDR_G => DEFAULT_IP4_ADDR_G,
+            DEFAULT_UDP_PORT_G => DEFAULT_UDP_PORT_G,
+            NUM_CONFIGS_G      => addrCfgs'length
+         )
+         port map (
+            clk              => clk,
+            rst              => rst,
+
+            configs          => addrCfgs,
+            configAcks       => addrCfgAcks,
+
+            addrOut          => myAddrLoc
+         );
+
+      -- for simulation/testing
+      GEN_EOE_MON : if ( false ) generate
          P_MON_EOE : process ( clk ) is
          begin
             if ( rising_edge( clk ) ) then
@@ -500,11 +531,9 @@ begin
             debug             => udpMuxDebug
          );
 
-      udpMuxState <= udpMuxDebug(1 downto 0);
+      udpMuxState      <= udpMuxDebug(1 downto 0);
 
-      udpTxMst.macAddr <= udpRxMst.macAddr;
-      udpTxMst.ipAddr  <= udpRxMst.ipAddr;
-      udpTxMst.udpPort <= udpRxMst.udpPort;
+      udpTxMst.addr    <= udpRxMst.addr;
 
       udpTxMst.length  <= resize( udpFrameSize, udpTxMst.length'length ) + MAC_HDR_SIZE_C + IP4_HDR_SIZE_C + UDP_HDR_SIZE_C;
 

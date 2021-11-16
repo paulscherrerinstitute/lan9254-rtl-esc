@@ -35,6 +35,9 @@ foreach f {
   Udp2Bus.vhd
   Udp2BusMux.vhd
   Lan9254UdpBusPkg.vhd
+  AddressGenerator.vhd
+  IPAddrConfigPkg.vhd
+  DeviceDna7.vhd
 } {
   loadSource    -path "$::DIR_PATH/hdl/$f"
 }
