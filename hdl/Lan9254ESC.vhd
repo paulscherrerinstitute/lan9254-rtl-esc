@@ -664,7 +664,7 @@ begin
             repLoc.valid   <= rep.valid;
       end case;
 
-      if ( rep.valid = '1' ) then
+      if ( ( (not reqLoc.lock) and rep.valid ) = '1' ) then
          -- HBI access terminated; release the HBI
          v.hbiState        := IDLE;
       end if;

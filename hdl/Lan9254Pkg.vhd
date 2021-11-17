@@ -19,6 +19,7 @@ package Lan9254Pkg is
       be      : std_logic_vector( 3 downto 0);
       valid   : std_logic;
       rdnwr   : std_logic;
+      lock    : std_logic; -- lock bus between cycles; used by arbiter
       noAck   : std_logic; -- waitAck not operational; must use timeout
    end record Lan9254ReqType;
 
@@ -28,6 +29,7 @@ package Lan9254Pkg is
       be      => (others => '0'),
       valid   => '0',
       rdnwr   => '1',
+      lock    => '0',
       noAck   => '0'
    );
 
