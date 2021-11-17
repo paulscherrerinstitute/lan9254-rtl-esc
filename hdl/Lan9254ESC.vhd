@@ -548,6 +548,8 @@ architecture rtl of Lan9254ESC is
       end case CASE_TEST;
    end procedure testRegisterIO;
 
+   -- An EEPROM with 5088 bits eats up 303 slice LUTs (depends on contents, probably
+   -- since this was read-only).
    signal     eeprom          : EEPromArray(EEPROM_INIT_C'range) := EEPROM_INIT_C;
 
    signal     rHBIMux         : HBIMuxRegType                 := HBIMUX_REG_INIT_C;
