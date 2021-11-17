@@ -553,8 +553,8 @@ begin
             clk               => clk,
             rst               => rst,
 
-            reqIb             => udpBusReq,
-            repIb             => udpBusRep,
+            reqIb(0)          => udpBusReq,
+            repIb(0)          => udpBusRep,
 
             reqOb             => udp2BusReqOb,
             repOb             => udp2BusRepOb
