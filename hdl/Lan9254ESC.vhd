@@ -27,7 +27,11 @@ entity Lan9254ESC is
       DISABLE_TXPDO_G         : boolean := false;
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false;
-      NUM_EXT_HBI_MASTERS_G   : natural := 1
+      NUM_EXT_HBI_MASTERS_G   : natural := 1;
+      -- external HBI masters with an index < 0 have a higher
+      -- priority than internal masters; external masters with
+      -- index >= 0 have a lower priority than internal masters.
+      EXT_HBI_MASTERS_PRI_G   : integer := 0
    );
    port (
       clk         : in  std_logic;
@@ -36,8 +40,8 @@ entity Lan9254ESC is
       req         : out Lan9254ReqType;
       rep         : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
-      extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0) := (others => LAN9254REQ_INIT_C);
-      extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
+      extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G) := (others => LAN9254REQ_INIT_C);
+      extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G);
 
       escState    : out ESCStateType;
       debug       : out std_logic_vector(23 downto 0);
@@ -632,15 +636,16 @@ begin
             v.hbiState := SM0;
          elsif ( r.ctlReq.valid  = '1' ) then
             v.hbiState := ESC;
-         else
-            L_ARB_EXT : for i in extHBIReq'range loop
-              if ( extHBIReq(i).valid = '1' ) then
-                 v.hbiState := EXT;
-                 v.extSel   := i;
-                 exit L_ARB_EXT;
-              end if;
-            end loop L_ARB_EXT;
          end if;
+
+         L_ARB_EXT : for i in extHBIReq'range loop
+           if (    (extHBIReq(i).valid = '1')
+               and ( (v.hbiState = IDLE) or ( i < 0 ) ) ) then
+              v.hbiState := EXT;
+              v.extSel   := i;
+              exit L_ARB_EXT;
+           end if;
+         end loop L_ARB_EXT;
       end if;
 
       case ( v.hbiState ) is
