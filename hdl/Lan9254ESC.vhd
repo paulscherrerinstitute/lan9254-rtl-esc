@@ -21,6 +21,10 @@ entity Lan9254ESC is
       ENABLE_EOE_G            : boolean := false;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
+      -- e.g., if the user decides to use the HBI interface
+      -- instead of the txPDOMst then the respective module
+      -- can be disabled.
+      DISABLE_TXPDO_G         : boolean := false;
       -- disable some things to just run the TXMBX test
       TXMBX_TEST_G            : boolean := false;
       NUM_EXT_HBI_MASTERS_G   : natural := 1
@@ -1619,7 +1623,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    end generate GEN_RX_PDO;
 
-   GEN_TXPDO : if ( ( ESC_SM3_ACT_C  = '1' ) and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) ) generate
+   GEN_TXPDO : if ( ( ESC_SM3_ACT_C  = '1' ) and ( to_integer(unsigned(ESC_SM3_LEN_C)) >  0  ) and not DISABLE_TXPDO_G ) generate
       U_TXPDO : entity work.ESCTxPDO
          generic map (
             TXPDO_BURST_MAX_G         => TXPDO_BURST_MAX_C,
