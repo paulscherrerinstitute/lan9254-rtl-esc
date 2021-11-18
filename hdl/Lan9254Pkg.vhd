@@ -51,8 +51,8 @@ package Lan9254Pkg is
       berr    => (others => '1')
    );
 
-   type Lan9254ReqArray is array (natural range <>) of Lan9254ReqType;
-   type Lan9254RepArray is array (natural range <>) of Lan9254RepType;
+   type Lan9254ReqArray is array (integer range <>) of Lan9254ReqType;
+   type Lan9254RepArray is array (integer range <>) of Lan9254RepType;
 
    type Lan9254PDOMstType is record
       wrdAddr : Lan9254WordAddrType;
