@@ -15,8 +15,8 @@ entity Udp2BusMux is
       clk         : in  std_logic;
       rst         : in  std_logic;
 
-      reqIb       : in  Udp2BusReqArray(NUM_SUBS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
-      repIb       : out Udp2BusRepArray(NUM_SUBS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
+      reqIb       : in  Udp2BusReqArray(NUM_MSTS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
+      repIb       : out Udp2BusRepArray(NUM_MSTS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
 
       reqOb       : out Udp2BusReqArray(NUM_SUBS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
       repOb       : in  Udp2BusRepArray(NUM_SUBS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C)
