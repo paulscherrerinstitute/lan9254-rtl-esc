@@ -371,7 +371,7 @@ architecture rtl of Lan9254ESC is
       constant enbl : in    boolean                      := true
    ) is
    begin
-      lan9254HBIRead( rdOut, rdInp, reg.addr, reg.bena, enbl );
+      lan9254HBIRead( rdOut, rdInp, reg.addr, reg.bena, '0', enbl );
    end procedure readReg;
 
    procedure writeReg(
@@ -382,7 +382,7 @@ architecture rtl of Lan9254ESC is
       constant enbl : in    boolean                       := true
    ) is
    begin
-      lan9254HBIWrite( wrOut, wrInp, reg.addr, wrDat, reg.bena, enbl );
+      lan9254HBIWrite( wrOut, wrInp, reg.addr, wrDat, reg.bena, '0', enbl );
    end procedure writeReg;
 
    procedure testRegisterIO(
