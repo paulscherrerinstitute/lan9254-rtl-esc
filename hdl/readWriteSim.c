@@ -4,6 +4,8 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/ioctl.h>
+#include <termios.h>
 
 #define DEBUG  (-1)
 
@@ -164,6 +166,15 @@ int      rval;
 	printf("IRQCTL   : %x\n", *(dev->a32 + (0x3054 >> 2)));
 	printf("IRQSTA   : %x\n", *(dev->a32 + (0x3058 >> 2)));
 #endif
+	{
+	int got = 0;
+		ioctl( 0, FIONREAD, &got );
+		if ( got > 0 ) {
+			tcflush( 0, TCIFLUSH );
+            rval |= 0x1000;
+		}
+
+	}
 	return rval;
 }
 
