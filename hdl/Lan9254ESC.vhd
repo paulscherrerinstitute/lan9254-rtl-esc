@@ -606,7 +606,7 @@ begin
    txMBXBufWBEh <= ( not r.txMBXRdy ) or txMBXMst.ben(1);
    txMBXRdy     <= r.txMBXRdy;
 
-   P_HBI_COMB : process ( rHBIMux, r, rep, rxPDOReq, rxMBXReq, txPDOReq, extHBIReq ) is
+   P_HBI_COMB : process ( rHBIMux, r, rep, reqLoc, rxPDOReq, rxMBXReq, txPDOReq, extHBIReq ) is
       variable v : HBIMuxRegType;
    begin
       v               := rHBIMux;

@@ -49,7 +49,7 @@ begin
 
    assert ( NUM_SUBS_G = 1 ) or ( NUM_SUBS_G <= 2**(ADDR_MSB_G - ADDR_LSB_G + 1) );
 
-   P_MST_MUX  : process (reqIb, repIbLoc) is
+   P_MST_MUX  : process (r, reqIb, repIbLoc) is
       variable v : RegType;
    begin
       v := r;
