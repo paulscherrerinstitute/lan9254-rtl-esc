@@ -16,13 +16,16 @@ entity Lan9254ESCWrapper is
    generic (
       CLOCK_FREQ_G            : real;
       DISABLE_RXPDO_G         : boolean := false;
+      DISABLE_TXPDO_G         : boolean := false;
       ENABLE_VOE_G            : boolean := false;
       ENABLE_EOE_G            : boolean := true;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
       NUM_EXT_HBI_MASTERS_G   : natural := 1;
-      NUM_UDP_SUBS_G          : natural range 0 to 4 := 0;
+      EXT_HBI_MASTERS_PRI_G   : integer := 0;
+      NUM_BUS_SUBS_G          : natural range 0 to 4 := 0;
+      NUM_BUS_MSTS_G          : natural := 0;
       DEFAULT_MAC_ADDR_G      : std_logic_vector(47 downto 0) := x"f106a98e0200";  -- 00:02:8e:a9:06:f1
       DEFAULT_IP4_ADDR_G      : std_logic_vector(31 downto 0) := x"0A0A0A0A";      -- 10.10.10.10
       DEFAULT_UDP_PORT_G      : std_logic_vector(15 downto 0) := x"0010";          -- 4096
@@ -54,12 +57,17 @@ entity Lan9254ESCWrapper is
       myAddrAck               : out IPAddrConfigAckType := IP_ADDR_CONFIG_ACK_ASSERT_C;
 
       -- HBI access by an external agent
-      extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
-      extHBIRep               : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
+      extHBIReq               : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G)  := (others => LAN9254REQ_INIT_C);
+      extHBIRep               : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G)  := (others => LAN9254REP_INIT_C);
 
       -- Register access via UDP
-      udp2BusReq              : out Udp2BusReqArray(NUM_UDP_SUBS_G - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
-      udp2BusRep              : in  Udp2BusRepArray(NUM_UDP_SUBS_G - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
+       -- external masters
+      busMstReq               : in  Udp2BusReqArray(NUM_BUS_MSTS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
+      busMstRep               : out Udp2BusRepArray(NUM_BUS_MSTS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
+        -- external subordinates
+      busSubReq               : out Udp2BusReqArray(NUM_BUS_SUBS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
+      busSubRep               : in  Udp2BusRepArray(NUM_BUS_SUBS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
+
 
       -- debugging
       escState                : out ESCStateType;
@@ -99,6 +107,9 @@ architecture rtl of Lan9254ESCWrapper is
    constant EOE_TX_STRM_IDX_C : natural := 2;
 
    constant NUM_HBI_MASTERS_C : natural := NUM_EXT_HBI_MASTERS_G + ite( ENABLE_EOE_G, 1, 0 );
+   constant HBI_MASTERS_R_C   : integer := EXT_HBI_MASTERS_PRI_G;
+   constant EXT_HBI_MST_L_C   : integer := NUM_EXT_HBI_MASTERS_G + HBI_MASTERS_R_C - 1;
+   constant HBI_MASTERS_L_C   : integer := NUM_HBI_MASTERS_C + HBI_MASTERS_R_C - 1;
 
    constant NUM_ILAS_C        : natural := 3;
 
@@ -125,8 +136,8 @@ architecture rtl of Lan9254ESCWrapper is
 
    signal   reqLoc            : Lan9254ReqType;
 
-   signal   locHBIReq         : Lan9254ReqArray(NUM_HBI_MASTERS_C - 1 downto 0)  := (others => LAN9254REQ_INIT_C);
-   signal   locHBIRep         : Lan9254RepArray(NUM_HBI_MASTERS_C - 1 downto 0);
+   signal   locHBIReq         : Lan9254ReqArray(HBI_MASTERS_L_C downto HBI_MASTERS_R_C)  := (others => LAN9254REQ_INIT_C);
+   signal   locHBIRep         : Lan9254RepArray(HBI_MASTERS_L_C downto HBI_MASTERS_R_C);
 
    signal   statsLoc          : StatCounterArray(stats'range) := (others => STAT_COUNTER_INIT_C);
 
@@ -134,18 +145,20 @@ architecture rtl of Lan9254ESCWrapper is
 
 begin
 
-   locHBIReq(NUM_EXT_HBI_MASTERS_G - 1 downto 0) <= extHBIReq;
-   extHBIRep                                     <= locHBIRep(NUM_EXT_HBI_MASTERS_G - 1 downto 0);
+   locHBIReq(EXT_HBI_MST_L_C downto HBI_MASTERS_R_C) <= extHBIReq;
+   extHBIRep                                         <= locHBIRep(EXT_HBI_MST_L_C downto HBI_MASTERS_R_C);
 
    U_ESC : entity work.Lan9254ESC
       generic map (
          CLK_FREQ_G              => CLOCK_FREQ_G,
          DISABLE_RXPDO_G         => DISABLE_RXPDO_G,
+         DISABLE_TXPDO_G         => DISABLE_TXPDO_G,
          ENABLE_VOE_G            => ENABLE_VOE_G,
          ENABLE_EOE_G            => ENABLE_EOE_G,
          TXPDO_MAX_UPDATE_FREQ_G => TXPDO_MAX_UPDATE_FREQ_G,
          REG_IO_TEST_ENABLE_G    => REG_IO_TEST_ENABLE_G,
          NUM_EXT_HBI_MASTERS_G   => NUM_HBI_MASTERS_C,
+         EXT_HBI_MASTERS_PRI_G   => EXT_HBI_MASTERS_PRI_G,
          TXMBX_TEST_G            => TXMBX_TEST_G
       )
       port map (
@@ -261,7 +274,8 @@ begin
       constant MAX_UDP_SIZE_C    : natural   :=
          EOE_MAX_FRAME_SIZE_C - MAC_HDR_SIZE_C - IP4_HDR_SIZE_C - UDP_HDR_SIZE_C;
 
-      constant NUM_UDP_SUBS_C    : natural   := 8;
+      constant NUM_BUS_SUBS_C    : natural   := 8;
+      constant NUM_BUS_MSTS_C    : natural   := NUM_BUS_MSTS_G + 1;
 
       constant UDP_IDX_ESC_C     : natural   := 7;
       constant UDP_IDX_LOC_C     : natural   := 6;
@@ -308,11 +322,11 @@ begin
 
       signal   udpFrameSize      : unsigned(10 downto 0);
 
-      signal   udpBusReq         : Udp2BusReqType;
-      signal   udpBusRep         : Udp2BusRepType;
+      signal   udp2BusReqIb      : Udp2BusReqArray(NUM_BUS_MSTS_C - 1 downto 0);
+      signal   udp2BusRepIb      : Udp2BusRepArray(NUM_BUS_MSTS_C - 1 downto 0);
 
-      signal   udp2BusReqOb      : Udp2BusReqArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
-      signal   udp2BusRepOb      : Udp2BusRepArray(NUM_UDP_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
+      signal   udp2BusReqOb      : Udp2BusReqArray(NUM_BUS_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
+      signal   udp2BusRepOb      : Udp2BusRepArray(NUM_BUS_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
 
       signal   addrCfgs          : IPAddrConfigArray   (NUM_ADDR_CFGS_C - 1 downto 0);
       signal   addrCfgAcks       : IPAddrConfigAckArray(NUM_ADDR_CFGS_C - 1 downto 0);
@@ -538,23 +552,28 @@ begin
       udpTxMst.length  <= resize( udpFrameSize, udpTxMst.length'length ) + MAC_HDR_SIZE_C + IP4_HDR_SIZE_C + UDP_HDR_SIZE_C;
 
       -- external subordinates
-      udp2BusRepOb(udp2BusRep'range)   <= udp2BusRep;
-      udp2BusReq                       <= udp2BusReqOb( udp2BusReq'range );
+      udp2BusRepOb(busSubRep'range)  <= busSubRep;
+      busSubReq                      <= udp2BusReqOb( busSubReq'range );
 
       -- local subordinates
-      udp2BusRepOb(UDP_IDX_ESC_C)      <= to_Udp2BusRepType( locHBIRep(NUM_HBI_MASTERS_C - 1) );
-      locHBIReq(NUM_HBI_MASTERS_C - 1) <= to_Lan9254ReqType( udp2BusReqOb(UDP_IDX_ESC_C)       );
+      udp2BusRepOb(UDP_IDX_ESC_C   ) <= to_Udp2BusRepType( locHBIRep(HBI_MASTERS_L_C)  );
+      locHBIReq   (HBI_MASTERS_L_C ) <= to_Lan9254ReqType( udp2BusReqOb(UDP_IDX_ESC_C) );
+
+      -- external masters
+      udp2BusReqIb(NUM_BUS_MSTS_G - 1 downto 0) <= busMstReq;
+      busMstRep                                 <= udp2BusRepIb(NUM_BUS_MSTS_G - 1 downto 0);
 
       U_BUS_MUX : entity work.Udp2BusMux
          generic map (
-            NUM_SUBS_G        => NUM_UDP_SUBS_C
+            NUM_SUBS_G        => NUM_BUS_SUBS_C,
+            NUM_MSTS_G        => NUM_BUS_MSTS_C
          )
          port map (
             clk               => clk,
             rst               => rst,
 
-            reqIb(0)          => udpBusReq,
-            repIb(0)          => udpBusRep,
+            reqIb             => udp2BusReqIb,
+            repIb             => udp2BusRepIb,
 
             reqOb             => udp2BusReqOb,
             repOb             => udp2BusRepOb
@@ -568,8 +587,8 @@ begin
             clk               => clk,
             rst               => rst,
 
-            req               => udpBusReq,
-            rep               => udpBusRep,
+            req               => udp2BusReqIb(udp2BusReqIb'left),
+            rep               => udp2BusRepIb(udp2BusRepIb'left),
 
             strmMstIb         => udpRxMst.strm,
             strmRdyIb         => udpRxRdy,
