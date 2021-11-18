@@ -17,13 +17,17 @@ PROG+=lan9254escrun lan9254esctb txmbxtb eoetb
 PROG+=strmframebuftb udp2bustb devicedna7tb
 PROG+=udp2busmuxtb
 
+EVRPDO_S:=EvrTxPDO.vhd EvrTxPDOPkg.vhd EvrTxPDOSimWrapper.vhd
+
+EVRPDO_O:=$(subst .vhd,.o,$(and $(wildcard EvrTxPDO.vhd),$(wildcard EvrTxPDOPkg.vhd),$(EVRPDO_S)))
+
 OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
 OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
 OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o StrmFrameBuf.o
 OBJS+=Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o DeviceDna7.o
-OBJS+=AddressGenerator.o IPAddrConfigPkg.o
+OBJS+=AddressGenerator.o IPAddrConfigPkg.o SynchronizerBit.o $(EVRPDO_O)
 
 TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o
@@ -125,7 +129,9 @@ Udp2BusTb.o: Udp2Bus.o
 DeviceDna7Tb.o: DeviceDna7.o
 AddressGenerator.o: DeviceDna7.o IPAddrConfigPkg.o
 Udp2BusMuxTb.o: Udp2BusMux.o Udp2BusPkg.o
+EvrTxPDO.o: SynchronizerBit.o Lan9254ESCPkg.o Udp2BusPkg.o  EvrTxPDOPkg.o
+EvrTxPDOSimWrapper.o: EvrTxPDO.o
 clean:
-	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin
+	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin $(EVRPDO_S:%.vhd=%.o)
 
 .PHONY: clean all run
