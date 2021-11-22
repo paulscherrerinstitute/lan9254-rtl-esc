@@ -163,6 +163,8 @@ package Lan9254ESCPkg is
    constant EC_ALER_INVALIDOUTPUTSM_C                   : ESCVal16Type := x"001D";
    constant EC_ALER_INVALIDINPUTSM_C                    : ESCVal16Type := x"001E";
 
+   constant ESC_SMC_MSK_C                               : ESCVal08Type := x"3F";
+
    constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
    constant ESC_SM0_SMC_C                               : ESCVal08Type :=   x"26";
    constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0030";

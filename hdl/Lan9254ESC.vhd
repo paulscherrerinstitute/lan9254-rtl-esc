@@ -186,6 +186,15 @@ architecture rtl of Lan9254ESC is
       return UNKNOWN;
    end function toESCState;
 
+   function smcAcceptable(
+      constant expected : in  ESCVal08Type;
+      constant check    : in  ESCVal08Type
+   ) return boolean is
+      constant ZERO_C : ESCVal08Type := (others => '0');
+   begin
+      return ( (expected xor check) and ESC_SMC_MSK_C ) = ZERO_C;
+   end function smcAcceptable;
+
    type RWXactType is record
       reg      : EcRegType;
       val      : std_logic_vector(31 downto 0);
@@ -1006,7 +1015,7 @@ report "entering UPDATE_AS " & toString( val );
                    or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
                        and ( ESC_SM2_LEN_C     =  r.program.seq(1).val(ESC_SM2_LEN_C'range) )
-                       and ( ESC_SM2_SMC_C     =  r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
+                       and smcAcceptable( ESC_SM2_SMC_C, r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
                else
@@ -1024,7 +1033,7 @@ severity warning;
                    or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
                        and ( ESC_SM3_LEN_C     =  r.program.seq(5).val(ESC_SM3_LEN_C'range) )
-                       and ( ESC_SM3_SMC_C     =  r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
+                       and smcAcceptable( ESC_SM3_SMC_C, r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
                else
@@ -1062,7 +1071,7 @@ severity warning;
                    or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
                        and ( ESC_SM0_LEN_C     =  r.program.seq(1).val(ESC_SM0_LEN_C'range) )
-                       and ( ESC_SM0_SMC_C     =  r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
+                       and smcAcceptable( ESC_SM0_SMC_C, r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
                else
@@ -1080,7 +1089,7 @@ severity warning;
                    or (    ( (ESC_SM1_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM1_SMA_C     =  r.program.seq(4).val(ESC_SM1_SMA_C'range) )
                        and ( ESC_SM1_LEN_C     =  r.program.seq(5).val(ESC_SM1_LEN_C'range) )
-                       and ( ESC_SM1_SMC_C     =  r.program.seq(6).val(ESC_SM1_SMC_C'range) ) )
+                       and smcAcceptable( ESC_SM1_SMC_C, r.program.seq(6).val(ESC_SM1_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
                else
