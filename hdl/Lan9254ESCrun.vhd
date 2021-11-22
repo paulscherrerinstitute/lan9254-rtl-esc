@@ -154,7 +154,7 @@ begin
                elsif ( txPDORdy = '1' ) then
                   cnt              <= cnt + 1;
                   txPDOMst.wrdAddr <= txPDOMst.wrdAddr + 1;
-                  if ( txPDOMst.wrdAddr >= SM3_WADDR_END_C ) then
+                  if ( txPDOMst.wrdAddr >= resize( shift_right( unsigned( ESC_SM3_LEN_C ) - 1, 1 ), txPDOMst.wrdAddr'length ) ) then
                      txPDOMst.wrdAddr <= (others => '0');
                      txPDOMst.valid   <= '0';
                   end if;

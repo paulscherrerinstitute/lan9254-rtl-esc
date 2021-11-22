@@ -191,19 +191,23 @@ package Lan9254ESCPkg is
    constant ESC_SM3_HACK_LEN_C                          : ESCVal16Type := x"0004";
    constant ESC_SM3_ACT_C                               : std_logic    := '1';
 
-   -- last PDO word address; not valid for length = 0
-   -- assume this is checked before using WADDR_END
-   constant SM2_WADDR_END_C        : unsigned(13 downto 0) :=
-      to_unsigned( (to_integer(signed(ESC_SM2_HACK_LEN_C)) - 1 )/2, 14 );
-   constant SM3_WADDR_END_C        : unsigned(13 downto 0) :=
-      to_unsigned( (to_integer(signed(ESC_SM3_HACK_LEN_C)) - 1 )/2, 14 );
+   -- make PDO lengths run-time configurable
+   type ESCConfigParmType is record
+      sm2Len   : ESCVal16Type;
+      sm3Len   : ESCVal16Type;
+      valid    : std_logic;
+   end record ESCConfigParmType;
+
+   constant ESC_CONFIG_PARM_INIT_C : ESCConfigParmType := (
+      sm2Len   => ESC_SM2_LEN_C,
+      sm3Len   => ESC_SM3_LEN_C,
+      valid    => '1'
+   );
 
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
    constant EC_REG_RXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM0_SMA_C, ESC_SM0_LEN_C, -1 );
    constant EC_REG_TXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM1_SMA_C, ESC_SM1_LEN_C, -1 );
-   constant EC_REG_RXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM2_SMA_C, ESC_SM2_LEN_C, -1 );
-   constant EC_REG_TXPDO_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM3_SMA_C, ESC_SM3_LEN_C, -1 );
 
    function toSlv(constant arg : ESCStateType) return std_logic_vector;
 

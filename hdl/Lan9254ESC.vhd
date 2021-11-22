@@ -40,6 +40,11 @@ entity Lan9254ESC is
       req         : out Lan9254ReqType;
       rep         : in  Lan9254RepType    := LAN9254REP_INIT_C;
 
+      -- read during INIT state (and only during INIT) of the controller FSM
+      -- user may delay initialization by deasserting 'valid'.
+      config      : in  ESCConfigParmType := ESC_CONFIG_PARM_INIT_C;
+      configAck   : out std_logic;
+
       extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G) := (others => LAN9254REQ_INIT_C);
       extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G);
 
@@ -98,6 +103,7 @@ architecture rtl of Lan9254ESC is
 
    type ControllerStateType is (
       TEST,
+      CONF,
       INIT,
       POLL_IRQ,
       POLL_AL_EVENT,
@@ -195,6 +201,24 @@ architecture rtl of Lan9254ESC is
       return ( (expected xor check) and ESC_SMC_MSK_C ) = ZERO_C;
    end function smcAcceptable;
 
+   function smlAcceptable(
+      constant sm       : in  natural range 2 to 3;
+      constant cfg      : in  ESCConfigParmType;
+      constant act      : in  ESCVal16Type
+   ) return boolean is
+      variable lim      : unsigned(ESCVal16Type'range);
+      variable val      : unsigned(ESCVal16Type'range);
+   begin
+      if ( sm = 2 ) then
+         lim := unsigned(ESC_SM2_LEN_C);
+         val := unsigned(cfg.sm2Len   );
+      else
+         lim := unsigned(ESC_SM3_LEN_C);
+         val := unsigned(cfg.sm3Len   );
+      end if;
+      return (val <= lim) and (unsigned(act) = val);
+   end function smlAcceptable;
+
    type RWXactType is record
       reg      : EcRegType;
       val      : std_logic_vector(31 downto 0);
@@ -275,6 +299,8 @@ architecture rtl of Lan9254ESC is
 
    type RegType is record
       state                : ControllerStateType;
+      config               : ESCConfigParmType;
+      configAck            : std_logic;
       testPhas             : natural range 0 to 6;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
@@ -312,6 +338,8 @@ architecture rtl of Lan9254ESC is
 
    constant REG_INIT_C : RegType := (
       state                => TEST,
+      config               => ESC_CONFIG_PARM_INIT_C,
+      configAck            => '0',
       testPhas             => 0,
       testFail             => 0,
       reqState             => INIT,
@@ -554,7 +582,7 @@ architecture rtl of Lan9254ESC is
 
                if ( v.testFail = 0 ) then
                   v.testPhas := 0;
-                  v.state    := INIT;
+                  v.state    := CONF;
                else
                   v.testPhas := r.testPhas + 1; -- go into limbo
                end if;
@@ -703,7 +731,8 @@ begin
          rxPDORdy,
          txMBXMst,
          rxMBXRdy,
-         txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup
+         txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup,
+         config
    ) is
       variable v         : RegType;
       variable val       : std_logic_vector(31 downto 0);
@@ -737,7 +766,16 @@ begin
             if ( REG_IO_TEST_ENABLE_G ) then
                testRegisterIO(v, r, repLoc);
             else
-               v.state := INIT;
+               v.state := CONF;
+            end if;
+
+         when CONF =>
+            if ( r.configAck = '0' ) then
+               v.configAck := '1';
+            elsif ( config.valid = '1' ) then
+               v.config    := config;
+               v.configAck := '0';
+               v.state     := INIT;
             end if;
 
          when INIT =>
@@ -1014,7 +1052,7 @@ report "entering UPDATE_AS " & toString( val );
                if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
                    or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
-                       and ( ESC_SM2_LEN_C     =  r.program.seq(1).val(ESC_SM2_LEN_C'range) )
+                       and smlAcceptable( 2, r.config,   r.program.seq(1).val(ESC_SM2_LEN_C'range) )
                        and smcAcceptable( ESC_SM2_SMC_C, r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
@@ -1032,7 +1070,7 @@ severity warning;
                if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
                    or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
-                       and ( ESC_SM3_LEN_C     =  r.program.seq(5).val(ESC_SM3_LEN_C'range) )
+                       and smlAcceptable( 3, r.config,   r.program.seq(5).val(ESC_SM3_LEN_C'range) )
                        and smcAcceptable( ESC_SM3_SMC_C, r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
@@ -1273,7 +1311,7 @@ report "post MBOX";
                scheduleRegXact(
                   v,
                   (
-                     0 => RWXACT( EC_REG_RXPDO_L_C )
+                     0 => RWXACT( EC_BYTE_REG_F( ESC_SM2_SMA_C, r.config.sm2Len, -1 ) )
                   )
                );
             else
@@ -1581,8 +1619,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    U_SM_RX  : entity work.ESCSmRx
       generic map (
-         SM_SMA_G    => unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C,
-         SM_LEN_G    => unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C
+         SM_SMA_G    => unsigned(ESC_SM0_SMA_C) + MBX_HDR_SIZE_C
       )
       port map (
          clk         => clk,
@@ -1590,6 +1627,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          stop        => r.txMBXRst,
 
          trg         => rxMBXTrg,
+         smLen       => (unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C),
          len         => rxMBXLen,
          typ         => rxMBXTyp,
 
@@ -1614,8 +1652,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    U_SM_RX   : entity work.ESCSmRx
       generic map (
-         SM_SMA_G    => unsigned(ESC_SM2_SMA_C),
-         SM_LEN_G    => unsigned(ESC_SM2_LEN_C)
+         SM_SMA_G    => unsigned(ESC_SM2_SMA_C)
       )
       port map (
          clk         => clk,
@@ -1623,7 +1660,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          stop        => r.rxPDORst,
 
          trg         => rxPDOTrg,
-         len         => unsigned(ESC_SM2_LEN_C),
+         smLen       => unsigned(r.config.sm2Len),
+         len         => unsigned(r.config.sm2Len),
          typ         => x"0",
 
          rxPDOMst    => rxPDOMst,
@@ -1648,6 +1686,10 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
             clk         => clk,
             rst         => rst,
             stop        => r.txPDORst,
+
+            smLen       => r.config.sm3Len,
+            cfgVld      => r.config.valid,
+            cfgAck      => open,
 
             txPDOMst    => txPDOMst,
             txPDORdy    => txPDORdy,
@@ -1759,5 +1801,6 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
    testFailed <= std_logic_vector(to_unsigned(r.testFail, testFailed'length));
 
    req        <= reqLoc;
+   configAck  <= r.configAck;
 
 end architecture rtl;

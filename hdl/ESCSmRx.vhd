@@ -16,8 +16,7 @@ use work.Lan9254ESCPkg.all;
 
 entity ESCSmRx is
    generic (
-      SM_SMA_G       : unsigned(15 downto 0);
-      SM_LEN_G       : unsigned(15 downto 0)
+      SM_SMA_G       : unsigned(15 downto 0)
    );
    port (
       clk            : in  std_logic;
@@ -25,6 +24,7 @@ entity ESCSmRx is
       stop           : in  std_logic; -- reset but wait for HBI access to finish
 
       trg            : in  std_logic;
+      smLen          : in  unsigned(15 downto 0);
       len            : in  unsigned(15 downto 0);
       typ            : in  std_logic_vector(3 downto 0) := (others => '0');
 
@@ -42,14 +42,13 @@ end entity ESCSmRx;
 
 architecture rtl of ESCSmRx is
 
-   constant SM_END_ADDR_C  : Lan9254ByteAddrType := resize(SM_LEN_G - 1, Lan9254ByteAddrType'length);
-
    type StateType is ( IDLE, PROC, SM_RX_RELEASE );
 
    type RegType is record
       state           : StateType;
       rxStrm          : Lan9254PDOMstType;
       rxStrmEndAddr   : Lan9254ByteAddrType;
+      smEndAddr       : Lan9254ByteAddrType;
       ctlReq          : Lan9254ReqType;
       decim           : natural range 0 to 255;
       stalled         : natural range 0 to 255;
@@ -60,6 +59,7 @@ architecture rtl of ESCSmRx is
       state           => IDLE,
       rxStrm          => LAN9254PDO_MST_INIT_C,
       rxStrmEndAddr   => (others => '0'),
+      smEndAddr       => (others => '0'),
       ctlReq          => LAN9254REQ_INIT_C,
       decim           => 0,
       stalled         => 0,
@@ -117,7 +117,7 @@ architecture rtl of ESCSmRx is
   
 begin
 
-   P_COMB : process ( r, rst, stop, trg, len, typ, rxPDORdy, rep ) is
+   P_COMB : process ( r, rst, stop, trg, len, typ, rxPDORdy, rep, smLen ) is
       variable v : RegType;
    begin
       v         := r;
@@ -138,6 +138,8 @@ begin
                v.rxStrm.usr(3 downto 0) := typ;
                v.rxStrm.wrdAddr         := (others => '0');
                v.state                  := PROC;
+               v.smEndAddr              := resize( smLen - 1, Lan9254ByteAddrType'length );
+
                -- read cannot have completed at this point so we don't need to
                -- check rep.valid
                rxStreamSetupAndRead( v, rep );
@@ -159,7 +161,7 @@ end if;
                   if ( r.rxStrm.last = '1' ) then
                      -- last write completed; we are done
                      v.numFrames := r.numFrames + 1;
-                     if ( r.rxStrmEndAddr /= SM_END_ADDR_C ) then
+                     if ( r.rxStrmEndAddr /= r.smEndAddr ) then
                         -- if we read less than the SM-covered area then
                         -- we must read the last byte to release the SM.
                         v.state  := SM_RX_RELEASE;
@@ -189,7 +191,7 @@ end if;
 
       when SM_RX_RELEASE =>
 
-         lan9254HBIRead( v.ctlReq, rep, std_logic_vector(SM_SMA_G + SM_END_ADDR_C), HBI_BE_B0_C );
+         lan9254HBIRead( v.ctlReq, rep, std_logic_vector(SM_SMA_G + r.smEndAddr), HBI_BE_B0_C );
          if ( '1' = rep.valid ) then
             v.state        := IDLE;
          end if;

@@ -17,6 +17,10 @@ entity ESCTxPDO is
       rst         : in  std_logic;
       stop        : in  std_logic; -- reset but wait for HBI access to terminate
 
+      smLen       : in  ESCVal16Type      := ESC_SM3_LEN_C;
+      cfgVld      : in  std_logic         := '1';
+      cfgAck      : out std_logic;
+
       txPDOMst    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       txPDORdy    : out std_logic;
 
@@ -34,26 +38,32 @@ architecture rtl of ESCTxPDO is
 
    constant TXPDO_BURST_MAX_C : natural := min( TXPDO_BURST_MAX_G, TXPDO_UPDATE_DECIMATION_G );
 
-   type StateType is ( IDLE, PROC );
+   type StateType is ( CONFIG, IDLE, PROC );
 
    type RegType is record
       state                : StateType;
       ctlReq               : Lan9254ReqType;
+      smLenOdd             : boolean;
+      endWaddr             : unsigned(txPDOMst.wrdAddr'range);
       txPDORdy             : std_logic;
       txPDOBst             : natural range 0 to TXPDO_BURST_MAX_C;
       txPDOSnt             : natural range 0 to (to_integer(unsigned(ESC_SM3_LEN_C)) - 1)/2;
       txPDODcm             : natural range 0 to TXPDO_UPDATE_DECIMATION_G;
       decim                : natural range 0 to 500;
+      cfgAck               : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
-      state                => IDLE,
+      state                => CONFIG,
       ctlReq               => LAN9254REQ_INIT_C,
+      smLenOdd             => false,
+      endWaddr             => (others => '0'),
       txPDORdy             => '0',
       txPDOBst             => 0,
       txPDOSnt             => 0,
       txPDODcm             => 0,
-      decim                => 0
+      decim                => 0,
+      cfgAck               => '0'
    );
 
    signal       r          : RegType := REG_INIT_C;
@@ -61,7 +71,7 @@ architecture rtl of ESCTxPDO is
 
 begin
 
-   P_COMB : process ( r, txPDOMst, rep, rst, stop ) is
+   P_COMB : process ( r, txPDOMst, rep, rst, stop, smLen, cfgVld ) is
       variable v : RegType;
    begin
       v     := r;
@@ -71,6 +81,15 @@ begin
       end if;
 
       case ( r.state ) is
+         when CONFIG =>
+            if ( r.cfgAck = '0' ) then
+               v.cfgAck   := '1';
+            elsif ( cfgVld = '1' ) then
+               v.cfgAck   := '0';
+               v.smLenOdd := (smLen(0) = '1' );
+               v.endWaddr := resize( shift_right( unsigned(smLen) - 1, 1 ), v.endWaddr'length );
+               v.state    := IDLE;
+            end if;
 
          when IDLE =>
             if ( r.txPDODcm = 0 ) then
@@ -93,7 +112,7 @@ else
 v.decim := r.decim - 1;
 end if;
 
-                  if ( txPDOMst.wrdAddr <= SM3_WADDR_END_C ) then
+                  if ( txPDOMst.wrdAddr <= r.endWaddr ) then
                      v.ctlReq.addr := (txPDOMst.wrdAddr & "0") + unsigned(ESC_SM3_SMA_C(v.ctlReq.addr'range));
                      v.ctlReq.data := ( x"0000" & txPDOMst.data );
                      v.ctlReq.be   := HBI_BE_W0_C;
@@ -104,8 +123,8 @@ end if;
 
                      -- if last byte make sure proper byte-enable is deasserted
                      if (    ( txPDOMst.ben(1) = '0'       )
-                          or (    ( ESC_SM3_HACK_LEN_C(0) = '1' )
-                              and ( txPDOMst.wrdAddr      = SM3_WADDR_END_C )
+                          or (    ( r.smLenOdd       )
+                              and ( txPDOMst.wrdAddr = r.endWaddr )
                              )
                         ) then
                         v.ctlReq.be(1) := not HBI_BE_ACT_C;
@@ -132,7 +151,7 @@ end if;
                   v.txPDORdy := '1';
                   v.txPDOBst := r.txPDOBst - 1;
                end if;
-               if ( r.txPDOSnt = ( ( to_integer(unsigned(ESC_SM3_LEN_C)) - 1 ) / 2 ) ) then
+               if ( r.txPDOSnt = to_integer( r.endWaddr ) ) then
                   v.txPDOSnt := 0;
                   v.txPDODcm := TXPDO_UPDATE_DECIMATION_G;
                   v.state    := IDLE;
@@ -158,5 +177,6 @@ end if;
 
    req      <= r.ctlReq;
    txPDORdy <= r.txPDORdy;
+   cfgAck   <= r.cfgAck;
 
 end architecture rtl;
