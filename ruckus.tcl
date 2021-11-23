@@ -5,6 +5,7 @@ exec bash -c "make -C $::DIR_PATH/hdl EEPROMContentPkg.vhd"
 
 # Load local source Code and constraints
 foreach f {
+  ESCBasicTypesPkg.vhd
   EEEmulPkg.vhd
   EEPROMContentPkg.vhd
   ESCEoERx.vhd
