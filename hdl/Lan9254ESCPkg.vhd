@@ -202,6 +202,14 @@ package Lan9254ESCPkg is
       valid    => '1'
    );
 
+   -- convert to byte-array (for serialization); this does NOT contain
+   -- the 'valid' flag.
+   -- Items are serialized in the order they appear in the record and
+   -- as little-endian.
+   function toSlv08Array(constant x: ESCConfigParmType) return Slv08Array;
+
+   function toESCConfigParmType(constant x: Slv08Array) return ESCConfigParmType;
+
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
    constant EC_REG_RXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM0_SMA_C, ESC_SM0_LEN_C, -1 );
@@ -322,5 +330,25 @@ package body LAN9254ESCPkg is
       return ret;
    end function toSlv;
 
+   function toSlv08Array(constant x: ESCConfigParmType) return Slv08Array is
+      constant c : Slv08Array := (
+         0 => std_logic_vector( x.sm2Len( 7 downto 0) ),
+         1 => std_logic_vector( x.sm2Len(15 downto 8) ),
+         2 => std_logic_vector( x.sm3Len( 7 downto 0) ),
+         3 => std_logic_vector( x.sm3Len(15 downto 8) )
+      );
+   begin
+      return c;
+   end function toSlv08Array;
+
+   function toESCConfigParmType(constant x: Slv08Array) return ESCConfigParmType is
+      constant c : ESCConfigParmType := (
+         sm2Len  => ESCVal16Type'( x(1) & x(0) ),
+         sm3Len  => ESCVal16Type'( x(3) & x(2) ),
+         valid   => '0'
+      );
+   begin
+      return c; 
+   end function toESCConfigParmType;
 
 end package body LAN9254ESCPkg;
