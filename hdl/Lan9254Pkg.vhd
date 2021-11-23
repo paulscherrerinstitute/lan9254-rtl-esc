@@ -3,6 +3,8 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+use work.ESCBasicTypesPkg.all;
+
 -- General types, definitions and helpers for supporting
 -- the lan9254 in multiplexed, directly-mapped 16-bit HBI
 -- mode.
@@ -241,19 +243,6 @@ package Lan9254Pkg is
       signal   wrInp: in    Lan9254RepType;
       constant enbl : in    boolean                       := true
    );
-
-
-   type IntArray is array(natural range <>) of integer;
-
-   function max    (constant a: IntArray) return integer;
-   function numBits(constant x: integer ) return integer;
-   function initCnt(constant p: real    ) return natural;
-
-   function toString(constant x : std_logic_vector) return string;
-   function toString(constant x : unsigned        ) return string;
-
-   function toSl(constant a: boolean) return std_logic;
-
 end package Lan9254Pkg;
 
 package body Lan9254Pkg is
@@ -433,85 +422,6 @@ package body Lan9254Pkg is
          end if;
       end if;
    end procedure lan9254HBIWrite;
-
-
-   function max(constant a: IntArray) return integer is
-      variable m : integer;
-   begin
-      m := a(a'low);
-      if ( a'ascending ) then
-         for i in a'low + 1 to a'high loop
-            if ( a(i) > m ) then
-               m := a(i);
-            end if;
-         end loop;
-      else
-         for i in a'high downto a'low + 1 loop
-            if ( a(i) > m ) then
-               m := a(i);
-            end if;
-         end loop;
-      end if;
-      return m;
-   end function max;
-
-   function numBits(constant x : integer) return integer is
-   begin
-      if ( x = 0 ) then return 1; end if;
-      return integer( floor( log2( real( x ) ) ) ) + 1;
-   end function numBits;
-
-   -- convert a real counter value to an 'natural' that can
-   -- be used to initialize a counter.
-   function initCnt(constant p : real) return natural is
-      constant IVAL : integer := integer( ceil(p) ) - 1;
-   begin
-      return IVAL;
-   end function initCnt;
-
-   function toString(constant x : std_logic_vector)
-   return string is
-      variable s : string((x'length + 3)/4 - 1 downto 0);
-      variable t : std_logic_vector(x'length + 3 downto 0);
-      variable d : std_logic_vector(3 downto 0);
-   begin
-      t                        := (others => '0');
-      t(x'length - 1 downto 0) := x;
-      for i in 0 to s'length - 1 loop
-         d := t(4*i+3 downto 4*i);
-         if    ( d = x"0") then s(i) := '0';
-         elsif ( d = x"1") then s(i) := '1';
-         elsif ( d = x"2") then s(i) := '2';
-         elsif ( d = x"3") then s(i) := '3';
-         elsif ( d = x"4") then s(i) := '4';
-         elsif ( d = x"5") then s(i) := '5';
-         elsif ( d = x"6") then s(i) := '6';
-         elsif ( d = x"7") then s(i) := '7';
-         elsif ( d = x"8") then s(i) := '8';
-         elsif ( d = x"9") then s(i) := '9';
-         elsif ( d = x"A") then s(i) := 'A';
-         elsif ( d = x"B") then s(i) := 'B';
-         elsif ( d = x"C") then s(i) := 'C';
-         elsif ( d = x"D") then s(i) := 'D';
-         elsif ( d = x"E") then s(i) := 'E';
-         elsif ( d = x"F") then s(i) := 'F';
-         else                   s(i) := 'U';
-         end if;
-      end loop;
-      return s;
-   end function toString;
-
-   function toString(constant x : unsigned)
-   return string is
-   begin
-      return toString(std_logic_vector(x));
-   end function toString;
-
-   function toSl(constant a: boolean)
-   return std_logic is
-   begin
-      if ( a ) then return '1'; else return '0'; end if;
-   end function toSl;
 
    function toStrmMst(constant x : Lan9254PDOMstType)
    return Lan9254StrmMstType is

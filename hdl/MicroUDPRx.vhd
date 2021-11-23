@@ -2,6 +2,7 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
+use     work.ESCBasicTypesPkg.all;
 use     work.Lan9254Pkg.all;
 use     work.Lan9254ESCPkg.all;
 use     work.MicroUDPPkg.all;
@@ -281,7 +282,7 @@ report "IP_HDR early last drop";
                     when  7    =>
                        if ( mstIb.data(7 downto 0) /= x"45" ) then v.state := DROP; end if;
                     when  8    =>
-                       v.txReq.length := unsigned( mstIb.data(7 downto 0) & mstIb.data(15 downto 8) ) + MAC_HDR_SIZE_C;
+                       v.txReq.length := bswap( unsigned( mstIb.data )) + MAC_HDR_SIZE_C;
                        if ( v.txReq.length > MAX_FRAME_SIZE_G ) then
                           v.state := DROP;
                        end if;

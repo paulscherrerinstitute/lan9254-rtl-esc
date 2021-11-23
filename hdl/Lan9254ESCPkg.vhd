@@ -3,6 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 
 -- Types, declarations, helpers for ESC support
@@ -24,9 +25,6 @@ package Lan9254ESCPkg is
       addr     : std_logic_vector(15 downto 0);
       bena     : std_logic_vector( 3 downto 0);
    end record EcRegType;
-
-   subtype  ESCVal16Type is std_logic_vector(15 downto 0);
-   subtype  ESCVal08Type is std_logic_vector( 7 downto 0);
 
    constant EC_REG_AL_CTRL_C : EcRegType := (
       addr     => x"0120",

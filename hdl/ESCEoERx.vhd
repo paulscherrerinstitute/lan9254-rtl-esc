@@ -3,6 +3,7 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 use ieee.math_real.all;
 
+use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
@@ -45,8 +46,6 @@ architecture rtl of ESCEoERx is
    subtype FrameTimeoutType is natural range 0 to FRAME_TIMEOUT_C;
 
    type StateType is (IDLE, HDR, FWD, GET_PARAMS, GET_MAC, GET_IP, RESP, DROP);
-
-   type Slv16Array is array (natural range <> )        of std_logic_vector(15 downto 0);
 
    subtype DelayArray is Slv16Array(1 downto 0);
 

@@ -21,6 +21,7 @@ EVRPDO_S:=EvrTxPDO.vhd EvrTxPDOPkg.vhd EvrTxPDOSimWrapper.vhd
 
 EVRPDO_O:=$(subst .vhd,.o,$(and $(wildcard EvrTxPDO.vhd),$(wildcard EvrTxPDOPkg.vhd),$(EVRPDO_S)))
 
+OBJS+=ESCBasicTypesPkg.o
 OBJS+=Lan9254Pkg.o Lan9254ESCPkg.o Lan9254ESC.o Lan9254Hbi.o Lan9254HbiSoft.o
 OBJS+=readWriteSim.o EEEmulPkg.o EEPROMContentPkg.o RxPDOSoft.o IlaWrappersPkg.o
 OBJS+=ESCMbxPkg.o ESCEoERx.o ESCTxMbxBuf.o ESCRxMbxMux.o ESCTxMbxMux.o ESCTxMbxErr.o
@@ -112,8 +113,8 @@ TxMBXTb.o:       $(OBJS)
 EoETb.o:         $(OBJS)
 StrmFrameBufTb.o: StrmFrameBuf.o
 RxPDOSoft.o ESCTxPDO.o: Lan9254ESCPkg.o Lan9254Pkg.o
-Lan9254ESCPkg.o: Lan9254Pkg.o
-ESCTxMbx.o ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o IPAddrConfigPkg.o
+Lan9254ESCPkg.o: Lan9254Pkg.o ESCBasicTypesPkg.o
+ESCTxMbx.o ESCSmRx.o ESCEoERx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o IPAddrConfigPkg.o ESCBasicTypesPkg.o
 ESCEoETx.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCTxMbxBuf.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
 ESCMbxPkg.o: Lan9254ESCPkg.o
@@ -122,7 +123,7 @@ StrmFrameBuf.o ESCRxMbxMux.o ESCTxMbxErr.o: Lan9254Pkg.o ESCMbxPkg.o
 MicroUDPIPMux.o MicroUDPRx.o MicroUDPTx.o: MicroUDPPkg.o Lan9254Pkg.o ESCMbxPkg.o IPV4ChkSum.o
 Lan9254ESCWrapper.o:  Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o MicroUDPPkg.o Lan9254ESC.o ESCTxMbxMux.o ESCRxMbxMux.o ESCTxMbxErr.o ESCEoERx.o ESCEoETx.o MicroUDPRx.o MicroUDPTx.o MicroUDPIPMux.o Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o AddressGenerator.o
 MicroUDPPkg.o: Lan9254Pkg.o IPAddrConfigPkg.o
-ESCEoETx.o ESCEoERx.o: StrmFrameBuf.o
+ESCEoETx.o ESCEoERx.o: StrmFrameBuf.o ESCBasicTypesPkg.o
 Udp2Bus.o: Udp2BusPkg.o Lan9254Pkg.o StrmFrameBuf.o
 Udp2BusMux.o: Udp2BusPkg.o
 Udp2BusTb.o: Udp2Bus.o
@@ -130,7 +131,9 @@ DeviceDna7Tb.o: DeviceDna7.o
 AddressGenerator.o: DeviceDna7.o IPAddrConfigPkg.o
 Udp2BusMuxTb.o: Udp2BusMux.o Udp2BusPkg.o
 EvrTxPDO.o: SynchronizerBit.o Lan9254ESCPkg.o Udp2BusPkg.o  EvrTxPDOPkg.o
-EvrTxPDOSimWrapper.o: EvrTxPDO.o
+EvrTxPDOSimWrapper.o: EvrTxPDO.o ESCBasicTypesPkg.o
+Lan9254Pkg.o: ESCBasicTypesPkg.o
+Lan9254UdpBusPkg.o: Udp2BusPkg.o Lan9254Pkg.o
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin $(EVRPDO_S:%.vhd=%.o)
 

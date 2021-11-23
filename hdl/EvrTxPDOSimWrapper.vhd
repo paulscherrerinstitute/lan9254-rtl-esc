@@ -2,6 +2,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 use work.Udp2BusPkg.all;
 use work.EvrTxPDOPkg.all;
@@ -54,8 +55,6 @@ end entity EvrTxPDOSimWrapper;
 -- from a ZYNQ CPU).
 
 architecture sim of EvrTxPDOSimWrapper is
-
-   type Slv32Array is array ( natural range <> ) of std_logic_vector(31 downto 0);
 
    signal memData : Slv32Array(1 downto 0) := (
       0 => x"aabbccdd",

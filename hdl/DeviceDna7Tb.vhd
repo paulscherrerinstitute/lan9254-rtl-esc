@@ -4,6 +4,7 @@ use     ieee.std_logic_1164.all;
 entity DeviceDna7Tb is
 end entity DeviceDna7Tb;
 
+use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 
 architecture sim of DeviceDna7Tb is

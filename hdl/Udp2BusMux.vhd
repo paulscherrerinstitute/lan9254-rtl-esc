@@ -96,17 +96,17 @@ begin
    G_SUB_MUX  : if ( NUM_SUBS_G > 1 ) generate
 
       P_SUB_MUX  : process (reqIbLoc, repOb) is
-         variable sel : natural range 0 to 2**(ADDR_MSB_G - ADDR_LSB_G + 1) - 1;
+         variable sIdx : natural range 0 to 2**(ADDR_MSB_G - ADDR_LSB_G + 1) - 1;
       begin
          reqOb       <= (others => reqIbLoc);
          repIbLoc    <= UDP2BUSREP_ERROR_C;
          for i in reqOb'range loop
             reqOb(i).valid <= '0';
          end loop;
-         sel := to_integer(unsigned(reqIbLoc.dwaddr(ADDR_MSB_G downto ADDR_LSB_G)));
-         if ( sel < NUM_SUBS_G ) then
-            reqOb(sel).valid <= reqIbLoc.valid;
-            repIbLoc         <= repOb(sel);
+         sIdx := to_integer(unsigned(reqIbLoc.dwaddr(ADDR_MSB_G downto ADDR_LSB_G)));
+         if ( sIdx < NUM_SUBS_G ) then
+            reqOb(sIdx).valid <= reqIbLoc.valid;
+            repIbLoc         <= repOb(sIdx);
          end if;
       end process P_SUB_MUX;
 
