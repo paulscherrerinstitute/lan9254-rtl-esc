@@ -62,19 +62,29 @@ architecture sim of EvrTxPDOSimWrapper is
    );
 
    constant MEM_XFERS_C : MemXferArray := (
-      0 => ( off => x"0000", num => to_unsigned( 1, 10 ), swp => 2 ),
-      1 => ( off => x"0004", num => to_unsigned( 1, 10 ), swp => 4 ),
-      2 => ( off => x"0000", num => to_unsigned( 2, 10 ), swp => 0 )
+      0 => ( off => x"0000", num => to_unsigned( 1, 10 ), swp => SWP16 ),
+      1 => ( off => x"0004", num => to_unsigned( 1, 10 ), swp => SWP32 ),
+      2 => ( off => x"0000", num => to_unsigned( 2, 10 ), swp => NOSWP )
    );
 
    signal busRepLoc          : Udp2BusRepType := UDP2BUSREP_INIT_C;
 
+   signal config             : EvrTxPDOConfigType := EVR_TXPDO_CONFIG_INIT_C;
+
 begin
 
+   config.hasTs               <= hasTs;
+   config.hasEventCodes       <= hasEventCodes;
+   config.hasLatch0P          <= hasLatch0P;
+   config.hasLatch0N          <= hasLatch0N;
+   config.hasLatch1P          <= hasLatch1P;
+   config.hasLatch1N          <= hasLatch1N;
+   config.numMaps             <= MEM_XFERS_C'length;
+ 
    U_EVR : entity work.EvrTxPDO
       generic map (
          TXPDO_ADDR_G        => x"1180",
-         MEM_XFERS_G         => MEM_XFERS_C,
+         MAX_MEM_XFERS_G     => MEM_XFERS_C'length,
          MEM_BASE_ADDR_G     => MEM_BASE_ADDR_G,
          NUM_EVENT_DWORDS_G  => 2
       )
@@ -92,12 +102,8 @@ begin
          busClk              => busClk,
          busRst              => busRst,
 
-         hasTs               => hasTs,
-         hasEventCodes       => hasEventCodes,
-         hasLatch0P          => hasLatch0P,
-         hasLatch0N          => hasLatch0N,
-         hasLatch1P          => hasLatch1P,
-         hasLatch1N          => hasLatch1N,
+         dbufMaps            => MEM_XFERS_C,
+         config              => config,
 
          -- LAN9254 HBI bus master IF
          lanReq              => lanReq,

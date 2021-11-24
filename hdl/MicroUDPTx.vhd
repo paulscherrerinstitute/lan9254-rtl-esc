@@ -12,7 +12,7 @@ entity MicroUdpTx is
       clk      : in  std_logic;
       rst      : in  std_logic;
 
-      myAddr   : in  IPAddrConfigType;
+      myAddr   : in  IPAddrConfigReqType;
 
       mstOb    : out Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       rdyOb    : in  std_logic;

@@ -6,22 +6,24 @@ use     work.ESCBasicTypesPkg.all;
 
 package IPAddrConfigPkg is
 
-   type IPAddrConfigType is record
+   type IPAddrConfigReqType is record
       macAddr    : std_logic_vector(47 downto 0); -- network byte order
       macAddrVld : std_logic;
       ip4Addr    : std_logic_vector(31 downto 0); -- network byte order
       ip4AddrVld : std_logic;
       udpPort    : std_logic_vector(15 downto 0); -- network byte order
       udpPortVld : std_logic;
-   end record IPAddrConfigType;
+   end record IPAddrConfigReqType;
 
    -- serialize in the order elements appear in the array.
    -- Items are serialized in network-byte order. The 'valid'
    -- flags are omitted.
-   function toSlv08Array(constant x : IPAddrConfigType) return Slv08Array;
+   function toSlv08Array(constant x : IPAddrConfigReqType)
+      return Slv08Array;
 
    -- deserialize; valid flags are cleared
-   function toIPAddrConfigType(constant x : Slv08Array) return IPAddrConfigType;
+   function toIPAddrConfigReqType(constant x : Slv08Array)
+      return IPAddrConfigReqType;
 
    type IPAddrConfigAckType is record
       macAddrAck : std_logic;
@@ -41,25 +43,25 @@ package IPAddrConfigPkg is
       udpPortAck => '1'
    );
 
-   type IPAddrConfigArray    is array (natural range <>) of IPAddrConfigType;
+   type IPAddrConfigReqArray is array (natural range <>) of IPAddrConfigReqType;
    type IPAddrConfigAckArray is array (natural range <>) of IPAddrConfigAckType;
 
-   function makeIPAddrConfig(
+   function makeIPAddrConfigReq(
       constant macAddr : std_logic_vector := "";
       constant ip4Addr : std_logic_vector := "";
       constant udpPort : std_logic_vector := ""
-   ) return IPAddrConfigType;
+   ) return IPAddrConfigReqType;
 
 end package IPAddrConfigPkg;
 
 package body IPAddrConfigPkg is
 
-   function makeIPAddrConfig(
+   function makeIPAddrConfigReq(
       constant macAddr : std_logic_vector := "";
       constant ip4Addr : std_logic_vector := "";
       constant udpPort : std_logic_vector := ""
-   ) return IPAddrConfigType is
-      variable v : IPAddrConfigType;
+   ) return IPAddrConfigReqType is
+      variable v : IPAddrConfigReqType;
    begin
       v.macAddr    := (others => '0');
       v.macAddrVld := '0';
@@ -80,12 +82,13 @@ package body IPAddrConfigPkg is
          v.udpPortVld             := '1';
       end if;
       return v;
-   end function makeIPAddrConfig;
+   end function makeIPAddrConfigReq;
 
    -- serialize in the order elements appear in the array.
    -- Items are serialized in network-byte order. The 'valid'
    -- flags are omitted.
-   function toSlv08Array(constant x : IPAddrConfigType) return Slv08Array is
+   function toSlv08Array(constant x : IPAddrConfigReqType)
+      return Slv08Array is
       constant c : Slv08Array := (
          0 => x.macAddr( 7 downto  0),
          1 => x.macAddr(15 downto  8),
@@ -107,8 +110,9 @@ package body IPAddrConfigPkg is
    end function toSlv08Array;
 
    -- deserialize; valid flags are cleared
-   function toIPAddrConfigType(constant x : Slv08Array) return IPAddrConfigType is
-      constant c : IPAddrConfigType := (
+   function toIPAddrConfigReqType(constant x : Slv08Array)
+      return IPAddrConfigReqType is
+      constant c : IPAddrConfigReqType := (
          macAddr    => x(5) & x(4) & x(3) & x(2) & x(1) & x(0),
          macAddrVld => '0',
          ip4Addr    =>               x(9) & x(8) & x(6) & x(6),
@@ -118,7 +122,7 @@ package body IPAddrConfigPkg is
       );
    begin
       return c;
-   end function toIPAddrConfigType;
+   end function toIPAddrConfigReqType;
 
 
 end package body IPAddrConfigPkg;

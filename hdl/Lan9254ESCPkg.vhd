@@ -190,25 +190,34 @@ package Lan9254ESCPkg is
    constant ESC_SM3_ACT_C                               : std_logic    := '1';
 
    -- make PDO lengths run-time configurable
-   type ESCConfigParmType is record
+   type ESCConfigReqType is record
       sm2Len   : ESCVal16Type;
       sm3Len   : ESCVal16Type;
       valid    : std_logic;
-   end record ESCConfigParmType;
+   end record ESCConfigReqType;
 
-   constant ESC_CONFIG_PARM_INIT_C : ESCConfigParmType := (
+   type ESCConfigAckType is record
+      ack      : std_logic;
+   end record ESCConfigAckType;
+
+   constant ESC_CONFIG_REQ_INIT_C : ESCConfigReqType := (
       sm2Len   => ESC_SM2_LEN_C,
       sm3Len   => ESC_SM3_LEN_C,
       valid    => '1'
    );
 
+   constant ESC_CONFIG_ACK_INIT_C : ESCConfigAckType := (
+      ack      => '0'
+   );
+
+
    -- convert to byte-array (for serialization); this does NOT contain
    -- the 'valid' flag.
    -- Items are serialized in the order they appear in the record and
    -- as little-endian.
-   function toSlv08Array(constant x: ESCConfigParmType) return Slv08Array;
+   function toSlv08Array(constant x: ESCConfigReqType) return Slv08Array;
 
-   function toESCConfigParmType(constant x: Slv08Array) return ESCConfigParmType;
+   function toESCConfigReqType(constant x: Slv08Array) return ESCConfigReqType;
 
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
@@ -330,7 +339,7 @@ package body LAN9254ESCPkg is
       return ret;
    end function toSlv;
 
-   function toSlv08Array(constant x: ESCConfigParmType) return Slv08Array is
+   function toSlv08Array(constant x: ESCConfigReqType) return Slv08Array is
       constant c : Slv08Array := (
          0 => std_logic_vector( x.sm2Len( 7 downto 0) ),
          1 => std_logic_vector( x.sm2Len(15 downto 8) ),
@@ -341,14 +350,14 @@ package body LAN9254ESCPkg is
       return c;
    end function toSlv08Array;
 
-   function toESCConfigParmType(constant x: Slv08Array) return ESCConfigParmType is
-      constant c : ESCConfigParmType := (
+   function toESCConfigReqType(constant x: Slv08Array) return ESCConfigReqType is
+      constant c : ESCConfigReqType := (
          sm2Len  => ESCVal16Type'( x(1) & x(0) ),
          sm3Len  => ESCVal16Type'( x(3) & x(2) ),
          valid   => '0'
       );
    begin
       return c; 
-   end function toESCConfigParmType;
+   end function toESCConfigReqType;
 
 end package body LAN9254ESCPkg;

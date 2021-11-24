@@ -32,7 +32,7 @@ entity ESCEoERx is
 
       debug             : out std_logic_vector(15 downto 0);
 
-      addrCfg           : out IPAddrConfigType;
+      addrCfg           : out IPAddrConfigReqType;
       addrCfgAck        : in  IPAddrConfigAckType := IP_ADDR_CONFIG_ACK_ASSERT_C;
 
       stats             : out StatCounterArray(2 downto 0)

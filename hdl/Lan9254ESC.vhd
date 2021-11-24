@@ -43,8 +43,8 @@ entity Lan9254ESC is
 
       -- read during INIT state (and only during INIT) of the controller FSM
       -- user may delay initialization by deasserting 'valid'.
-      config      : in  ESCConfigParmType := ESC_CONFIG_PARM_INIT_C;
-      configAck   : out std_logic;
+      configReq   : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
+      configAck   : out ESCConfigAckType;
 
       extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G) := (others => LAN9254REQ_INIT_C);
       extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G);
@@ -204,7 +204,7 @@ architecture rtl of Lan9254ESC is
 
    function smlAcceptable(
       constant sm       : in  natural range 2 to 3;
-      constant cfg      : in  ESCConfigParmType;
+      constant cfg      : in  ESCConfigReqType;
       constant act      : in  ESCVal16Type
    ) return boolean is
       variable lim      : unsigned(ESCVal16Type'range);
@@ -300,8 +300,8 @@ architecture rtl of Lan9254ESC is
 
    type RegType is record
       state                : ControllerStateType;
-      config               : ESCConfigParmType;
-      configAck            : std_logic;
+      config               : ESCConfigReqType;
+      configAck            : ESCConfigAckType;
       testPhas             : natural range 0 to 6;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
@@ -339,8 +339,8 @@ architecture rtl of Lan9254ESC is
 
    constant REG_INIT_C : RegType := (
       state                => TEST,
-      config               => ESC_CONFIG_PARM_INIT_C,
-      configAck            => '0',
+      config               => ESC_CONFIG_REQ_INIT_C,
+      configAck            => ESC_CONFIG_ACK_INIT_C,
       testPhas             => 0,
       testFail             => 0,
       reqState             => INIT,
@@ -733,7 +733,7 @@ begin
          txMBXMst,
          rxMBXRdy,
          txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup,
-         config
+         configReq
    ) is
       variable v         : RegType;
       variable val       : std_logic_vector(31 downto 0);
@@ -771,12 +771,12 @@ begin
             end if;
 
          when CONF =>
-            if ( r.configAck = '0' ) then
-               v.configAck := '1';
-            elsif ( config.valid = '1' ) then
-               v.config    := config;
-               v.configAck := '0';
-               v.state     := INIT;
+            if ( r.configAck.ack = '0' ) then
+               v.configAck.ack := '1';
+            elsif ( configReq.valid = '1' ) then
+               v.config        := configReq;
+               v.configAck.ack := '0';
+               v.state         := INIT;
             end if;
 
          when INIT =>

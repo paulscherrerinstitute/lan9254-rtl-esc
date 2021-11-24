@@ -54,7 +54,7 @@ entity Lan9254ESCWrapper is
       rxPDORdy                : in  std_logic         := '1';
 
       -- mac, ip and port in network-byte order!
-      myAddr                  : in  IPAddrConfigType    := makeIpAddrConfig;
+      myAddr                  : in  IPAddrConfigReqType := makeIpAddrConfigReq;
       myAddrAck               : out IPAddrConfigAckType := IP_ADDR_CONFIG_ACK_ASSERT_C;
 
       -- HBI access by an external agent
@@ -142,7 +142,7 @@ architecture rtl of Lan9254ESCWrapper is
 
    signal   statsLoc          : StatCounterArray(stats'range) := (others => STAT_COUNTER_INIT_C);
 
-   signal   myAddrLoc         : IPAddrConfigType              := myAddr;
+   signal   myAddrLoc         : IPAddrConfigReqType           := myAddr;
 
 begin
 
@@ -329,7 +329,7 @@ begin
       signal   udp2BusReqOb      : Udp2BusReqArray(NUM_BUS_SUBS_C - 1 downto 0)         := (others => UDP2BUSREQ_INIT_C);
       signal   udp2BusRepOb      : Udp2BusRepArray(NUM_BUS_SUBS_C - 1 downto 0)         := (others => UDP2BUSREP_ERROR_C);
 
-      signal   addrCfgs          : IPAddrConfigArray   (NUM_ADDR_CFGS_C - 1 downto 0);
+      signal   addrCfgs          : IPAddrConfigReqArray(NUM_ADDR_CFGS_C - 1 downto 0);
       signal   addrCfgAcks       : IPAddrConfigAckArray(NUM_ADDR_CFGS_C - 1 downto 0);
 
    begin

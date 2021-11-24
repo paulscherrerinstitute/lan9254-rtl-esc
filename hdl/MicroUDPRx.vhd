@@ -16,7 +16,7 @@ entity MicroUdpRx is
       clk      : in  std_logic;
       rst      : in  std_logic;
 
-      myAddr   : in  IPAddrConfigType;
+      myAddr   : in  IPAddrConfigReqType;
 
       mstIb    : in  Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       errIb    : in  std_logic;

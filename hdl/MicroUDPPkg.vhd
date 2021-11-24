@@ -34,7 +34,7 @@ package MicroUDPPkg is
    type UdpStrmMstType is record
       -- data is stable once 'stream.valid' is asserted and remain stable
       -- until 'valid and last and ready'.
-      addr      : IPAddrConfigType;
+      addr      : IPAddrConfigReqType;
       -- length includes all headers and goes into IP and UPD headers
       -- processing of the stream relies on the 'last' flag though
       length    : unsigned        (15 downto 0); -- host-byte order
@@ -42,7 +42,7 @@ package MicroUDPPkg is
    end record UdpStrmMstType;
 
    constant UDP_STRM_MST_INIT_C : UdpStrmMstType := (
-      addr      => makeIPAddrConfig,
+      addr      => makeIPAddrConfigReq,
       -- length includes all headers and goes into IP and UPD headers
       -- processing of the stream relies on the 'last' flag though
       length    => (others => '0'),
@@ -69,7 +69,7 @@ package body MicroUDPPkg is
       variable v : UdpStrmMstType;
    begin
       v         := UDP_STRM_MST_INIT_C;
-      v.addr    := makeIPAddrConfig(t.dstMac, t.dstIp, t.protoData);
+      v.addr    := makeIPAddrConfigReq(t.dstMac, t.dstIp, t.protoData);
       v.length  := t.length;
       v.strm    := s;
       return v;

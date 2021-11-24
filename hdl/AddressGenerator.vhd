@@ -15,10 +15,10 @@ entity AddressGenerator is
       clk               : in  std_logic;
       rst               : in  std_logic;
 
-      configs           : in  IPAddrConfigArray   (NUM_CONFIGS_G - 1 downto 0);
+      configs           : in  IPAddrConfigReqArray(NUM_CONFIGS_G - 1 downto 0);
       configAcks        : out IPAddrConfigAckArray(NUM_CONFIGS_G - 1 downto 0);
 
-      addrOut           : out IPAddrConfigType
+      addrOut           : out IPAddrConfigReqType
    );
 end entity AddressGenerator;
 
@@ -45,7 +45,7 @@ begin
    begin
       if ( rising_edge( clk ) ) then
          if ( rst = '1' ) then
-            addrOut <=  makeIpAddrConfig( DEFAULT_MAC_ADDR_G, DEFAULT_IP4_ADDR_G, DEFAULT_UDP_PORT_G);
+            addrOut <=  makeIpAddrConfigReq( DEFAULT_MAC_ADDR_G, DEFAULT_IP4_ADDR_G, DEFAULT_UDP_PORT_G);
          else
             if ( dnaVld = '1' ) then
                addrOut.macAddr    <= dna(47 downto 0);
