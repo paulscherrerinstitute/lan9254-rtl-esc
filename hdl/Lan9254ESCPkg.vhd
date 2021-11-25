@@ -206,10 +206,20 @@ package Lan9254ESCPkg is
       valid    => '1'
    );
 
+   constant ESC_CONFIG_REQ_NULL_C : ESCConfigReqType := (
+      sm2Len   => (others => '0'),
+      sm3Len   => (others => '0'),
+      valid    => '0'
+   );
+
+
    constant ESC_CONFIG_ACK_INIT_C : ESCConfigAckType := (
       ack      => '0'
    );
 
+   constant ESC_CONFIG_ACK_ASSERT_C : ESCConfigAckType := (
+      ack      => '1'
+   );
 
    -- convert to byte-array (for serialization); this does NOT contain
    -- the 'valid' flag.
@@ -352,8 +362,8 @@ package body LAN9254ESCPkg is
 
    function toESCConfigReqType(constant x: Slv08Array) return ESCConfigReqType is
       constant c : ESCConfigReqType := (
-         sm2Len  => ESCVal16Type'( x(1) & x(0) ),
-         sm3Len  => ESCVal16Type'( x(3) & x(2) ),
+         sm2Len  => ESCVal16Type'( x(1 + x'low) & x(0 + x'low) ),
+         sm3Len  => ESCVal16Type'( x(3 + x'low) & x(2 + x'low) ),
          valid   => '0'
       );
    begin

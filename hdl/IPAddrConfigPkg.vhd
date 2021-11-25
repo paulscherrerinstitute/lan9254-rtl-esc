@@ -94,8 +94,8 @@ package body IPAddrConfigPkg is
          1 => x.macAddr(15 downto  8),
          2 => x.macAddr(23 downto 16),
          3 => x.macAddr(31 downto 24),
-         4 => x.macAddr(47 downto 40),
-         5 => x.macAddr(63 downto 48),
+         4 => x.macAddr(39 downto 32),
+         5 => x.macAddr(47 downto 40),
 
          6 => x.ip4Addr( 7 downto  0),
          7 => x.ip4Addr(15 downto  8),
@@ -112,12 +112,13 @@ package body IPAddrConfigPkg is
    -- deserialize; valid flags are cleared
    function toIPAddrConfigReqType(constant x : Slv08Array)
       return IPAddrConfigReqType is
+      constant l : integer := x'low;
       constant c : IPAddrConfigReqType := (
-         macAddr    => x(5) & x(4) & x(3) & x(2) & x(1) & x(0),
+         macAddr    => x(5+l) & x(4+l) & x(3+l) & x(2+l) & x(1+l) & x(0+l),
          macAddrVld => '0',
-         ip4Addr    =>               x(9) & x(8) & x(6) & x(6),
+         ip4Addr    =>                   x(9+l) & x(8+l) & x(7+l) & x(6+l),
          ip4AddrVld => '0',
-         udpPort    =>                            x(11) & x(10),
+         udpPort    =>                                   x(11+l) & x(10+l),
          udpPortVld => '0'
       );
    begin

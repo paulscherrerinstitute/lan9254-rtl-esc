@@ -690,6 +690,10 @@ Enable VoE; SOES does not accept an empty mbox config
           <ByteSize>2048</ByteSize>
           <ConfigData>910201440000000000000040</ConfigData>
           <BootStrap>0010800080108000</BootStrap>
+          <Category>
+            <CatNo>#x01</CatNo>
+            <Data>480203040566000000000000</Data>
+          </Category>
         </Eeprom>
       </Device>
     </Devices>

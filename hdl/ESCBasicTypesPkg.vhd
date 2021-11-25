@@ -29,6 +29,14 @@ package ESCBasicTypesPkg is
    function bswap(constant x: unsigned)         return unsigned;
    function bswap(constant x: std_logic_vector) return std_logic_vector;
 
+   function slv08ArrayLen(constant x: Slv08Array) return natural;
+
+   function ite(
+      constant c: in boolean;
+      constant a: in integer;
+      constant b: in integer
+   ) return integer;
+
 end package ESCBasicTypesPkg;
 
 package body ESCBasicTypesPkg is
@@ -134,6 +142,21 @@ package body ESCBasicTypesPkg is
    begin
       return unsigned( bswap( std_logic_vector( x ) ) );
    end function bswap;
+
+   function slv08ArrayLen(constant x: Slv08Array)
+      return natural is
+   begin
+      return x'length;
+   end function slv08ArrayLen;
+
+   function ite(
+      constant c: in boolean;
+      constant a: in integer;
+      constant b: in integer
+   ) return integer is
+   begin
+      if ( c ) then return a; else return b; end if;
+   end function ite;
 
 
 end package body ESCBasicTypesPkg;
