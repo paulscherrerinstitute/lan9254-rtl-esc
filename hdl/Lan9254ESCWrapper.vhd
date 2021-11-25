@@ -44,6 +44,10 @@ entity Lan9254ESCWrapper is
 
       -- interrupt from Lan9254
       irq                     : in  std_logic         := '1'; -- default to polled-mode
+      -- read during INIT state (and only during INIT) of the controller FSM
+      -- user may delay initialization by deasserting 'valid'.
+      escConfigReq            : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
+      escConfigAck            : out ESCConfigAckType;
 
       -- TXPDO
       txPDOMst                : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
@@ -170,6 +174,9 @@ begin
          rep         => rep,
 
          irq         => irq,
+
+         configReq   => escConfigReq,
+         configAck   => escConfigAck,
 
          rxPDOMst    => rxPDOMst,
          rxPDORdy    => rxPDORdy,
