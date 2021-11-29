@@ -149,6 +149,7 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -v                       : increase verbosity\n");
 	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation)\n");
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
+	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
 }
 
 static int
@@ -204,13 +205,13 @@ printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:tsve:";
+char               *optstr        = "ha:tsve:r:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
 Ecur                e             = 0;
 uint32_t            hbibas        = (7<<19);
-uint32_t            locbas        = (6<<19);
+uint32_t            escbas        = (6<<19);
 uint32_t            evrbas        = (0<<19);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
@@ -244,6 +245,7 @@ int                 opt;
 				verbose++;
 				break;
 
+			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
 				break;
 		}
@@ -263,7 +265,7 @@ int                 opt;
 	}
 
 	if ( printNetStats ) {
-		ecurPrintNetStats( e, locbas );
+		ecurPrintNetStats( e, escbas );
 	}
 
 	optind = 1;
@@ -273,6 +275,7 @@ int                 opt;
 				break;
 
 			case 'e':
+			case 'r':
 				if ( reg( e, optarg, evrbas ) ) {
 					goto bail;
 				}
