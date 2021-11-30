@@ -25,6 +25,7 @@ end entity AddressGenerator;
 architecture rtl of AddressGenerator is
    signal dna           : std_logic_vector(56 downto 0);
    signal dnaVld        : std_logic  := '0';
+   signal dnaAck        : std_logic  := '0';
 begin
 
    GEN_ACK : for ack in configAcks'range generate
@@ -46,11 +47,13 @@ begin
       if ( rising_edge( clk ) ) then
          if ( rst = '1' ) then
             addrOut <=  makeIpAddrConfigReq( DEFAULT_MAC_ADDR_G, DEFAULT_IP4_ADDR_G, DEFAULT_UDP_PORT_G);
+            dnaAck  <= '0';
          else
-            if ( dnaVld = '1' ) then
+            if ( (not dnaAck and dnaVld) = '1' ) then
                addrOut.macAddr    <= dna(47 downto 0);
                addrOut.macAddr(0) <= '0'; -- clear multicast/mbroadcast bit
                addrOut.macAddr(1) <= '1'; -- locally managed address
+               dnaAck             <= '1';
             end if;
 
             for cfg in configs'range loop
