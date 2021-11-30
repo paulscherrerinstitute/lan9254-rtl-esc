@@ -211,10 +211,10 @@ architecture rtl of Lan9254ESC is
       variable val      : unsigned(ESCVal16Type'range);
    begin
       if ( sm = 2 ) then
-         lim := unsigned(ESC_SM2_LEN_C);
+         lim := unsigned(ESC_SM2_MAX_C);
          val := unsigned(cfg.sm2Len   );
       else
-         lim := unsigned(ESC_SM3_LEN_C);
+         lim := unsigned(ESC_SM3_MAX_C);
          val := unsigned(cfg.sm3Len   );
       end if;
       return (val <= lim) and (unsigned(act) = val);
