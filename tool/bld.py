@@ -2,18 +2,25 @@
 from lxml import etree as ET
 import sys
 
-def smCfg(sm, start, size, ctl, txt):
-  if ( 0 == size or 0 == ctl ):
-     size = 0
-     ctl  = 0
-     ena  = 0
-  else:
-     ena  = 1
-  sm.set("ControlByte",  "#x{:02x}".format(ctl))
-  sm.set("DefaultSize",  "{:d}".format(size))
-  sm.set("Enable",       "{:d}".format(ena))
-  sm.set("StartAddress", "#x{:04x}".format(start))
-  sm.text = txt
+class SmCfg(object):
+
+  def __init__(self, start, size, ctl, txt):
+    object.__init__(self)
+    if ( 0 == size or 0 == ctl ):
+       size = 0
+       ctl  = 0
+       ena  = 0
+    else:
+       ena  = 1
+    self.sm = ET.Element("Sm")
+    self.sm.set("ControlByte",  "#x{:02x}".format(ctl))
+    self.sm.set("DefaultSize",  "{:d}".format(size))
+    self.sm.set("Enable",       "{:d}".format(ena))
+    self.sm.set("StartAddress", "#x{:04x}".format(start))
+    self.sm.text = txt
+
+  def getElm(self):
+    return self.sm
 
 class PdoEntry(object):
 
@@ -61,7 +68,7 @@ class PdoEntry(object):
   def getByteSz(self):
     return self.byteSz
 
-  def get(self):
+  def getElm(self):
     return self.entries
 
 class NetConfig(object):
@@ -114,11 +121,14 @@ class NetConfig(object):
 
 class DbufSegment(object):
 
-  def __init__(self):
-    object.__init__(self, num32Words, byteOffset, swap = 0)
+  def __init__(self, num32Words, byteOffset, swap = 0):
+    object.__init__(self)
     self.num32Words = num32Words
+    # Add offset from EVR base address to data buffer
+    byteOffset     += 0x80
     self.dbufOffset = byteOffset
     self.swap       = swap
+    self.pdoEntries = []
     if not swap in (0,1,2,4):
       raise RuntimeError("DbufSegment: Unsupported swap size: " + swap)
     if ( num32Words > 0x3ff ):
@@ -135,13 +145,45 @@ class DbufSegment(object):
     elif ( 4 == self.swap ):
       tmp |= 0x20
     pd.append( tmp )
-    pd.append( (self.off >> 0) & 0xff )
-    pd.append( (self.off >> 8) & 0xff )
+    pd.append( (self.dbufOffset >> 0) & 0xff )
+    pd.append( (self.dbufOffset >> 8) & 0xff )
     return pd 
+
+  def getByteSz(self):
+    return 4*self.num32Words
+
+  def getPdoEntries(self):
+    return self.pdoEntries
+
+  def addPdoEntries(self, entries):
+    if not entries is None:
+      if isinstance(entries, list):
+        self.pdoEntries.extend( entries )
+      else:
+        self.pdoEntries.append( entries )
+    return self
+
+  # factory method to map byte-swapped 64-bit entities
+  @staticmethod
+  def create(num32Words, byteOffset, swap = 0, pdoEntries = None):
+    rv = []
+    if ( 8 == swap ):
+      if ( 0 != num32Words % 2 ):
+         raise RuntimeError("DbufSegment: create - number of elements does not match swap size")
+      for i in range(0,num32Words,2):
+        rv.append( DbufSegment( 1, byteOffset + 4, 4 ) )
+        rv.append( DbufSegment( 1, byteOffset + 0, 4 ) )
+        byteOffset += 8
+    else:
+      rv.append( DbufSegment( num32Words, byteOffset, swap ) )
+
+    rv[0].addPdoEntries( pdoEntries )
+    return rv
 
 class TxPdoBuilder(object):
 
-  def __init__(self):
+  # maxSegs must match fpga generics
+  def __init__(self, maxSegs):
     object.__init__(self)
     self.withTs_ = True
     self.withEv_ = True
@@ -150,8 +192,23 @@ class TxPdoBuilder(object):
     self.withL1_ = True
     self.withl1_ = True
     self.segs_   = []
+    self.maxSegs_= maxSegs
 
-  def withTs(self, v):
+  def withNone(self):
+    self.withTimestamp(False)
+    self.withEventCodes(False)
+    self.withLatch0RisingTime(False)
+    self.withLatch0FallingTime(False)
+    self.withLatch1RisingTime(False)
+    self.withLatch1FallingTime(False)
+    return self
+
+  def clear(self):
+    self.withNone()
+    self.clearSegments()
+    return self
+
+  def withTimestamp(self, v):
     self.withTx_ = v
     return self
 
@@ -175,11 +232,16 @@ class TxPdoBuilder(object):
     self.withl1_ = v
     return self
 
-  def addSegment(self, s):
-    self.dbufSegs.extent( s )
+  def addSegments(self, s):
+    if isinstance(s, list):
+      self.segs_.extend( s )
+    else:
+      self.segs_.append( s )
+    return self
 
   def clearSegments(self):
-    self.dbufSegs = []
+    self.segs_ = []
+    return self
 
   def build(self):
     txPdo = ET.Element( "TxPdo" )
@@ -199,7 +261,6 @@ class TxPdoBuilder(object):
     idxL1Fa     = 0x5006
     nEvWrds     = 8
     flags       = 0
-    dbufSegs    = []
     if ( self.withTs_ ):
       entries.append( PdoEntry("TimestampHi", idxTsHi, 1, 32, False) )
       entries.append( PdoEntry("TimestampLo", idxTsLo, 1, 32, False) )
@@ -219,17 +280,23 @@ class TxPdoBuilder(object):
     if ( self.withl1_ ):
       entries.append( PdoEntry("TimestampLatch1Falling", idxL1Fa, 1, 64, False) )
       flags |= 0x20
+
+    if ( len(self.segs_) > 255 or len(self.segs_) > self.maxSegs_ ):
+      raise RuntimeError("Too many TxPdo Segments, sorry")
+
     for e in entries:
-      txPdo.extend( e.get() )
+      txPdo.extend( e.getElm() )
       byteSz += e.getByteSz()
 
-    if ( len(dbufSegs) > 255 ):
-      raise RuntimeError("Too many TxPdo Segments, sorry")
+    for s in self.segs_:
+      for e in s.getPdoEntries():
+        txPdo.extend( e.getElm() )
+      byteSz += s.getByteSz()
 
     promData = bytearray()
     promData.append( flags         )
-    promData.append( len(dbufSegs) )
-    for s in dbufSegs:
+    promData.append( len(self.segs_) )
+    for s in self.segs_:
       promData.extend( s.promData() )
 
     return txPdo, byteSz, promData
@@ -237,6 +304,7 @@ class TxPdoBuilder(object):
 
 netConfig    = NetConfig()
 #netConfig.setIp4Addr("10.10.10.11")
+#netConfig.setMacAddr("48:01:02:03:04:05")
 vendorIdTxt  ="#x505349"
 vendorNameTxt="Paul Scherrer Institut"
 groupNameTxt="Lan9254"
@@ -245,67 +313,96 @@ deviceTypeTxt="Lan9254"
 deviceProductCodeTxt="0001"
 deviceRevisionNoTxt="0001"
 deviceNameTxt="EcEVR"
-sm0Len=48   #int -- must match setting in FPGA
-sm1Len=48   #int -- must match setting in FPGA
-sm2Len=128  #int
-sm3Len=128  #int
-sm3MaxLen = 138
+idxLed=0x2000
+eepromEcEvrConfigDataTxt = None
 rxPdoIndexTxt = "#x1600"
 txPdoIndexTxt = "#x1A00"
-eepromByteSizeTxt="2048"
-eepromConfigDataTxt="910201440000000000000040"
-eepromEcEvrConfigDataTxt = None
-ecEvrCatNoTxt="#x01"
-idxLed=0x2000
+eepromByteSizeTxt="2048" # -- must be <= value of actual hardware
 
-root = ET.Element("EtherCATinfo")
-vendor       = ET.SubElement(root, "Vendor")
-descriptions = ET.SubElement(root, "Descriptions")
+eepromConfigDataTxt="910201440000000000000040" # FIXME -- must be correct
+# Info that must be extracted from VHDL code
+sm0Len=48   #int -- must match setting in VHDL
+sm1Len=48   #int -- must match setting in VHDL
+sm2Len=128  #int -- can be configured up to max set in VHDL
+sm3Len=128  #int -- can be configured up to max set in VHDL
+sm0Sma=0x1000
+sm0Smc=0x26
+sm1Sma=0x1080
+sm1Smc=0x22
+sm2Sma=0x1100
+sm2Smc=0x24
+sm3Sma=0x1180
+sm3Smc=0x20
+maxPdoSegs=16
 
-vendorId      = ET.SubElement(vendor,"Id")
-vendorId.text = vendorIdTxt
+sm3MaxLen = 138  # -- must be <= value defined in VHDL
 
-groups        = ET.SubElement(descriptions, "Groups")
-group         = ET.SubElement(groups, "Group")
-groupName     = ET.SubElement(group, "Name")
-groupName.text = groupNameTxt
-groupType     = ET.SubElement(group, "Type")
-groupType.text = groupTypeTxt
+ecEvrCatNoTxt="1" # -- must match setting in VHDL
 
-devices       = ET.SubElement(descriptions, "Devices")
-device        = ET.SubElement(devices,"Device", Physics="YY")
-deviceType    = ET.SubElement(device, "Type",
-                    ProductCode=deviceProductCodeTxt,
-                    RevisionNo =deviceRevisionNoTxt)
-deviceName    = ET.SubElement(device, "Name")
-deviceName.text = deviceNameTxt
-ET.SubElement(device, "GroupType").text=groupTypeTxt
-ET.SubElement(device, "Fmmu").text="Inputs"
-ET.SubElement(device, "Fmmu").text="Outputs"
-ET.SubElement(device, "Fmmu").text="MBoxState"
-sm0=ET.SubElement(device, "Sm")
-sm1=ET.SubElement(device, "Sm")
-sm2=ET.SubElement(device, "Sm")
-sm3=ET.SubElement(device, "Sm")
+root = ET.Element("EtherCATInfo")
 
-txPdo, sm3Len, txPdoPromData = TxPdoBuilder().build()
+# note that XML schema expects these elements in order !
+vendor          = ET.SubElement(root, "Vendor")
+vendorId          = ET.SubElement(vendor,"Id")
+vendorId.text       = vendorIdTxt
+vendorId          = ET.SubElement(vendor,"Name")
+vendorId.text       = vendorNameTxt
+
+descriptions    = ET.SubElement(root, "Descriptions")
+groups            = ET.SubElement(descriptions, "Groups")
+group               = ET.SubElement(groups, "Group")
+groupType             = ET.SubElement(group, "Type")
+groupType.text          = groupTypeTxt
+groupName             = ET.SubElement(group, "Name")
+groupName.text          = groupNameTxt
+
+devices           = ET.SubElement(descriptions, "Devices")
+device              = ET.SubElement(devices,"Device", Physics="YY")
+deviceType            = ET.SubElement(device, "Type",
+                          ProductCode=deviceProductCodeTxt,
+                          RevisionNo =deviceRevisionNoTxt)
+deviceName            = ET.SubElement(device, "Name")
+deviceName.text         = deviceNameTxt
+
+groupType             = ET.SubElement(device, "GroupType").text=groupTypeTxt
+fmmu                  = ET.SubElement(device, "Fmmu")
+fmmu.text               ="Inputs"
+fmmu                  = ET.SubElement(device, "Fmmu")
+fmmu.text               ="Outputs"
+fmmu                  = ET.SubElement(device, "Fmmu")
+fmmu.text               ="MBoxState"
+
+# FIXME
+txPdoBldr = TxPdoBuilder(maxPdoSegs)
+txPdoBldr.clear().withTimestamp( True ).withLatch0RisingTime( True )
+txPdoBldr.addSegments([
+  DbufSegment(1, 0x28).addPdoEntries( PdoEntry( "TimestampSec", 0x5500, 1, 32, False ) ),
+  DbufSegment(2, 0x34).addPdoEntries( PdoEntry( "PulseID"     , 0x5501, 1, 64, False ) )
+  ])
+
+txPdo, sm3Len, txPdoPromData = txPdoBldr.build()
 
 if ( sm3Len > sm3MaxLen ):
   raise RuntimeError("Invalid configuration; TxPDO too large -- need to modify FPGA image")
 
 rxPdoEntries = PdoEntry("LED", idxLed, 3, 8, False)
-sm2Len = rxPdoEntries.getByteSz()
 
-smCfg(sm0, 0x1000, sm0Len, 0x26, "MBoxOut")
-smCfg(sm1, 0x1080, sm1Len, 0x22, "MBoxIn")
-smCfg(sm2, 0x1100, sm2Len, 0x24, "Outputs")
-smCfg(sm3, 0x1180, sm3Len, 0x20, "Inputs")
-
-rxPdo = ET.SubElement( device, "RxPdo" )
+rxPdo = ET.Element( "RxPdo" )
 rxPdo.set( "Fixed"       , "1" )
 rxPdo.set( "Mandatory"   , "1" )
 rxPdo.set( "Sm"          , "2" )
-rxPdo.extend( rxPdoEntries.get() )
+ET.SubElement( rxPdo, "Index" ).text = "#x1600"
+ET.SubElement( rxPdo, "Name"  ).text = "ECAT EVR RxData"
+rxPdo.extend( rxPdoEntries.getElm() )
+
+sm2Len = rxPdoEntries.getByteSz()
+
+device.append( SmCfg(sm0Sma, sm0Len, sm0Smc, "MBoxOut").getElm() )
+device.append( SmCfg(sm1Sma, sm1Len, sm1Smc, "MBoxIn" ).getElm() )
+device.append( SmCfg(sm2Sma, sm2Len, sm2Smc, "Outputs").getElm() )
+device.append( SmCfg(sm3Sma, sm3Len, sm3Smc, "Inputs" ).getElm() )
+device.append( rxPdo )
+device.append( txPdo )
 
 #ET.SubElement( rxPdo, "Index").text=rxPdoIndexTxt
 #ET.SubElement( rxPdo, "Name").text=rxPdoIndexTxt
@@ -325,12 +422,15 @@ promData = bytearray()
 promData.extend( netConfig.promData() )
 promData.extend( txPdoPromData        )
 
+# Device-specific PROM section. Here we describe to the firmware
+# what pieces of data we want them to map to the TxPdo, what
+# the network addresses are and possibly other non-volatile data
+# that we don't want to hardcode into the FPGA.
 eepromEcEvrConfigDataTxt = promData.hex()
 
 if ( not eepromEcEvrConfigDataTxt is None ):
   ET.SubElement(eepromCategory, "CatNo").text = ecEvrCatNoTxt
   ET.SubElement(eepromCategory, "Data" ).text = eepromEcEvrConfigDataTxt
 
-device.append( txPdo )
 
-ET.ElementTree(root).write( 'feil', xml_declaration = True, method="xml", pretty_print=True )
+ET.ElementTree(root).write( 'feil.xml', xml_declaration = True, method="xml", pretty_print=True )
