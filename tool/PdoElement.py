@@ -408,6 +408,9 @@ class PdoSegment(object):
     self.offset   = offset
     self.swap     = swap
 
+  def isFixed(self):
+    return False
+
   @property
   def name(self):
     return self._name
@@ -450,6 +453,13 @@ class PdoSegment(object):
       raise ValueError("nDWords of a 8-byte swapped segment must be even")
     self._swap = val
 
+class FixedPdoSegment(PdoSegment):
+  def __init__(self, name, offset, nDWords, swap=1):
+    super().__init__(name, offset, nDWords, swap)
+
+  def isFixed(self):
+    return True
+
 class PdoListWidget(TableWidgetDnD):
 
   NCOLS = 4
@@ -476,6 +486,12 @@ class PdoListWidget(TableWidgetDnD):
     self.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     self.customContextMenuRequested.connect( self.tableMenuEvent )
 
+  def hasFixedSegment(self):
+    return ( len( self._segs ) > 0 and self._segs[0].isFixed() )
+
+  def inFixedSegment(self, row):
+    return self.hasFixedSegment() and (row < self._segs[0].nDWords)
+
   def tableMenuEvent(self, pt):
     def mkEdAct(s, r, c):
       def a():
@@ -490,6 +506,9 @@ class PdoListWidget(TableWidgetDnD):
     idx = self.indexAt( pt )
     r   = idx.row()
     c   = idx.column()
+
+    if ( self.inFixedSegment( r ) ):
+      return
 
     ctxtMenu = QtWidgets.QMenu( self )
     if ( r >= 0 and c >= 0 and  r * self.columnCount() + c <= self._used ):
@@ -513,14 +532,18 @@ class PdoListWidget(TableWidgetDnD):
     idx = self.indexAt( pt )
     r = idx.row()
     c = idx.column()
+
+    if ( self.inFixedSegment( r ) ):
+      return
     
     ctxtMenu = QtWidgets.QMenu( self )
     ctxtMenu.addAction( "Edit   Segment", mkEdtAct(self,  r) )
     ctxtMenu.addAction( "Create Segment", mkEdtAct(self, -1) )
     ctxtMenu.popup( self.verticalHeader().mapToGlobal( pt ) )
 
-
   def editItem(self, r, c):
+    if ( self.inFixedSegment(r) ):
+      return
     if r * self.columnCount() + c > self._used:
       it = None
     else:
@@ -532,7 +555,8 @@ class PdoListWidget(TableWidgetDnD):
     ItemEditor( w, self, it )
 
   def editSegment(self, r):
-    SegmentEditor( self, self, self.r2seg( r ) )
+    if ( r < 0 or not self.inFixedSegment( r ) ):
+      SegmentEditor( self, self, self.r2seg( r ) )
 
   def seg2bo(self, seg):
     off = 0
@@ -559,8 +583,11 @@ class PdoListWidget(TableWidgetDnD):
     maxPos = len(self._segs) - 1
     if ( newSeg ):
       maxPos += 1
-    if ( pos < 0 or pos > maxPos ):
-      return "ERROR -- position out of range ({}..{})".format(0, maxpos)
+    minPos = 0
+    if ( self.hasFixedSegment() ):
+      minPos = 1
+    if ( pos < minPos or pos > maxPos ):
+      return "ERROR -- position out of range ({}..{})".format(minPos, maxPos)
     try:
       # avoid partial modification; create a dummy object to verify
       # arguments; if this doesn't throw we are OK
@@ -881,6 +908,14 @@ class PdoListWidget(TableWidgetDnD):
     # just a single item selected; reset selection span
     cr = self.currentRow()
     cc = self.currentColumn()
+
+    if self.inFixedSegment(cr):
+      print("CR FIXED")
+      self._topL = (-1, -1)
+      self._botR = (-1, -1)
+      self.showSelection()
+      return
+
     if ( (1 == len(self.selectedIndexes())) or ( self._topL[0] < 0 ) ):
       if self.cellWidget( cr, cc ) is None:
         # single cell outside of the configured are
@@ -966,6 +1001,8 @@ class PdoListWidget(TableWidgetDnD):
     frm_idx, frm_off = self.atRowCol( self._topL[0], self._topL[1] )
     end_idx, end_off = self.atRowCol( self._botR[0], self._botR[1] )
     if ( frm_idx == dst_idx or (dst_idx > frm_idx and dst_idx <= end_idx) ):
+      return
+    if ( self.inFixedSegment( drop_row ) ):
       return
     print("MoveItems, dst_idx", dst_idx)
     nl = []
