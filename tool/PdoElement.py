@@ -156,57 +156,44 @@ class MenuButton(QtWidgets.QPushButton):
   def activated(self, act):
     self.setText(act.text())
 
-class ItemEditor(QtWidgets.QDialog):
 
-  def __init__(self, parent, tbl, itm = None):
+class DialogBase(QtWidgets.QDialog):
+
+  HEX_VALIDATOR = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]+"))
+
+  def __init__(self, hasDelete = False, parent = None):
     super().__init__( parent )
-    self.tbl = tbl
-    self.itm = itm
-    if ( itm is None ):
-      tit      = "Create New Item"
-      tmplName = "<new>"
-      tmplIndx = 0x5000
-      tmplNelm = 1
-      tmplBySz = 4
-      tmplSgnd = False
-    else:
-      tit = "Editing " + itm.name
-      tmplName = itm.name
-      tmplIndx = itm.index
-      tmplNelm = itm.nelms
-      tmplBySz = itm.byteSz
-      tmplSgnd = itm.isSigned
-    self.setWindowTitle( tit )
     self.buttonBox = QtWidgets.QDialogButtonBox( QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel )
-    if not itm is None:
-      delBtn = QtWidgets.QPushButton( "Delete" )
-      delBtn.clicked.connect( self.delete )
+    if hasDelete:
+      self.deleteButton = QtWidgets.QPushButton( "Delete" )
+      self.deleteButton.clicked.connect( self.delete )
       # use 'reject' role to close the dialog without any further action in 
       # dialogDoneCheck
-      delBtn = self.buttonBox.addButton( delBtn, QtWidgets.QDialogButtonBox.RejectRole )
-      
+      self.buttonBox.addButton( self.deleteButton, QtWidgets.QDialogButtonBox.RejectRole )
     self.buttonBox.accepted.connect( self.accept )
     self.buttonBox.rejected.connect( self.reject )
     self.layout    = QtWidgets.QGridLayout()
-
-    self.nameEdt   = self.addRow( "Name",          tmplName )
-    v              = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]+"))
-    self.indexEdt  = self.addRow( "Index (hex)",  "{:04x}".format(tmplIndx), v)
-    v              = QtGui.QIntValidator(0, 32)
-    self.nelmsEdt  = self.addRow( "# Elements",   "{:d}".format(tmplNelm), v)
-
-    bsChoice       = [ PdoElement.bs2str( tmplSgnd, tmplBySz ) ]
-    for isS in [True, False]:
-      for bs in [1, 2, 4, 8]:
-        bsChoice.append( PdoElement.bs2str( isS, bs ) )
-
-    self.byteSzEdt = self.addRow( "Type", bsChoice )
-
-    self.msgLbl   = QtWidgets.QLabel("")
-    self.layout.addWidget( self.msgLbl,    self.layout.rowCount(), 0, 1, self.layout.columnCount() )
-    self.layout.addWidget( self.buttonBox, self.layout.rowCount(), 0, 1, self.layout.columnCount() )
+    self.lstRow    = 0
+    self.msgLbl    = QtWidgets.QLabel("")
     self.setLayout( self.layout    )
     self.finished.connect( self.dialogDoneCheck )
+
+  def addRow(self, lbl, ini, val = None):
+    self.layout.addWidget( QtWidgets.QLabel(lbl), self.lstRow, 0 )
+    if ( isinstance(ini, list) ):
+       wdgt = MenuButton( ini )
+    else:
+      wdgt = QtWidgets.QLineEdit()
+      wdgt.setMaxLength( 40 )
+      wdgt.setText( ini )
+      wdgt.setValidator( val )
+    self.layout.addWidget( wdgt, self.lstRow, 1 )
+    self.lstRow += 1
+    return wdgt
+
+  def show(self):
+    self.layout.addWidget( self.msgLbl,    self.layout.rowCount(), 0, 1, self.layout.columnCount() )
+    self.layout.addWidget( self.buttonBox, self.layout.rowCount(), 0, 1, self.layout.columnCount() )
     self.open()
 
   def dialogDoneCheck(self, result):
@@ -217,9 +204,113 @@ class ItemEditor(QtWidgets.QDialog):
       self.msgLbl.setText( msg )
       self.open()
 
+  def validInput(self):
+    return None
+
+  def delete(self):
+    pass
+
+class SegmentEditor(DialogBase):
+
+  def __init__(self, parent, tbl, seg = None):
+    hasDelete = not seg is None
+    super().__init__( hasDelete, parent )
+    self.tbl = tbl
+    self.seg = seg
+    if ( seg is None ):
+      tit      = "Create New DBUF Mapping Segment"
+      tmplName = "<new>"
+      tmplOffs = 0x0000
+      tmplNelm = 2
+      tmplSwap = 1
+      tmplPos  = len(tbl._segs)
+    else:
+      tit = "Editing DBUF Mapping Segment'" + seg.name + "'"
+      tmplName = seg.name
+      tmplOffs = seg.offset
+      tmplNelm = seg.nDWords
+      tmplSwap = seg.swap
+      tmplPos  = tbl._segs.index(seg)
+    self.setWindowTitle( tit )
+      
+    self.nameEdt   = self.addRow( "Name",          tmplName )
+    self.posEdt    = self.addRow( "Position in table",  "{:d}".format( tmplPos )    )
+    v              = self.HEX_VALIDATOR
+    self.offstEdt  = self.addRow( "Byte-Offset (hex)",  "{:04x}".format(tmplOffs), v)
+    v              = QtGui.QIntValidator(0, 32)
+    self.nelmsEdt  = self.addRow( "# Elements (words)",   "{:d}".format(tmplNelm), v)
+
+    swpChoice      = [ PdoSegment.swp2str(tmplSwap) ]
+    for bs in [1, 2, 4, 8]:
+        swpChoice.append( PdoSegment.swp2str( bs ) )
+
+    self.swapEdt   = self.addRow( "Byte-swap", swpChoice )
+    self.show()
+
+  def delete(self):
+    self.tbl.deleteSegment( self.seg ) 
+
+  def validInput(self):
+    if ( len(self.nelmsEdt.text()) == 0 ):
+      return "ERROR -- empty input: '# Elements'"
+    if ( len(self.nameEdt.text()) == 0 ):
+      return "ERROR -- empty input: 'Name'"
+    if ( len(self.offstEdt.text()) == 0 ):
+      return "ERROR -- empty input: 'Offset'"
+    if ( len(self.posEdt.text()) == 0 ):
+      return "ERROR -- empty input: 'Position'"
+    name     = self.nameEdt.text()
+    offset   = int( self.offstEdt.text(), 16 )
+    nelms    = int( self.nelmsEdt.text(),  0 )
+    pos      = int( self.posEdt.text(),    0 )
+    print(nelms, self.nelmsEdt.text())
+    swap     = PdoSegment.str2swp( self.swapEdt.text() )
+    if ( swap is None ):
+      raise RuntimeError("Internal error: -- unable to convert swap from string")
+
+    msg      = self.tbl.modifySegment(self.seg, name, pos, offset, nelms, swap)
+    if not msg is None and len(msg) != 0:
+      return msg
+  
+class ItemEditor(DialogBase):
+
+  def __init__(self, parent, tbl, itm = None):
+    hasDelete = not itm is None
+    super().__init__( hasDelete, parent )
+    self.tbl = tbl
+    self.itm = itm
+    if ( itm is None ):
+      tit      = "Create New PDO Item"
+      tmplName = "<new>"
+      tmplIndx = 0x5000
+      tmplNelm = 1
+      tmplBySz = 4
+      tmplSgnd = False
+    else:
+      tit = "Editing PDO Item '" + itm.name + "'"
+      tmplName = itm.name
+      tmplIndx = itm.index
+      tmplNelm = itm.nelms
+      tmplBySz = itm.byteSz
+      tmplSgnd = itm.isSigned
+    self.setWindowTitle( tit )
+      
+    self.nameEdt   = self.addRow( "Name",          tmplName )
+    v              = self.HEX_VALIDATOR
+    self.indexEdt  = self.addRow( "Index (hex)",  "{:04x}".format(tmplIndx), v)
+    v              = QtGui.QIntValidator(0, 32)
+    self.nelmsEdt  = self.addRow( "# Elements",   "{:d}".format(tmplNelm), v)
+
+    bsChoice       = [ PdoElement.bs2str( tmplSgnd, tmplBySz ) ]
+    for isS in [True, False]:
+      for bs in [1, 2, 4, 8]:
+        bsChoice.append( PdoElement.bs2str( isS, bs ) )
+
+    self.byteSzEdt = self.addRow( "Type", bsChoice )
+    self.show()
+
   def delete(self):
     self.tbl.deleteItem( self.itm ) 
-    print("re-select", self.tbl._botR[0], self.tbl._botR[1])
 
   def validInput(self):
     if ( len(self.nelmsEdt.text()) == 0 ):
@@ -239,19 +330,6 @@ class ItemEditor(QtWidgets.QDialog):
     if not msg is None and len(msg) != 0:
       return msg
     return None
-
-  def addRow(self, lbl, ini, val = None):
-    r = self.layout.rowCount()
-    self.layout.addWidget( QtWidgets.QLabel(lbl), r, 0 )
-    if ( isinstance(ini, list) ):
-       wdgt = MenuButton( ini )
-    else:
-      wdgt = QtWidgets.QLineEdit()
-      wdgt.setMaxLength( 40 )
-      wdgt.setText( ini )
-      wdgt.setValidator( val )
-    self.layout.addWidget( wdgt, r, 1 )
-    return wdgt
 
 class MyHeaderModel(QtCore.QAbstractItemModel):
   def __init__(self, parent = None):
@@ -309,13 +387,77 @@ class MyHeader(QtWidgets.QHeaderView):
       return False
     return super().eventFilter(o, e)  
 
+class PdoSegment(object):
+  @staticmethod
+  def swp2str(swap):
+    return "{:d}-bytes".format(swap)
+
+  @staticmethod
+  def str2swp(s):
+    return int(s[0])
+
+  def __init__(self, name, offset, nDWords, swap=1):
+    self._name    = None
+    self._nDWords = 2
+    self._swap    = 1
+    self._offset  = 0
+    self.name     = name
+    self.nDWords  = nDWords
+    self.offset   = offset
+    self.swap     = swap
+
+  @property
+  def name(self):
+    return self._name
+
+  @name.setter
+  def name(self, val):
+    self._name = val
+
+  @property
+  def nDWords(self):
+    return self._nDWords
+
+  @nDWords.setter
+  def nDWords(self, val):
+    if not isinstance(val, int) or val <= 0 or val > 1024:
+      raise ValueError("nDWords not an int or out of range")
+    if ( 8 == self.swap and (val % 2) != 0 ):
+      raise ValueError("nDWords of a 8-byte swapped segment must be even")
+    self._nDWords = val
+
+  @property
+  def offset(self):
+    return self._offset
+
+  @offset.setter
+  def offset(self, val):
+    if not isinstance(val, int) or val < 0 or val > 4*1024:
+      raise ValueError("offset not an int or out of range")
+    self._offset = val
+
+  @property
+  def swap(self):
+    return self._swap
+
+  @swap.setter
+  def swap(self, val):
+    if not isinstance(val, int) or not val in [1,2,4,8]:
+      raise ValueError("swap not an int or out of range")
+    if ( 8 == val and (self.nDWords % 2) != 0 ):
+      raise ValueError("nDWords of a 8-byte swapped segment must be even")
+    self._swap = val
+
 class PdoListWidget(TableWidgetDnD):
 
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, **kwargs)
+  NCOLS = 4
+
+  def __init__(self, parent = None):
+    super().__init__(0, self.NCOLS, parent)
     self._items           = list()
+    self._segs            = list()
     self._used            = 0
-    self._totsz           = self.columnCount() * self.rowCount()
+    self._totsz           = 0
     self._renderDisabled  = False
     self._renderNeeded    = False
     self._verifySelection = True
@@ -325,9 +467,60 @@ class PdoListWidget(TableWidgetDnD):
     self.clearSelection()
     self.setCurrentCell( 0, 0, QtCore.QItemSelectionModel.Clear )
     self.cellDoubleClicked.connect( self.editItem )
-    self.verticalHeader().setVisible(True)
+    vh = self.verticalHeader()
+    vh.sectionDoubleClicked.connect( self.editSegment )
+    vh.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
+    vh.customContextMenuRequested.connect( self.headerMenuEvent )
 
-#    MyHeader( self.verticalHeader() )
+  # overrides generic (no-op) method
+  def contextMenuEvent(self, ev):
+    def mkEdAct(s, r, c):
+      def a():
+        s.editItem(r, c)
+      return a
+    def mkDlAct(s, it):
+      def a():
+        s.deleteItem(it)
+      return a
+
+    idx = self.indexAt( self.mapFromGlobal( ev.globalPos() ) )
+    # apparently model-index is one-based?
+    r = idx.row()
+    c = idx.column()
+    if r < 0:
+      r  = self.rowCount() - 1
+    else:
+      r -= 1
+    if c < 0:
+      c  = self.columnCount() - 1
+    else:
+      c -= 1
+    
+    print("R/C {}/{}".format(r, c))
+    ctxtMenu = QtWidgets.QMenu( self )
+    if ( r * self.columnCount() + c <= self._used ):
+      ctxtMenu.addAction( "Edit PDO Item",   mkEdAct(self, r, c) )
+      idx, off = self.atRowCol( r, c )
+      ctxtMenu.addAction( "Delete PDO Item", mkDlAct(self, self._items[idx] ) )
+    else:
+      ctxtMenu.addAction( "New PDO Item",   mkEdAct(self, r, c) )
+    ctxtMenu.popup( ev.globalPos() )
+
+  def headerMenuEvent(self, ev):
+    def mkAct(s, r, c):
+      def a():
+        s.editItem(r, c)
+      return a
+
+    idx = self.indexAt( self.mapFromGlobal( ev.globalPos() ) )
+    # apparently model-index is one-based?
+    r = idx.row()     - 1
+    c = idx.column()  - 1
+    
+    ctxtMenu = QtWidgets.QMenu( self )
+    ctxtMenu.addAction( "Edit Item", mkAct(self, r, c) )
+    ctxtMenu.popup( ev.globalPos() )
+
 
   def editItem(self, r, c):
     if r * self.columnCount() + c > self._used:
@@ -335,17 +528,75 @@ class PdoListWidget(TableWidgetDnD):
     else:
       idx, off = self.atRowCol( r, c )
       it = self._items[idx]
-    ItemEditor( self.cellWidget(r, c), self, it )
+    w = self.cellWidget(r, c)
+    if ( w is None ):
+      w = self
+    ItemEditor( w, self, it )
 
-  def modifyItem(self, it, name = None, index = None, byteSz = None, nelms = None, isSigned = None):
+  def editSegment(self, r):
+    SegmentEditor( self, self, self.r2seg( r ) )
 
-    if ( it is None ):
-      try:
-        if nelms is None:
-          nelms = 1
-        if isSigned is None:
-          isSigned = False
-        it  = PdoElement(name, index, byteSz, nelms, isSigned)
+  def r2seg(self, r):
+    mx = len(self._segs) - 1
+    if ( mx < 0 ):
+      return None
+    rr = 0
+    for s in self._segs:
+      nrr = rr + s.nDWords
+      if rr <= r and r < nrr:
+        break
+      rr = nrr
+    return s
+
+  def modifySegment(self, seg, name, pos, offset, nelms, swap):
+    newSeg = (seg is None)
+    maxPos = len(self._segs) - 1
+    if ( newSeg ):
+      maxPos += 1
+    if ( pos < 0 or pos > maxPos ):
+      return "ERROR -- position out of range ({}..{})".format(0, maxpos)
+    try:
+      # avoid partial modification; create a dummy object to verify
+      # arguments; if this doesn't throw we are OK
+      nseg = PdoSegment(name, offset, nelms, swap)
+
+      if (newSeg):
+        seg = nseg
+        self.addSegment( nseg )
+      else:
+        rowDiff   = nelms - seg.nDWords
+        wouldHave = self._totsz + rowDiff * self.NCOLS
+        if ( wouldHave < self._used ):
+          raise ValueError("reducing Segment not possible -- delete Elements first")
+        self.setRowCount( self.rowCount() + rowDiff )
+        seg.name    = name
+        seg.offset  = offset
+        seg.nDWords = nelms
+        seg.swap    = swap
+        self._totsz = wouldHave
+
+      self._segs.remove( seg )
+      self._segs.insert( pos, seg )
+      self.renderSegments()
+      return None
+
+    except Exception as e:
+      if newSeg:
+        s = "create new"
+      else:
+        s = "modify"
+      return "ERROR - unable to {} segment - \n{}".format(s, e.args[0])
+    
+
+  def modifyItem(self, it, name, index, byteSz, nelms, isSigned):
+    newEl = (it is None)
+    try:
+      # create a new element -- avoid modifying the original one
+      # in case there is an exception
+      nit = PdoElement( name, index, byteSz, nelms, isSigned )
+
+      if ( it is None ):
+        it  = nit
         pos = len(self._items)
         self.add( it )
         try:
@@ -355,44 +606,39 @@ class PdoListWidget(TableWidgetDnD):
           print( e.args[0] )
         self.render()
         return None
-      except Exception as e:
-        return "ERROR - unable to create new element - \n" + e.args[0]
-    else:
-      if ( name is None ):
-        name = it.name
-      if ( index is None ):
-        index = it.index
-      if ( byteSz is None ):
-        byteSz = it.byteSz
-      if ( nelms is None ):
-        nelms = it.nelms
-      if ( isSigned is None ):
-        isSigned = it.isSigned
-      if (     name     == it.name
-         and nelms    == it.nelms
-         and index    == it.index
-         and byteSz   == it.byteSz
-         and isSigned == it.isSigned ):
-        return None
+      else:
+        if (     name     == it.name
+           and nelms    == it.nelms
+           and index    == it.index
+           and byteSz   == it.byteSz
+           and isSigned == it.isSigned ):
+          return None
 
-    currentUse = it.byteSz * it.nelms
-    wouldUse   = (byteSz * nelms) - currentUse + self._used
+      currentUse = it.byteSz * it.nelms
+      wouldUse   = (byteSz * nelms) - currentUse + self._used
 
-    if (  wouldUse > self._totsz ):
-      return "ERROR -- not enough space\nreduce item size/nelms"
-    it.name     = name
-    it.index    = index
-    it.byteSz   = byteSz
-    it.nelms    = nelms
-    it.isSigned = isSigned
-    self._used  = wouldUse
-    self.selectItemRange( self._items.index( it ) )
-    self.render()
-    return None
+      if (  wouldUse > self._totsz ):
+        return "ERROR -- not enough space\nreduce item size/nelms"
+
+      it.name     = name
+      it.index    = index
+      it.byteSz   = byteSz
+      it.nelms    = nelms
+      it.isSigned = isSigned
+      self._used  = wouldUse
+      self.selectItemRange( self._items.index( it ) )
+      self.render()
+      return None
+    except Exception as e:
+      if newEl:
+        s = "create new"
+      else:
+        s = "edit"
+      return "ERROR - unable to {} element - \n{}".format(s, e.args[0])
 
   def deleteItem(self, it):
     self._items.remove( it )
-    self._used += it.byteSz * it.nelms
+    self._used -= it.byteSz * it.nelms
     # make sure selection is within valid bounds
     self.selectItemRange( -1 )
     self.render()
@@ -443,6 +689,7 @@ class PdoListWidget(TableWidgetDnD):
     if ( byteOff < 0 ):
       return 0,0
     off = 0
+    l   = 0
     for i in range(len(self._items)):
       l    = self._items[i].byteSz * self._items[i].nelms
       noff = off + l
@@ -533,6 +780,12 @@ class PdoListWidget(TableWidgetDnD):
 
   def render(self, trq_row = -1, trq_col = -1, brq_row = -1, brq_col = -1):
     with self.lockSelection():
+
+      self.renderSegments()
+
+      if ( 0 == len( self._items ) ):
+        return
+
       if ( trq_row < 0 ):
         trq_row = 0
       if ( trq_col < 0 ):
@@ -545,6 +798,7 @@ class PdoListWidget(TableWidgetDnD):
         raise RuntimeError("render: requested row out of range")
       if ( trq_col >= self.columnCount() or brq_col >= self.columnCount() ):
         raise RuntimeError("render: requested column out of range")
+
       # make sure we use all the cells covered by the items
       top_row, top_col, bot_row, bot_col = self.coverage( trq_row, trq_col, brq_row, brq_col )
 
@@ -737,3 +991,25 @@ class PdoListWidget(TableWidgetDnD):
     self._botR  = (r, c)
     self.render() 
     self.showSelection()
+
+  def addSegment(self, seg):
+    if not isinstance(seg, PdoSegment):
+      raise ValueError("addSegment requres a 'PdoSegment' object'")
+    self._segs.append( seg )
+    self._totsz += seg.nDWords * self.NCOLS
+    self.setRowCount( self.rowCount() + seg.nDWords )
+    self.render()
+
+  def renderSegments(self):
+    r  = 0
+    bru = QtGui.QBrush( QtGui.QColor( 255, 255, 255, 0) )
+    for s in self._segs:
+      hitm = QtWidgets.QTableWidgetItem()
+      hitm.setText( s.name )
+      self.setVerticalHeaderItem(r, hitm)
+      r += 1
+      for i in range(1, s.nDWords):
+        eitm = QtWidgets.QTableWidgetItem()
+        eitm.setBackground( bru )
+        self.setVerticalHeaderItem(r, eitm)
+        r += 1

@@ -220,6 +220,34 @@ class Segment(object):
 
 class PdoEntry(object):
 
+  def __init__(self, elmLst, name, index, nelms, bitSize, isSigned, typeName=None, indexedName=True):
+    object.__init__(self)
+    # initialize private vars because setters cross-check
+    # and they must exist
+    self._elmLst      = elmLst
+    if ( elmLst is None ): 
+      self._elmLst = []
+      for i in range(nelms):
+        self._elmLst.append( ET.Element( "Entry" ) )
+    
+    self._isLocked    = False
+    self._index       = 0
+    self._indexedName = indexedName
+    self._typeName    = typeName
+    # the following assignments define the order of sub-elements
+    # in the associated XML when this is created from scratch.
+    # The order has to adhere to the XML schema!
+    self.index        = index
+    self.syncElms( "SubIndex", [ int2hd( i+1, wid=2 ) for i in range( self.nelms ) ] )
+    self.bitSize      = bitSize
+    self.name         = name
+    self.isSigned     = isSigned
+    if typeName is None:
+      typeName = ""
+    self.typeName     = typeName
+    self.indexedName  = indexedName
+
+
   @property
   def typeName(self):
     if ( self._typeName is None or 0 == len(self._typeName) ):
@@ -355,34 +383,15 @@ class PdoEntry(object):
       se.text = str( subVal[i] )
       i += 1
 
-  def __init__(self, elmLst, name, index, nelms, bitSize, isSigned, typeName=None, indexedName=True):
-    object.__init__(self)
-    # initialize private vars because setters cross-check
-    # and they must exist
-    self._elmLst      = elmLst
-    if ( elmLst is None ): 
-      self._elmLst = []
-      for i in range(nelms):
-        self._elmLst.append( ET.Element( "Entry" ) )
-    
-    self._isLocked    = False
-    self._index       = 0
-    self._indexedName = indexedName
-    self._typeName    = typeName
-    # the following assignments define the order of sub-elements
-    # in the associated XML when this is created from scratch.
-    # The order has to adhere to the XML schema!
-    self.index        = index
-    self.syncElms( "SubIndex", [ int2hd( i+1, wid=2 ) for i in range( self.nelms ) ] )
-    self.bitSize      = bitSize
-    self.name         = name
-    self.isSigned     = isSigned
-    if typeName is None:
-      typeName = ""
-    self.typeName     = typeName
-    self.indexedName  = indexedName
-
 class Pdo(object):
+
+  def __init__(self, index, name, sm):
+    self._segs   = []
+    self._ents   = []
+    self._index  = index
+    self._sm     = sm
+    self._byteSz = 0
+    self._used   = 0
 
   @property
   def index(self):
@@ -414,14 +423,6 @@ class Pdo(object):
   @name.setter
   def name(self, val):
     self._name = val
-
-  def __init__(self, index, name, sm):
-    self._segs   = []
-    self._ents   = []
-    self._index  = index
-    self._sm     = sm
-    self._byteSz = 0
-    self._used   = 0
 
   def addEntry(self, e):
     if not isinstance(e, PdoEntry):
