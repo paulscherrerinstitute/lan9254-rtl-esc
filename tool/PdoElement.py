@@ -20,6 +20,7 @@ class Sel(QtCore.QItemSelectionModel):
     return super().event(e)
 
 class PdoElement(object):
+
   def __init__(self, name, index, byteSize, nelms = 1, isSigned = False, typeName=None, indexedName=True):
     super().__init__()
     self.name        = name
@@ -70,6 +71,24 @@ class PdoElement(object):
       raise ValueError("byteSz must 1,2,4 or 8")
     self._byteSz = val
 
+  @staticmethod
+  def bs2str(isSigned, byteSz):
+    if isSigned:
+      pre = "S"
+    else:
+      pre = "U"
+    return "{}{:d}".format(pre,8*byteSz) 
+
+  @staticmethod
+  def str2bs(s):
+    isSigned = { 'S': True, 'U': False }.get( s[0].upper() )
+    byteSz   = int(s[1:],0)
+    if not byteSz in [8, 16, 32, 64]:
+      byteSz = None
+    else:
+      byteSz = int(byteSz / 8)
+    return byteSz, isSigned
+
   @property
   def isSigned(self):
     return self._isSigned
@@ -102,6 +121,41 @@ class PdoElement(object):
       raise ValueError("typeName must be a string")
     self._typeName = val
 
+# Action which emits itself
+class ActAction(QtWidgets.QAction):
+
+  _signal = QtCore.pyqtSignal(QtWidgets.QAction)
+
+  def __init__(self, name, parent=None):
+    QtWidgets.QAction.__init__(self, name, parent)
+    self.triggered.connect( self )
+
+  def __call__(self):
+    self._signal.emit(self)
+
+  def connect(self, slot):
+    self._signal.connect( slot )
+
+class MenuButton(QtWidgets.QPushButton):
+
+  def __init__(self, lbls, parent = None):
+    super().__init__(parent)
+    menu = QtWidgets.QMenu()
+    self.setText( lbls[0] )
+    # if the first label is also among the
+    # following elements then it is the default/initial
+    # value
+    if lbls[0] in lbls[1:]:
+      lbls = lbls[1:]
+    for i in lbls:
+      a = ActAction(i, self)
+      a.connect( self.activated )
+      menu.addAction( a )
+    self.setMenu( menu )
+
+  def activated(self, act):
+    self.setText(act.text())
+
 class ItemEditor(QtWidgets.QDialog):
 
   def __init__(self, parent, tbl, itm = None):
@@ -109,31 +163,63 @@ class ItemEditor(QtWidgets.QDialog):
     self.tbl = tbl
     self.itm = itm
     if ( itm is None ):
-      tit = "Create New Item"
+      tit      = "Create New Item"
+      tmplName = "<new>"
+      tmplIndx = 0x5000
+      tmplNelm = 1
+      tmplBySz = 4
+      tmplSgnd = False
     else:
       tit = "Editing " + itm.name
+      tmplName = itm.name
+      tmplIndx = itm.index
+      tmplNelm = itm.nelms
+      tmplBySz = itm.byteSz
+      tmplSgnd = itm.isSigned
     self.setWindowTitle( tit )
     self.buttonBox = QtWidgets.QDialogButtonBox( QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel )
+    if not itm is None:
+      delBtn = QtWidgets.QPushButton( "Delete" )
+      delBtn.clicked.connect( self.delete )
+      # use 'reject' role to close the dialog without any further action in 
+      # dialogDoneCheck
+      delBtn = self.buttonBox.addButton( delBtn, QtWidgets.QDialogButtonBox.RejectRole )
+      
     self.buttonBox.accepted.connect( self.accept )
     self.buttonBox.rejected.connect( self.reject )
     self.layout    = QtWidgets.QGridLayout()
 
-    self.nameEdt  = self.addRow( "Name",          itm.name )
-    v             = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]+"))
-    self.indexEdt = self.addRow( "Index (hex)",  "{:04x}".format(itm.index), v)
-    v             = QtGui.QIntValidator(0, 32)
-    self.nelmsEdt = self.addRow( "# Elements",   "{:d}".format(itm.nelms), v)
+    self.nameEdt   = self.addRow( "Name",          tmplName )
+    v              = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]+"))
+    self.indexEdt  = self.addRow( "Index (hex)",  "{:04x}".format(tmplIndx), v)
+    v              = QtGui.QIntValidator(0, 32)
+    self.nelmsEdt  = self.addRow( "# Elements",   "{:d}".format(tmplNelm), v)
+
+    bsChoice       = [ PdoElement.bs2str( tmplSgnd, tmplBySz ) ]
+    for isS in [True, False]:
+      for bs in [1, 2, 4, 8]:
+        bsChoice.append( PdoElement.bs2str( isS, bs ) )
+
+    self.byteSzEdt = self.addRow( "Type", bsChoice )
 
     self.msgLbl   = QtWidgets.QLabel("")
     self.layout.addWidget( self.msgLbl,    self.layout.rowCount(), 0, 1, self.layout.columnCount() )
     self.layout.addWidget( self.buttonBox, self.layout.rowCount(), 0, 1, self.layout.columnCount() )
     self.setLayout( self.layout    )
-    while self.exec():
+    self.finished.connect( self.dialogDoneCheck )
+    self.open()
+
+  def dialogDoneCheck(self, result):
+    if 1 == result:
       msg = self.validInput()
       if msg is None: 
         return
       self.msgLbl.setText( msg )
-      # keep executing
+      self.open()
+
+  def delete(self):
+    self.tbl.deleteItem( self.itm ) 
+    print("re-select", self.tbl._botR[0], self.tbl._botR[1])
 
   def validInput(self):
     if ( len(self.nelmsEdt.text()) == 0 ):
@@ -142,24 +228,30 @@ class ItemEditor(QtWidgets.QDialog):
       return "ERROR -- empty input: 'name'"
     if ( len(self.indexEdt.text()) == 0 ):
       return "ERROR -- empty input: 'index'"
-    name   = self.nameEdt.text()
-    index  = int( self.indexEdt.text(), 16 )
-    nelms  = int( self.nelmsEdt.text(),  0 )
-    if self.itm is None:
-      raise RuntimeError("Creating new items not implemented yet")
-    if not self.tbl.modifyItem(self.itm, name, index, nelms):
-      return "ERROR -- not enough space\nreduce item size/nelms"
+    name     = self.nameEdt.text()
+    index    = int( self.indexEdt.text(), 16 )
+    nelms    = int( self.nelmsEdt.text(),  0 )
+    byteSz , isSigned = PdoElement.str2bs( self.byteSzEdt.text() )
+    print("byteSz", byteSz, isSigned)
+    if ( (byteSz is None) or (isSigned is None)):
+      raise RuntimeError("Internal error: -- unable to convert byte size from string")
+    msg      = self.tbl.modifyItem(self.itm, name, index, byteSz, nelms, isSigned)
+    if not msg is None and len(msg) != 0:
+      return msg
     return None
 
   def addRow(self, lbl, ini, val = None):
     r = self.layout.rowCount()
     self.layout.addWidget( QtWidgets.QLabel(lbl), r, 0 )
-    ledt = QtWidgets.QLineEdit()
-    ledt.setMaxLength( 40 )
-    ledt.setText( ini )
-    ledt.setValidator( val )
-    self.layout.addWidget( ledt, r, 1 )
-    return ledt
+    if ( isinstance(ini, list) ):
+       wdgt = MenuButton( ini )
+    else:
+      wdgt = QtWidgets.QLineEdit()
+      wdgt.setMaxLength( 40 )
+      wdgt.setText( ini )
+      wdgt.setValidator( val )
+    self.layout.addWidget( wdgt, r, 1 )
+    return wdgt
 
 class MyHeaderModel(QtCore.QAbstractItemModel):
   def __init__(self, parent = None):
@@ -238,7 +330,6 @@ class PdoListWidget(TableWidgetDnD):
 #    MyHeader( self.verticalHeader() )
 
   def editItem(self, r, c):
-    print("Double-click ", r, c)
     if r * self.columnCount() + c > self._used:
       it = None
     else:
@@ -246,38 +337,65 @@ class PdoListWidget(TableWidgetDnD):
       it = self._items[idx]
     ItemEditor( self.cellWidget(r, c), self, it )
 
-  def modifyItem(self, it, name = None, index = None, nelms = None, byteSz = None, isSigned = None):
-    if ( name is None ):
-      name = it.name
-    if ( index is None ):
-      index = it.index
-    if ( nelms is None ):
-      nelms = it.nelms
-    if ( byteSz is None ):
-      byteSz = it.byteSz
-    if ( isSigned is None ):
-      isSigned = it.isSigned
-    if (     name     == it.name
+  def modifyItem(self, it, name = None, index = None, byteSz = None, nelms = None, isSigned = None):
+
+    if ( it is None ):
+      try:
+        if nelms is None:
+          nelms = 1
+        if isSigned is None:
+          isSigned = False
+        it  = PdoElement(name, index, byteSz, nelms, isSigned)
+        pos = len(self._items)
+        self.add( it )
+        try:
+          self.selectItemRange( pos )
+        except Exception as e:
+          print("Warning - unable to select new item")
+          print( e.args[0] )
+        self.render()
+        return None
+      except Exception as e:
+        return "ERROR - unable to create new element - \n" + e.args[0]
+    else:
+      if ( name is None ):
+        name = it.name
+      if ( index is None ):
+        index = it.index
+      if ( byteSz is None ):
+        byteSz = it.byteSz
+      if ( nelms is None ):
+        nelms = it.nelms
+      if ( isSigned is None ):
+        isSigned = it.isSigned
+      if (     name     == it.name
          and nelms    == it.nelms
          and index    == it.index
          and byteSz   == it.byteSz
          and isSigned == it.isSigned ):
-      return True
-    wouldUse = (byteSz * nelms) - (it.byteSz * it.nelms) + self._used
+        return None
+
+    currentUse = it.byteSz * it.nelms
+    wouldUse   = (byteSz * nelms) - currentUse + self._used
+
     if (  wouldUse > self._totsz ):
-      return False
-    if ( byteSz != it.byteSz or nelms != it.nelms ):
-      self._topL = (-1, -1)
-      self._topR = (-1, -1)
+      return "ERROR -- not enough space\nreduce item size/nelms"
     it.name     = name
     it.index    = index
     it.byteSz   = byteSz
     it.nelms    = nelms
     it.isSigned = isSigned
     self._used  = wouldUse
-    print("New Name: ", name)
+    self.selectItemRange( self._items.index( it ) )
     self.render()
-    return True
+    return None
+
+  def deleteItem(self, it):
+    self._items.remove( it )
+    self._used += it.byteSz * it.nelms
+    # make sure selection is within valid bounds
+    self.selectItemRange( -1 )
+    self.render()
 
   @contextmanager
   def lockSelection(self):
@@ -343,10 +461,26 @@ class PdoListWidget(TableWidgetDnD):
     c =     byteoff % self.columnCount()
     return r,c
 
+  def idx2bo(self, idx):
+    off = 0
+    if ( idx > len(self._items) ):
+      idx = len(self._items)
+    for i in range(idx):
+      off += self._items[i].byteSz * self._items[i].nelms
+    return off
+
+  def idx2rc(self, idx):
+    return self.bo2rc( self.idx2bo( idx ) )
+
+  def rc2bo(self, r,c):
+    return r*self.columnCount() + c
+
   def add(self, el, disableRender = True):
     if isinstance(el, list):
       for e in el:
         self.add(e)
+      if not disableRender:
+        self.render()
     else:
       if ( not isinstance( el, PdoElement ) ):
         raise ValueError("may only add a PdoElement object")
@@ -360,21 +494,15 @@ class PdoListWidget(TableWidgetDnD):
     else:
       self.render()
 
-  def idx2bo(self, idx):
-    off = 0
-    if ( idx > len(self._items) ):
-      idx = len(self._items)
-    for i in range(idx):
-      off += self._items[i].byteSz * self._items[i].nelms
-    return off
-
-  def rc2bo(self, r,c):
-    return r*self.columnCount() + c
-
-  def coverage(self, row, col):
-    idx, off = self.atRowCol(row, col)
-    bottom   = off
-    top      = bottom + self._items[idx].nelms * self._items[idx].byteSz - 1
+  def coverage(self, rowF, colF, rowT = -1, colT = -1):
+    if ( colT < 0 ):
+      colT = colF
+    if ( rowT < 0 ):
+      rowT = rowF
+    fst_idx, fst_bo = self.atRowCol(rowF, colF)
+    bottom          = fst_bo
+    lst_idx, lst_bo = self.atRowCol(rowT, colT)
+    top      = lst_bo + self._items[lst_idx].nelms * self._items[lst_idx].byteSz - 1
     br, bc   = self.bo2rc( bottom )
     tr, tc   = self.bo2rc( top    )
     return br, bc, tr, tc
@@ -403,23 +531,22 @@ class PdoListWidget(TableWidgetDnD):
     lbl.setToolTip( itm.name )
     return lbl
 
-  def render(self, top_row = -1, top_col = -1, bot_row = -1, bot_col = -1):
+  def render(self, trq_row = -1, trq_col = -1, brq_row = -1, brq_col = -1):
     with self.lockSelection():
-      if ( top_row < 0 ):
-        top_row = 0
-      if ( top_col < 0 ):
-        top_col = 0
-      if ( bot_row < 0 ):
-        bot_row = self.rowCount() - 1
-      if ( bot_col < 0 ):
-        bot_col = self.columnCount() - 1
-      if ( top_row >= self.rowCount() or bot_row >= self.rowCount() ):
+      if ( trq_row < 0 ):
+        trq_row = 0
+      if ( trq_col < 0 ):
+        trq_col = 0
+      if ( brq_row < 0 ):
+        brq_row = self.rowCount() - 1
+      if ( brq_col < 0 ):
+        brq_col = self.columnCount() - 1
+      if ( trq_row >= self.rowCount() or brq_row >= self.rowCount() ):
         raise RuntimeError("render: requested row out of range")
-      if ( top_col >= self.columnCount() or bot_col >= self.columnCount() ):
+      if ( trq_col >= self.columnCount() or brq_col >= self.columnCount() ):
         raise RuntimeError("render: requested column out of range")
       # make sure we use all the cells covered by the items
-      top_row, top_col, r, c = self.coverage( top_row, top_col )
-      r, c, bot_row, bot_col = self.coverage( bot_row, bot_col )
+      top_row, top_col, bot_row, bot_col = self.coverage( trq_row, trq_col, brq_row, brq_col )
 
       ii, off = self.atRowCol( top_row, top_col )
       n  = 0
@@ -473,9 +600,19 @@ class PdoListWidget(TableWidgetDnD):
           c -= self.columnCount()
           r += 1
         print("new iteracion ", r, c, ii)
+
+      # make sure the rest of the table is cleared (in case we
+      # deleted elements
+      while r < brq_row or (r == brq_row and c <= brq_col):
+        self.setSpan      ( r, c, 1, 1)
+        self.setCellWidget( r, c, None )
+        c += 1
+        if ( c == self.columnCount() ):
+          c  = 0
+          r += 1
+
       self._renderNeeded = False
-      self.setCurrentCell( 0, 0, QtCore.QItemSelectionModel.Clear )
-      self.clearSelection()
+      self.showSelection()
 
   def on_selection_changed(self, a, b):
     if not self.verifySelection():
@@ -485,6 +622,12 @@ class PdoListWidget(TableWidgetDnD):
     cr = self.currentRow()
     cc = self.currentColumn()
     if ( (1 == len(self.selectedIndexes())) or ( self._topL[0] < 0 ) ):
+      if self.cellWidget( cr, cc ) is None:
+        # single cell outside of the configured are
+        self._topL = (-1, -1)
+        self._botR = (-1, -1)
+        self.showSelection()
+        return
       self._topL = ( cr, cc )
       self._botR = self._topL
     else:
@@ -506,19 +649,24 @@ class PdoListWidget(TableWidgetDnD):
           self._botR = (cr, cc)
 
     # make sure we cover all elements of arrays
-    tr,tc,br,bc = self.coverage( self._topL[0], self._topL[1] )
+    tr,tc,br,bc = self.coverage( self._topL[0], self._topL[1], self._botR[0], self._botR[1] )
     self._topL = (tr, tc)
-    tr,tc,br,bc = self.coverage( self._botR[0], self._botR[1] )
     self._botR = (br, bc)
 
     print("SELCH", a, b, len(a), len(b), len(self.selectedIndexes()))
-    self.doSelect(self._topL[0], self._topL[1], self._botR[0], self._botR[1])
+    self.showSelection()
 
-  def doSelect(self, minr, minc, maxr, maxc):
+  def showSelection(self):
     with self.lockSelection():
+      minr = self._topL[0]
+      minc = self._topL[1]
+      maxr = self._botR[0]
+      maxc = self._botR[1]
       self.setCurrentCell( minr, minc, QtCore.QItemSelectionModel.Clear )
       self.setCurrentCell( minr, minc, QtCore.QItemSelectionModel.SelectCurrent )
-      print("doSelect ", minr, minc, maxr, maxc)
+      if ( minr < 0 or maxr < 0 ):
+        return # nothing selected
+      print("showSelection ", minr, minc, maxr, maxc)
       r = minr
       c = minc
       while ( r < maxr ) or ( ( r == maxr ) and ( c <= maxc ) ):
@@ -528,6 +676,29 @@ class PdoListWidget(TableWidgetDnD):
         if ( c >= self.columnCount() ):
           c  = 0
           r += 1
+
+  def selectItemRange(self, elIdxFrom, elIdxTo = -1):
+    if ( elIdxTo < 0 ):
+      elIdxTo = elIdxFrom
+
+    if ( elIdxTo >= len(self._items) ):
+      elIdxTo = len(self._items) - 1
+
+    if ( len(self._items) == 0 ):
+      self._topL = (-1, -1)
+      self._botR = (-1, -1)
+      return
+
+    if ( ( elIdxFrom < 0 ) ):
+      # just verify the current range
+      rf, cf         = self._topL[0], self._topL[1]
+      rt, ct         = self._botR[0], self._botR[1]
+    else:
+      rf,cf           = self.idx2rc( elIdxFrom )
+      rt,ct           = self.idx2rc( elIdxTo   )
+    rf, cf, rt, ct  = self.coverage( rf, cf, rt, ct )
+    self._topL      = (rf, cf)
+    self._botR      = (rt, ct)
 
   def moveItems(self, drop_row, drop_col, from_row, from_col, to_row, to_col):
     # ignore 'from' -- we have the selected indices stored in self._topL/self._topR
@@ -565,4 +736,4 @@ class PdoListWidget(TableWidgetDnD):
     r,c  = self.bo2rc( tgt_off + off_diff )
     self._botR  = (r, c)
     self.render() 
-    self.doSelect(self._topL[0], self._topL[1], self._botR[0], self._botR[1])
+    self.showSelection()
