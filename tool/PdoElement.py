@@ -169,7 +169,7 @@ class DialogBase(QtWidgets.QDialog):
       self.deleteButton.clicked.connect( self.delete )
       # use 'reject' role to close the dialog without any further action in 
       # dialogDoneCheck
-      self.buttonBox.addButton( self.deleteButton, QtWidgets.QDialogButtonBox.RejectRole )
+      self.buttonBox.addButton( self.deleteButton, QtWidgets.QDialogButtonBox.ActionRole )
     self.buttonBox.accepted.connect( self.accept )
     self.buttonBox.rejected.connect( self.reject )
     self.layout    = QtWidgets.QGridLayout()
@@ -199,8 +199,10 @@ class DialogBase(QtWidgets.QDialog):
   def dialogDoneCheck(self, result):
     if 1 == result:
       msg = self.validInput()
-      if msg is None: 
-        return
+      self.dialogError(msg)
+
+  def dialogError(self, msg):
+    if not msg is None:
       self.msgLbl.setText( msg )
       self.open()
 
@@ -208,7 +210,7 @@ class DialogBase(QtWidgets.QDialog):
     return None
 
   def delete(self):
-    pass
+    return None
 
 class SegmentEditor(DialogBase):
 
@@ -248,7 +250,7 @@ class SegmentEditor(DialogBase):
     self.show()
 
   def delete(self):
-    self.tbl.deleteSegment( self.seg ) 
+    self.dialogError( self.tbl.deleteSegment( self.seg ) )
 
   def validInput(self):
     if ( len(self.nelmsEdt.text()) == 0 ):
@@ -471,9 +473,10 @@ class PdoListWidget(TableWidgetDnD):
     vh.sectionDoubleClicked.connect( self.editSegment )
     vh.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     vh.customContextMenuRequested.connect( self.headerMenuEvent )
+    self.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
+    self.customContextMenuRequested.connect( self.tableMenuEvent )
 
-  # overrides generic (no-op) method
-  def contextMenuEvent(self, ev):
+  def tableMenuEvent(self, pt):
     def mkEdAct(s, r, c):
       def a():
         s.editItem(r, c)
@@ -483,43 +486,38 @@ class PdoListWidget(TableWidgetDnD):
         s.deleteItem(it)
       return a
 
-    idx = self.indexAt( self.mapFromGlobal( ev.globalPos() ) )
-    # apparently model-index is one-based?
-    r = idx.row()
-    c = idx.column()
-    if r < 0:
-      r  = self.rowCount() - 1
-    else:
-      r -= 1
-    if c < 0:
-      c  = self.columnCount() - 1
-    else:
-      c -= 1
-    
-    print("R/C {}/{}".format(r, c))
+    print(pt)
+    idx = self.indexAt( pt )
+    r   = idx.row()
+    c   = idx.column()
+
     ctxtMenu = QtWidgets.QMenu( self )
-    if ( r * self.columnCount() + c <= self._used ):
+    if ( r >= 0 and c >= 0 and  r * self.columnCount() + c <= self._used ):
       ctxtMenu.addAction( "Edit PDO Item",   mkEdAct(self, r, c) )
       idx, off = self.atRowCol( r, c )
       ctxtMenu.addAction( "Delete PDO Item", mkDlAct(self, self._items[idx] ) )
     else:
       ctxtMenu.addAction( "New PDO Item",   mkEdAct(self, r, c) )
-    ctxtMenu.popup( ev.globalPos() )
+    ctxtMenu.popup( self.viewport().mapToGlobal( pt ) )
 
-  def headerMenuEvent(self, ev):
-    def mkAct(s, r, c):
+  def headerMenuEvent(self, pt):
+    def mkEdtAct(s, r):
       def a():
-        s.editItem(r, c)
+        s.editSegment(r)
+      return a
+    def mkNewAct(s):
+      def a():
+        s.editSegment(-1)
       return a
 
-    idx = self.indexAt( self.mapFromGlobal( ev.globalPos() ) )
-    # apparently model-index is one-based?
-    r = idx.row()     - 1
-    c = idx.column()  - 1
+    idx = self.indexAt( pt )
+    r = idx.row()
+    c = idx.column()
     
     ctxtMenu = QtWidgets.QMenu( self )
-    ctxtMenu.addAction( "Edit Item", mkAct(self, r, c) )
-    ctxtMenu.popup( ev.globalPos() )
+    ctxtMenu.addAction( "Edit   Segment", mkEdtAct(self,  r) )
+    ctxtMenu.addAction( "Create Segment", mkEdtAct(self, -1) )
+    ctxtMenu.popup( self.verticalHeader().mapToGlobal( pt ) )
 
 
   def editItem(self, r, c):
@@ -536,9 +534,17 @@ class PdoListWidget(TableWidgetDnD):
   def editSegment(self, r):
     SegmentEditor( self, self, self.r2seg( r ) )
 
+  def seg2bo(self, seg):
+    off = 0
+    for s in self._segs:
+      if s == seg:
+        return off
+      off += s.nDWords * self.NCOLS
+    raise RuntimeError("segment not found in list")
+
   def r2seg(self, r):
     mx = len(self._segs) - 1
-    if ( mx < 0 ):
+    if ( mx < 0 or r < 0 ):
       return None
     rr = 0
     for s in self._segs:
@@ -999,6 +1005,24 @@ class PdoListWidget(TableWidgetDnD):
     self._totsz += seg.nDWords * self.NCOLS
     self.setRowCount( self.rowCount() + seg.nDWords )
     self.render()
+
+  def deleteSegment(self, seg):
+    try:
+      if not seg in self._segs:
+        raise ValueError("segment not found")
+
+      newTotal = self._totsz - seg.nDWords * self.NCOLS
+      off      = self.seg2bo(seg)
+      if off < self._used:
+        raise RuntimeError("cannot delete segment in use - (delete PDO elements first)")
+
+      self._segs.remove(seg)
+      r = int(off / self.NCOLS)
+      self.setRowCount( r )
+      self.renderSegments()
+      return None
+    except Exception as e:
+      return "ERROR -- unable to delete segment\n" + e.args[0]
 
   def renderSegments(self):
     r  = 0
