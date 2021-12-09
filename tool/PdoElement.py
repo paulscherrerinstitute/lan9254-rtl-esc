@@ -4,6 +4,7 @@
 from PyQt5           import QtCore, QtGui, QtWidgets
 from TableWidgetDnD  import TableWidgetDnD
 from contextlib      import contextmanager
+from tool            import PdoSegment
 
 class Sel(QtCore.QItemSelectionModel):
   def __init__(self, *args, **kwargs):
@@ -231,7 +232,7 @@ class SegmentEditor(DialogBase):
     else:
       tit = "Editing DBUF Mapping Segment'" + seg.name + "'"
       tmplName = seg.name
-      tmplOffs = seg.offset
+      tmplOffs = seg.byteOffset
       tmplNelm = seg.nDWords
       tmplSwap = seg.swap
       tmplPos  = tbl._segs.index(seg)
@@ -391,74 +392,10 @@ class MyHeader(QtWidgets.QHeaderView):
       return False
     return super().eventFilter(o, e)  
 
-class PdoSegment(object):
-  @staticmethod
-  def swp2str(swap):
-    return "{:d}-bytes".format(swap)
-
-  @staticmethod
-  def str2swp(s):
-    return int(s[0])
-
-  def __init__(self, name, offset, nDWords, swap=1):
-    self._name    = None
-    self._nDWords = 2
-    self._swap    = 1
-    self._offset  = 0
-    self.name     = name
-    self.nDWords  = nDWords
-    self.offset   = offset
-    self.swap     = swap
-
-  def isFixed(self):
-    return False
-
-  @property
-  def name(self):
-    return self._name
-
-  @name.setter
-  def name(self, val):
-    self._name = val
-
-  @property
-  def nDWords(self):
-    return self._nDWords
-
-  @nDWords.setter
-  def nDWords(self, val):
-    if not isinstance(val, int) or val <= 0 or val > 1024:
-      raise ValueError("nDWords not an int or out of range")
-    if ( 8 == self.swap and (val % 2) != 0 ):
-      raise ValueError("nDWords of a 8-byte swapped segment must be even")
-    self._nDWords = val
-
-  @property
-  def offset(self):
-    return self._offset
-
-  @offset.setter
-  def offset(self, val):
-    if not isinstance(val, int) or val < 0 or val > 4*1024:
-      raise ValueError("offset not an int or out of range")
-    self._offset = val
-
-  @property
-  def swap(self):
-    return self._swap
-
-  @swap.setter
-  def swap(self, val):
-    if not isinstance(val, int) or not val in [1,2,4,8]:
-      raise ValueError("swap not an int or out of range")
-    if ( 8 == val and (self.nDWords % 2) != 0 ):
-      raise ValueError("nDWords of a 8-byte swapped segment must be even")
-    self._swap = val
-
 class FixedPdoSegment(PdoSegment):
 
-  def __init__(self, name, offset, nDWords, swap=1):
-    super().__init__(name, offset, nDWords, swap)
+  def __init__(self, name, byteOffset, nDWords, swap=1):
+    super().__init__(name, byteOffset, nDWords, swap)
 
   def isFixed(self):
     return True
@@ -592,7 +529,7 @@ class PdoListWidget(TableWidgetDnD):
       rr = nrr
     return s
 
-  def modifySegment(self, seg, name, pos, offset, nelms, swap):
+  def modifySegment(self, seg, name, pos, byteOffset, nelms, swap):
     newSeg = (seg is None)
     maxPos = len(self._segs) - 1
     if ( newSeg ):
@@ -605,22 +542,22 @@ class PdoListWidget(TableWidgetDnD):
     try:
       # avoid partial modification; create a dummy object to verify
       # arguments; if this doesn't throw we are OK
-      nseg = PdoSegment(name, offset, nelms, swap)
+      nseg = PdoSegment(name, byteOffset, nelms, swap)
 
       if (newSeg):
         seg = nseg
         self.addSegment( nseg )
       else:
-        rowDiff   = nelms - seg.nDWords
-        wouldHave = self._totsz + rowDiff * self.NCOLS
+        rowDiff         = nelms - seg.nDWords
+        wouldHave       = self._totsz + rowDiff * self.NCOLS
         if ( wouldHave < self._used ):
           raise ValueError("reducing Segment not possible -- delete Elements first")
         self.setRowCount( self.rowCount() + rowDiff )
-        seg.name    = name
-        seg.offset  = offset
-        seg.nDWords = nelms
-        seg.swap    = swap
-        self._totsz = wouldHave
+        seg.name        = name
+        seg.byteOffset  = byteOffset
+        seg.nDWords     = nelms
+        seg.swap        = swap
+        self._totsz     = wouldHave
 
       self._segs.remove( seg )
       self._segs.insert( pos, seg )

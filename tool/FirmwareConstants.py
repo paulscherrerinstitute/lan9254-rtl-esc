@@ -57,4 +57,14 @@ class FirmwareConstants(object):
     return 16
 
   @classmethod
-  def DEVSPECIFIC_CATEGORY( sm ):
+  def DEVSPECIFIC_CATEGORY_TXT():
+    return "1"
+
+  @classmethod
+  def PDO_NUM_EVENT_DWORDS():
+    return 4
+
+class HardwareConstants(object):
+  @classmethod
+  def EEPROM_SIZE_BYTES():
+    return 2048
