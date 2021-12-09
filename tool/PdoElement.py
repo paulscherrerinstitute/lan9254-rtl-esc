@@ -205,6 +205,8 @@ class DialogBase(QtWidgets.QDialog):
     if not msg is None:
       self.msgLbl.setText( msg )
       self.open()
+    else:
+      self.done(0)
 
   def validInput(self):
     return None
@@ -250,7 +252,7 @@ class SegmentEditor(DialogBase):
     self.show()
 
   def delete(self):
-    self.dialogError( self.tbl.deleteSegment( self.seg ) )
+    return self.dialogError( self.tbl.deleteSegment( self.seg ) )
 
   def validInput(self):
     if ( len(self.nelmsEdt.text()) == 0 ):
@@ -454,6 +456,7 @@ class PdoSegment(object):
     self._swap = val
 
 class FixedPdoSegment(PdoSegment):
+
   def __init__(self, name, offset, nDWords, swap=1):
     super().__init__(name, offset, nDWords, swap)
 
@@ -464,7 +467,7 @@ class PdoListWidget(TableWidgetDnD):
 
   NCOLS = 4
 
-  def __init__(self, parent = None):
+  def __init__(self, maxHwSegs, parent = None):
     super().__init__(0, self.NCOLS, parent)
     self._items           = list()
     self._segs            = list()
@@ -475,6 +478,7 @@ class PdoListWidget(TableWidgetDnD):
     self._verifySelection = True
     self._topL            = (-1,-1)
     self._botR            = (-1,-1)
+    self._maxHwSegs       = maxHwSegs
     self.selectionModel().selectionChanged.connect( self.on_selection_changed )
     self.clearSelection()
     self.setCurrentCell( 0, 0, QtCore.QItemSelectionModel.Clear )
@@ -483,6 +487,16 @@ class PdoListWidget(TableWidgetDnD):
     vh.sectionDoubleClicked.connect( self.editSegment )
     vh.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     vh.customContextMenuRequested.connect( self.headerMenuEvent )
+    vh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+    self.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+    self.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+    self.setAutoScroll(True) # auto-scroll when dragging
+    # Yet another annoying issue - when scrollbars are managed automatically
+    # the 'AdjustToContents' policy still reserves space for them even if they
+    # are not visible - leading to ugly gaps. So we might as well leave them
+    # on permanently :-(
+    self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
+    self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOn)
     self.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     self.customContextMenuRequested.connect( self.tableMenuEvent )
 
@@ -631,7 +645,7 @@ class PdoListWidget(TableWidgetDnD):
       if ( it is None ):
         it  = nit
         pos = len(self._items)
-        self.add( it )
+        self.insert( None, it )
         try:
           self.selectItemRange( pos )
         except Exception as e:
@@ -756,9 +770,16 @@ class PdoListWidget(TableWidgetDnD):
     return r*self.columnCount() + c
 
   def add(self, el, disableRender = True):
+    return self.insert( None, el, disableRender )
+
+  def insert(self, pos, el, disableRender = True):
+    if pos is None:
+      # append
+      pos = len(self._items)
     if isinstance(el, list):
       for e in el:
-        self.add(e)
+        self.insert(pos, e)
+        pos += 1
       if not disableRender:
         self.render()
     else:
@@ -768,7 +789,7 @@ class PdoListWidget(TableWidgetDnD):
     if ( need + self._used > self._totsz ):
       raise RuntimeError("cannot add element - not enough space (add rows)")
     self._used += need
-    self._items.append( el )
+    self._items.insert( pos, el )
     if (disableRender):
       self.needRender()
     else:
@@ -1035,9 +1056,29 @@ class PdoListWidget(TableWidgetDnD):
     self.render() 
     self.showSelection()
 
+  def hwSegmentsUsed(self, seg = None ):
+    # word-swapping is implemented by using
+    # two 'real' mappings per longword
+    rv = 0
+    if seg is None:
+      for s in self._segs:
+        rv += self.hwSegmentsUsed( s )
+    else:
+      if 8 == seg.swap:
+        rv += seg.nDWords
+      else:
+        rv += 1
+    return rv
+
   def addSegment(self, seg):
     if not isinstance(seg, PdoSegment):
       raise ValueError("addSegment requres a 'PdoSegment' object'")
+    # 8-byte swap is emulated by using two mappings per dword!
+    if ( self.hwSegmentsUsed() + self.hwSegmentsUsed( seg ) > self._maxHwSegs ):
+      raise ValueError("unable to add segment; not enough firmware resources\n" +
+                       "(max. {}).\n".format(self._maxHwSegs) +
+                       "NOTE: 8-byte swap is emulated by using TWO actual maps\n" +
+                       "      per dword!")
     self._segs.append( seg )
     self._totsz += seg.nDWords * self.NCOLS
     self.setRowCount( self.rowCount() + seg.nDWords )
