@@ -66,11 +66,9 @@ class FixedPdoForm(object):
     self._top = QtWidgets.QVBoxLayout()
     vb = self._top
     lbl = QtWidgets.QLabel("Standard PDO Entries")
-    lbl.setAlignment(QtCore.Qt.AlignCenter)
     vb.addWidget( lbl )
 #    vb.addItem( QtWidgets.QSpacerItem(5, 50) )
     lbl = QtWidgets.QLabel("Use checkbox to include/exclude from PDO")
-    lbl.setAlignment(QtCore.Qt.AlignCenter)
     vb.addWidget( lbl )
     self._frm = QtWidgets.QFormLayout()
     self._frm.addRow( QtWidgets.QLabel("Name"), QtWidgets.QLabel("Index (hex)") )

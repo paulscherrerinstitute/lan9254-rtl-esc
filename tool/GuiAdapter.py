@@ -4,11 +4,10 @@ from   PyQt5        import QtCore,QtGui,QtWidgets
 from   PdoElement   import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator
 from   FixedPdoForm import FixedPdoForm, PdoElementGroup
 # XML interface
-from   tool         import VendorData, Pdo, NetConfig
+from   tool         import VendorData, Pdo, NetConfig, ESI
 
 class VendorDataAdapter(object):
   def __init__(self, vendorData):
-    super().__init__()
     self._vendorData = vendorData
     self._gui        = None
     # we will be editing the netConfig; make a copy
@@ -44,7 +43,6 @@ class VendorDataAdapter(object):
     vb  = QtWidgets.QVBoxLayout()
     self._netCfgGui = vb
     lbl = QtWidgets.QLabel("EoE Network Settings")
-    lbl.setAlignment(QtCore.Qt.AlignCenter)
     vb.addWidget( lbl )
     frm = QtWidgets.QFormLayout()
 
@@ -58,6 +56,7 @@ class VendorDataAdapter(object):
     createValidator( edt, g, s, QtGui.QRegExpValidator, QtCore.QRegExp( pattrn ) )
     frm.addRow( QtWidgets.QLabel("Mac Address"), edt )
     self._netCfgEdtMac = edt
+    edt.setToolTip("By default (all-ones) the firmware uses a random MAC-address\nbased on the device DNA")
 
     edt = QtWidgets.QLineEdit()
     edt.setMaxLength( 17 )
@@ -116,7 +115,6 @@ class VendorDataAdapter(object):
 
 class PdoAdapter(object):
   def __init__(self, pdo):
-    super().__init__()
     self._gui = None
     self._pdo = pdo
 
@@ -125,18 +123,22 @@ class PdoAdapter(object):
     return self._pdo
 
   def makeGui(self, vendorAdapt, parent = None):
-    vendor    = vendorAdapt.vendorData
-    self._gui = PdoListWidget( vendor.maxNumSegments, parent )
+    vendor       = vendorAdapt.vendorData
+    vb           = QtWidgets.QVBoxLayout()
+    vb.addWidget( QtWidgets.QLabel("EVR Data-Buffer PDO Mappings") )
+    self._gui    = vb
+    self._pdoGui = PdoListWidget( vendor.maxNumSegments, parent )
+    vb.addWidget( self._pdoGui )
     for s in vendor.segments[1:]:
-      self._gui.addSegment( s )
+      self._pdoGui.addSegment( s )
     try:
       for e in self._pdo[vendor.numEntries:]:
         print("Adding: byteSz", e.name, e.byteSz, e.isSigned)
-        self._gui.add( PdoElement( e.name, e.index, e.byteSz, e.nelms, e.isSigned, e.typeName, e.indexedName ) )
+        self._pdoGui.add( PdoElement( e.name, e.index, e.byteSz, e.nelms, e.isSigned, e.typeName, e.indexedName ) )
     except Exception as e:
       print("WARNING -- unable to add all entries found in XML:")
       print( e.args[0] )
-    self._gui.render()
+    self._pdoGui.render()
     return self._gui
 
 class Ip4Validator(QtGui.QRegExpValidator):
@@ -154,6 +156,24 @@ class Ip4Validator(QtGui.QRegExpValidator):
           return QtGui.QValidator.Invalid
     return st
 
+class ESIAdapter(VendorDataAdapter, PdoAdapter):
+  def __init__(self, esi):
+    VendorDataAdapter.__init__(self, esi.vendorData)
+    PdoAdapter.__init__(self, esi.txPdo)
+    self._esi = esi
+
+  def makeGui(self, parent=None):
+    window = QtWidgets.QWidget()
+    title  = "EtherCAT EVR ESI-File and EEPROM Utility"
+    window.setWindowTitle( title )
+    layout = QtWidgets.QVBoxLayout()
+    layout.addWidget( QtWidgets.QLabel( title ) )
+    layout.addLayout( VendorDataAdapter.makeNetCfgGui( self ) )
+    layout.addLayout( VendorDataAdapter.makeGui( self, self ) )
+    layout.addLayout( PdoAdapter.makeGui( self, self )        )
+    window.setLayout( layout ) 
+    return window
+
 if __name__ == "__main__":
 
   from   PyQt5 import QtCore,QtGui,QtWidgets
@@ -161,23 +181,10 @@ if __name__ == "__main__":
   from   lxml  import etree as ET
 
   app = QtWidgets.QApplication(sys.argv)
-  window = QtWidgets.QWidget()
-  #window.setMinimumSize(1400,1400)
-  layout = QtWidgets.QVBoxLayout()
 
   et = ET.parse('feil.xml')
-
-  vendorData        = VendorData.fromElement( et.find(".//Eeprom") )
-  vendorDataAdapter = VendorDataAdapter( vendorData )
-  pdo               = Pdo.fromElement( et.find(".//TxPdo"), vendorData.segments ) 
-  pdoAdapter        = PdoAdapter( pdo )
-  vendorGui         = vendorDataAdapter.makeGui( pdoAdapter )
-  netCfgGui         = vendorDataAdapter.makeNetCfgGui()
-  pdoGui            = pdoAdapter.makeGui( vendorDataAdapter )
-  layout.addLayout( netCfgGui )
-  layout.addLayout( vendorGui )
-  layout.addWidget( pdoGui    )
-  
-  window.setLayout( layout )
+  esi = ESI( None ) #et.getroot() )
+  guiAdapter = ESIAdapter( esi )
+  window     = guiAdapter.makeGui()
   window.show()
   app.exec()

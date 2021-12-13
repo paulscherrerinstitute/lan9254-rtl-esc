@@ -1111,6 +1111,14 @@ class ESI(object):
   def element(self):
     return self._root
 
+  @property
+  def txPdo(self):
+    return self._txPdo
+
+  @property
+  def vendorData(self):
+    return self._vendorData
+
   def syncElms(self):
     self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self._txPdo.byteSz )
    

@@ -474,6 +474,23 @@ class PdoListWidget(TableWidgetDnD):
     self.setCurrentCell( 0, 0, QtCore.QItemSelectionModel.Clear )
     self.cellDoubleClicked.connect( self.editItem )
     vh = self.verticalHeader()
+    vh.setToolTip("In the left header column you can define 'segments' of\n"   +
+                  "the EVR data buffer that shall be mapped into the TxPDO.\n" +
+                  "Double-click or hover on an item in this column to edit.\n" +
+                  "The named buttons mark segment boundaries; segments use\n"  +
+                  "multiples of 32-bit words. Byte-swapping can be defined\n"  +
+                  "for segments if needed.")
+    self.horizontalHeader().setToolTip(
+                  "In the matrix you can define PDO items and assign names,\n" +
+                  "IDs and their size and data type. Items can be dragged\n"   +
+                  "and dropped to rearrange them. You may define 'holes' by\n" +
+                  "creating padding items with ID 0x0000.\n"                   +
+                  "An item may be a (contiguous!) array of sub-items (which\n" +
+                  "are automatically assigned sub-indices).\n"                 +
+                  "If an item spans multiple lines a '--' mark is shown.\n"    +
+                  "Create or edit items by double clicking into the matrix.\n" +
+                  "Note that byte-swapping is a property of the *segment*\n"   +
+                  "that holds a particular item.")
     vh.sectionDoubleClicked.connect( self.editSegment )
     vh.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     vh.customContextMenuRequested.connect( self.headerMenuEvent )
