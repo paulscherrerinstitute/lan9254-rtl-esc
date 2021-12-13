@@ -490,6 +490,10 @@ class FixedPdoPart(object):
     return self._flags
 
   @property
+  def eventDWords(self):
+    return self._eventDWords
+
+  @property
   def numEntries(self):
     rv = 0
     if ( (self.flags & self.F_WITH_TSTAMP) ):
@@ -595,6 +599,9 @@ class NetConfig(object):
     self._ip4Addr = bytearray( [255 for i in range(4)] )
     self._udpPort = bytearray( [255 for i in range(2)] )
 
+  def clone(self):
+    return copy.copy(self)
+
   @property
   def macAddr(self):
     return copy.copy(self._macAddr)
@@ -672,6 +679,10 @@ class VendorData(FixedPdoPart):
     for s in self._segs:
       s._lock()
     self.syncElms()
+
+  @property
+  def netConfig(self):
+    return self._netConfig
 
   def syncElms(self):
     self._el.set("AssignToPdi", "1")

@@ -1071,7 +1071,8 @@ class PdoListWidget(TableWidgetDnD):
                        "(max. {}).\n".format(self._maxHwSegs) +
                        "NOTE: 8-byte swap is emulated by using TWO actual maps\n" +
                        "      per dword!")
-    self._segs.append( seg )
+    # make a copy since we will be editing the segment
+    self._segs.append( seg.clone() )
     self._totsz += seg.nDWords * self.NCOLS
     self.setRowCount( self.rowCount() + seg.nDWords )
     self.render()

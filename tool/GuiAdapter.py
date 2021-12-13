@@ -1,54 +1,25 @@
 import sys
 from   PyQt5        import QtCore,QtGui,QtWidgets
 # GUI
-from   PdoElement   import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment
+from   PdoElement   import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator
 from   FixedPdoForm import FixedPdoForm, PdoElementGroup
 # XML interface
 from   tool         import VendorData, Pdo, NetConfig
 
-# Magic factory; creates a subclass of 'clazz'
-# (which is expected to be a 'QValidator' subclass)
-# and furnishes a 'fixup' and connects to signals
-# so that 'setter' may update an associated object
-# from the new QLineEdit text. 'getter' is used
-# to restore the text from an associated object if
-# editing fails or is abandoned.
-def createValidator(lineEdit, getter, setter, clazz, *args, **kwargs):
+class VendorDataAdapter(object):
+  def __init__(self, vendorData):
+    super().__init__()
+    self._vendorData = vendorData
+    self._gui        = None
+    # we will be editing the netConfig; make a copy
+    self._netConfig  = vendorData.netConfig.clone()
 
-  class TheValidator(clazz):
-    def __init__(self, lineEdit, getter, setter, *args, **kwargs):
-      super().__init__( *args, **kwargs )
-      def mkRestoreVal(w, g):
-        def act():
-          w.setText( g() )
-        return act
-      def mkSetVal(w, g, s): 
-        def act():
-          try:
-            s( w.text() )
-          except Exception as e:
-            w.setText( g() )
-        return act
-      self._edt = lineEdit
-      self._get = getter
-      self._set = setter
-      self._edt.editingFinished.connect( mkRestoreVal( lineEdit, getter ) )
-      self._edt.returnPressed.connect(   mkSetVal(     lineEdit, getter, setter ) )
-      self._edt.setValidator( self )
-      mkRestoreVal( lineEdit, getter ) ()
-
-    def fixup(self, s):
-      return self._get()
-
-  return TheValidator( lineEdit, getter, setter, *args, **kwargs )
-
-class VendorDataAdapter(VendorData):
-  def __init__(self, el, segments = [], flags = 0, netConfig = None, fixedNames = None):
-    super().__init__(el, segments, flags, netConfig, fixedNames)
-    self._gui    = None
+  @property
+  def vendorData(self):
+    return self._vendorData
 
   def getSegmentList(self):
-    return self._segs
+    return vendorData.segments
 
   def makeNetCfgGui(self):
     def mkMacSet(c):
@@ -97,12 +68,13 @@ class VendorDataAdapter(VendorData):
     vb.addLayout( frm )
     return self._netCfgGui
 
-  def makeGui(self, pdo, parent = None):
+  def makeGui(self, pdoAdapt, parent = None):
     self._gui = FixedPdoForm( None, parent )
     nidx      = 0
     eidx      = 0
-    msk       = self.F_WITH_TSTAMP;
-    flgs      = self.flags
+    msk       = VendorData.F_WITH_TSTAMP;
+    pdo       = pdoAdapt.pdo
+    flgs      = self._vendorData.flags
     checked   = bool( flgs & msk )
     if checked:
       idx0    = pdo[eidx + 0].index
@@ -113,8 +85,8 @@ class VendorDataAdapter(VendorData):
       idx0    = 0 
       idx1    = 0 
     e         = list()
-    e.append( PdoElement( self.names[nidx + 0], idx0, 4 ) )
-    e.append( PdoElement( self.names[nidx + 1], idx1, 4 ) )
+    e.append( PdoElement( self._vendorData.names[nidx + 0], idx0, 4 ) )
+    e.append( PdoElement( self._vendorData.names[nidx + 1], idx1, 4 ) )
     self._gui.addGroup( PdoElementGroup( e, checked ) )
     nidx     += 2
     msk     <<= 1
@@ -126,10 +98,10 @@ class VendorDataAdapter(VendorData):
       flgs   &= ~msk
     else:
       idx0    = 0
-    self._gui.addGroup( PdoElement( self.names[nidx], idx0, 4, self._eventDWords ), checked )
+    self._gui.addGroup( PdoElement( self._vendorData.names[nidx], idx0, 4, self._vendorData.eventDWords ), checked )
     nidx     += 1
     msk     <<= 1
-    while ( nidx < len(self.names) ):
+    while ( nidx < len(self._vendorData.names) ):
       checked = bool( flgs & msk )
       if checked:
         idx   = pdo[eidx].index
@@ -137,22 +109,28 @@ class VendorDataAdapter(VendorData):
         flgs &= ~msk
       else:
         idx   = 0
-      self._gui.addGroup( PdoElement( self.names[nidx], idx, 4 ), checked )
+      self._gui.addGroup( PdoElement( self._vendorData.names[nidx], idx, 4 ), checked )
       nidx += 1
       msk <<= 1
     return self._gui.topLayout
 
-class PdoAdapter(Pdo):
-  def __init__(self, el, name, index, sm):
-    super().__init__(el, name, index, sm)
+class PdoAdapter(object):
+  def __init__(self, pdo):
+    super().__init__()
     self._gui = None
+    self._pdo = pdo
 
-  def makeGui(self, vendor, parent = None):
+  @property
+  def pdo(self):
+    return self._pdo
+
+  def makeGui(self, vendorAdapt, parent = None):
+    vendor    = vendorAdapt.vendorData
     self._gui = PdoListWidget( vendor.maxNumSegments, parent )
-    for s in self._segs[1:]:
-      self._gui.addSegment( s.clone() )
+    for s in vendor.segments[1:]:
+      self._gui.addSegment( s )
     try:
-      for e in self._ents[vendor.numEntries:]:
+      for e in self._pdo[vendor.numEntries:]:
         print("Adding: byteSz", e.name, e.byteSz, e.isSigned)
         self._gui.add( PdoElement( e.name, e.index, e.byteSz, e.nelms, e.isSigned, e.typeName, e.indexedName ) )
     except Exception as e:
@@ -189,8 +167,10 @@ if __name__ == "__main__":
 
   et = ET.parse('feil.xml')
 
-  vendorDataAdapter = VendorDataAdapter.fromElement( et.find(".//Eeprom") )
-  pdoAdapter        = PdoAdapter.fromElement( et.find(".//TxPdo"), vendorDataAdapter.getSegmentList() ) 
+  vendorData        = VendorData.fromElement( et.find(".//Eeprom") )
+  vendorDataAdapter = VendorDataAdapter( vendorData )
+  pdo               = Pdo.fromElement( et.find(".//TxPdo"), vendorData.segments ) 
+  pdoAdapter        = PdoAdapter( pdo )
   vendorGui         = vendorDataAdapter.makeGui( pdoAdapter )
   netCfgGui         = vendorDataAdapter.makeNetCfgGui()
   pdoGui            = pdoAdapter.makeGui( vendorDataAdapter )
