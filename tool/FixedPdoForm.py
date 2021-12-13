@@ -78,14 +78,14 @@ class FixedPdoForm(object):
     if not pdoElementList is None:
       self.addGroup( pdoElementList )
 
-  def addGroup(self, grp):
+  def addGroup(self, grp, checked = True):
     if   ( isinstance(grp, PdoElementGroup) ):
       els = grp.elements
       chk = self.addRow( els[0], checker=None, checked = grp.initiallyOn )
       for e in els[1:]:
         self.addRow( e, checker=chk )
     elif ( isinstance(grp, PdoElement)      ):
-      self.addRow( grp, checker=None )
+      self.addRow( grp, checker=None, checked=checked )
     elif ( isinstance(grp, list) ):
       for e in grp:
         self.addGroup( e )
@@ -95,12 +95,10 @@ class FixedPdoForm(object):
   def addRow(self, pdoEl, checker = None, checked = True):
     def mkEdtDon(w, e):
       def a():
-        print("EDIT DONE")
         e.index = int(w.text(), 16)
       return a
     def mkEdtRst(w, e):
       def a():
-        print("RESTORE")
         w.setText( "{:04x}".format( e.index ) )
         e.index = int(w.text(), 16)
       return a
@@ -135,15 +133,17 @@ class FixedPdoForm(object):
   def topLayout(self):
     return self._top
 
-app = QtWidgets.QApplication(sys.argv)
+if __name__ == "__main__":
 
-window = QtWidgets.QWidget()
-f = FixedPdoForm(None)
-e = [ PdoElement("TimestampHi", 0x1100, 4), PdoElement("TimestampLo", 0x1101, 4) ]
-g = PdoElementGroup( e, False )
-f.addGroup( g )
-f.addGroup( PdoElement("EventSet", 0x1102, 4, 4) )
+  app = QtWidgets.QApplication(sys.argv)
 
-window.setLayout( f.topLayout )
-window.show()
-app.exec()
+  window = QtWidgets.QWidget()
+  f = FixedPdoForm(None)
+  e = [ PdoElement("TimestampHi", 0x1100, 4), PdoElement("TimestampLo", 0x1101, 4) ]
+  g = PdoElementGroup( e, False )
+  f.addGroup( g )
+  f.addGroup( PdoElement("EventSet", 0x1102, 4, 4) )
+
+  window.setLayout( f.topLayout )
+  window.show()
+  app.exec()

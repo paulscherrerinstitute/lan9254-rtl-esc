@@ -3,7 +3,8 @@ from   lxml      import etree as ET
 from   functools import wraps
 import sys
 import copy
-from   FirmwareConstants import FirmwareConstants, HardwareConstants
+from   FirmwareConstants import FirmwareConstants
+from   AppConstants      import ESIDefaults, HardwareConstants
 
 # Define a decorator that checks if
 # the current state allows the object
@@ -187,6 +188,11 @@ class PdoSegment(object):
     self.byteOffset  = byteOffset
     self.swap        = swap
 
+  def clone(self):
+    rv           = copy.copy(self)
+    rv._isLocked = False
+    return rv
+
   def isFixed(self):
     return False
 
@@ -202,7 +208,7 @@ class PdoSegment(object):
   def isLocked(self):
     return self._isLocked
 
-  # lock only to be modified by holding Pdo class
+  # lock only to be modified by holding class
   def _lock(self):
     self._isLocked = True
 
@@ -236,17 +242,17 @@ class PdoSegment(object):
     self._swap = val
 
   @property
-  def nDWords(self):
-    return self._n
-
-  @property
   def byteSz(self):
     return self._n * 4
+
+  @property
+  def nDWords(self):
+    return self._n
 
   @nDWords.setter
   @lockCheck
   def nDWords(self, val):
-   if not isinstance(val, int) or val <= 0 or val > 1024:
+   if not isinstance(val, int) or val <  0 or val > 1024:
      raise ValueError("PdoSegment.nDWords not an int or out of range")
    if ( 8 == self.swap and (val % 2) != 0 ):
      raise ValueError("PdoSegment.nDWords of a 8-byte swapped segment must be even")
@@ -255,11 +261,11 @@ class PdoSegment(object):
   def promData(self):
     pd = bytearray()
     if ( 8 == self.swap ):
-      nentries = self.nDwords
+      nentries = self.nDWords
       size     = 1
       off      = self.byteOffset + 4
     else:
-      size     = self.nDwords
+      size     = self.nDWords
       nentries = 1
       off      = self.byteOffset
 
@@ -358,7 +364,7 @@ class PdoEntry(object):
   def bitSize(self, val):
     if ( val % 8 != 0 ):
       raise ValueError("PdoEntry.bitSize - only multiples of 8 supported")
-    self._byteSz = val/8
+    self._byteSz = int( val/8 )
     self.syncElms( "BitLen", str(val) )
 
   @byteSz.setter
@@ -462,11 +468,11 @@ class FixedPdoPart(object):
   F_WITH_LTCH1R = 16
   F_WITH_LTCH1F = 32
 
-  F_MASK        = (self.F_WITH_LTCH1F << 1) - 1
+  F_MASK        = (F_WITH_LTCH1F << 1) - 1
 
   def __init__(self, flags, names = None):
     super().__init__()
-    self._maxSegs = FirmwareConstants.PDO_MAX_NUM_SEGMENTS()
+    self._maxSegs = FirmwareConstants.TXPDO_MAX_NUM_SEGMENTS()
     self._flags   = flags
     if names is None:
       names = [ "TimestampLo",
@@ -477,7 +483,32 @@ class FixedPdoPart(object):
                 "TimestampLatch1Rising",
                 "TimestampLatch2Falling" ]
     self._names       = names
-    self._eventDWords = FirmwareConstants.PDO_MAX_EVENT_DWORDS()
+    self._eventDWords = FirmwareConstants.TXPDO_NUM_EVENT_DWORDS()
+
+  @property
+  def flags(self):
+    return self._flags
+
+  @property
+  def numEntries(self):
+    rv = 0
+    if ( (self.flags & self.F_WITH_TSTAMP) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_EVENTS) ):
+      rv += self._eventDWords
+    if ( (self.flags & self.F_WITH_LTCH0R) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH0F) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH1R) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH1F) ):
+      rv += 2
+    return rv
+
+  @property
+  def byteSz(self):
+    return 4*self.numEntries
 
   @property
   def names(self):
@@ -525,6 +556,13 @@ def findOrAdd(nod, sub):
     found = ET.SubElement(nod, sub)
   return found
 
+def addOrReplace(nod, sub):
+  found = nod.find(sub.tag)
+  if found is None:
+    nod.append(sub)
+  else:
+    nod.replace(found, sub)
+
 class Sm(object):
   def __init__(self, el, start, size, ctl, txt):
     object.__init__(self)
@@ -536,8 +574,8 @@ class Sm(object):
     self._size = size
     self._el = ET.Element("Sm") if el is None else el
     # immutable
-    self._el.set("ControlByte",  "#x{:02x}".format(ctl))
-    self._el.set("StartAddress", "#x{:04x}".format(start))
+    self._el.set("ControlByte",  int2hd(ctl,   wid = 2))
+    self._el.set("StartAddress", int2hd(start, wid = 4))
     self._el.text = txt
     self.syncElms()
 
@@ -550,15 +588,90 @@ class Sm(object):
     self._el.set("DefaultSize",  "{:d}".format(self._size))
     self._el.set("Enable",       "{:d}".format(self._ena))
 
+class NetConfig(object):
+  def __init__(self):
+    object.__init__(self)
+    self._macAddr = bytearray( [255 for i in range(6)] )
+    self._ip4Addr = bytearray( [255 for i in range(4)] )
+    self._udpPort = bytearray( [255 for i in range(2)] )
+
+  @property
+  def macAddr(self):
+    return copy.copy(self._macAddr)
+
+  @property
+  def ip4Addr(self):
+    return copy.copy(self._ip4Addr)
+
+  @property
+  def udpPort(self):
+    return copy.copy(self._udpPort)
+
+  def setMacAddr(self, a = "ff:ff:ff:ff:ff:ff"):
+    if ( isinstance(a, bytearray) ):
+      self._macAddr = a
+    else:
+      self._macAddr = self.convert(a, 6, ":", 16)
+
+  def setIp4Addr(self, a = "255.255.255.255"):
+    if ( isinstance(a, bytearray) ):
+      self._ip4Addr = a
+    else:
+      self._ip4Addr = self.convert(a, 4, ".", 10)
+
+  def setUdpPort(self, a = 0xffff):
+    if ( isinstance(a, bytearray) ):
+      self._udpPort = a
+    else:
+      self._udpPort = self.convert(a, 2, None, None)
+
+  def promData(self):
+    rv = bytearray()
+    rv.extend( self._macAddr )
+    rv.extend( self._ip4Addr )
+    rv.extend( self._udpPort )
+    return rv
+
+  @staticmethod
+  def convert(a, l, sep, bas):
+    if   ( isinstance( a, bytearray ) ):
+      if ( len(a) != l ):
+        raise RuntimeError("NetConfig: bytearray must have exactly {} elements".format(l))
+      ba = a
+    elif ( isinstance( a, str       ) ):
+      if not sep is None:
+        parts = a.split(sep)
+        if ( len(parts) != l ):
+           raise RuntimeError("NetConfig: string (separator '{}') must have {} elements".format(sep, l))
+      ba = bytearray([int(x, bas) for x in parts])
+      if ( len(ba) != l ):
+        raise RuntimeError("NetConfig: string does not split into {} elements".format(l))
+    elif ( isinstance( a, int       ) ):
+      ba = bytearray()
+      for i in range(l):
+        ba.append( ( a & 0xff ) )
+        a >>= 8
+      # address in network-byte order
+      ba.reverse()
+    else:
+        raise RuntimeError("NetConfig: don't know how to convert " + type(a) + "into a network address")
+    return ba
+
+
 class VendorData(FixedPdoPart):
 
-  def __init__(self, el, segments = [], flags = 0, netConfig = None, fixedNames = None)
+  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), fixedNames = None):
     super().__init__(flags, fixedNames)
     if (el is None):
       el = ET.Element("Eeprom")
     self._segs      = segments
+    # add dummy segment for fixed / non-editable entries
+    self._segs.insert(0, PdoSegment( "Fixed", 0, self.numEntries ))
     self._netConfig = netConfig
     self._el        = el
+    for s in self._segs:
+      s._lock()
+    self.syncElms()
 
   def syncElms(self):
     self._el.set("AssignToPdi", "1")
@@ -569,24 +682,27 @@ class VendorData(FixedPdoPart):
     se = findOrAdd( self._el, "ConfigData" )
     se.text = FirmwareConstants.EEPROM_CONFIG_DATA_TXT()
 
-    cat = findOrAdd( el, "Category" )
+    cat = findOrAdd( self._el, "Category" )
     se  = findOrAdd( cat, "CatNo" )
     se.text = FirmwareConstants.DEVSPECIFIC_CATEGORY_TXT()
 
     se  = findOrAdd( cat, "Data" )
-    se.text = hex( self.promData() )
+    se.text = self.promData().hex()
 
-    vdr = findOrAdd( el, "VendorSpecific" )
+    vdr = findOrAdd( self._el, "VendorSpecific" )
     for s in vdr.findall("Segment"):
       vdr.remove(s)
-    for s in self._segs:
+    for s in self._segs[1:]:
       sz64 = s.nDWords if s.swap == 8 else 0
-      ET.SubElement(el, "Segment", Swap8Len="{}".format(sz64)).text = s.name
+      ET.SubElement(vdr, "Segment", Swap8="{}".format(sz64)).text = s.name
 
+  @property
+  def segments(self):
+    return self._segs
 
   def promData(self):
     actualSegs = 0
-    for s in segments:
+    for s in self.segments:
       if (8 == s.swap ):
         actualSegs += s.nDWords
       elif s.nDWords > 0:
@@ -597,20 +713,27 @@ class VendorData(FixedPdoPart):
     prom = self._netConfig.promData()
     prom.append( (self._flags & self.F_MASK) )
     prom.append( actualSegs )
-    for s in segments:
+    for s in self.segments:
       if ( s.nDWords > 0 ):
-        prom.extend( s.promData )
+        prom.extend( s.promData() )
+    return prom
 
-  @staticmethod
-  def fromElement(el):
+  @property
+  def element(self):
+    return self._el
+
+  @classmethod
+  def fromElement(clazz, el, *args, **kwargs):
     # look for segment names and 8-byte swap info
     segments = []
     vdr = el.find("VendorSpecific")
     if (not vdr is None):
       for s in vdr.findall("Segment"):
-        swap8words = s.get("Swap8Len")
+        swap8words = s.get("Swap8")
         if swap8words is None:
           swap8words = 0
+        else:
+          swap8words = int(swap8words)
         swap = 8 if swap8words > 0 else 0
         segments.append( PdoSegment( s.text, 0, swap8words, swap ) )
     # look for prom data
@@ -637,8 +760,8 @@ class VendorData(FixedPdoPart):
       netCfg.setIp4Addr( prom[ 6:10] )
       netCfg.setUdpPort( prom[10:12] )
 
-      flags   = prom[13] & self.F_MASK
-      nLLSegs = prom[14]
+      flags   = prom[12] & FixedPdoPart.F_MASK
+      nLLSegs = prom[13]
 
       if nLLSegs < len(segments):
         raise Exception("WARNING: configured low-level segments fewer than names found; purging all segments")
@@ -669,8 +792,8 @@ class VendorData(FixedPdoPart):
         rem -= needed
     except Exception as e:
       segments = []
-      print( e.args[0] )
-    return PdoSegment( el, segments, flags, netConfig )
+      print(e.args[0])
+    return clazz( el, segments, flags, netCfg, *args, **kwargs )
     
 class Pdo(object):
 
@@ -694,7 +817,6 @@ class Pdo(object):
     el.set("Fixed", "1")
     el.set("Mandatory", "1")
     self._el     = el
-    self._segs   = []
     self._ents   = []
     self.index   = index
     self.sm      = sm
@@ -702,9 +824,15 @@ class Pdo(object):
     self._byteSz = 0
     self._used   = 0
 
+  @property
+  def element(self):
+    return self._el
+
+  def __getitem__(self, i):
+    return self._ents[i]
+
   #Remove all entries and segments
   def purge(self):
-    self._segs   = []
     self._byteSz = 0
     self._used   = 0
     for e in self._el.findall("Entry"):
@@ -731,10 +859,7 @@ class Pdo(object):
 
   @property
   def byteSz(self):
-    rv = 0
-    for s in self._segs:
-      rv += s.byteSz
-    return rv
+    return self._byteSz
 
   @property
   def name(self):
@@ -791,27 +916,26 @@ class Pdo(object):
   def addPdoSegment(self, s):
     if not isinstance(s, PdoSegment):
       raise TypeError("Pdo.addPdoSegment -- item you are trying to add is not a PdoSegment object")
+    if ( self._byteSz + s.nDWords * 4 > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.TXPDO_SM() ) ):
+      raise ValueError("Pdo.addPdoSegment -- adding this segment would exceed firmware TXPDO size limit")
+
     self._byteSz += s.nDWords * 4
-    s._lock()
-    self._segs.append( s )
 
   def syncElms(self, segs, elms):
     # remove current content
     self.purge()
     # start adding segments
     for s in segs:
-      # must copy the data -- the originals may still be
-      # modified by the caller
-      self.addPdoSegment( copy.copy(s) )
+      self.addPdoSegment( s )
     for e in elms:
         self.addEntry( PdoEntry( None, e.name, e.index, e.nelms, 8*e.byteSz, e.isSigned, e.typeName, e.indexedName ) )
 
-  @staticmethod
-  def fromElement(el, segments, sm):
+  @classmethod
+  def fromElement(clazz, el, segments, sm = FirmwareConstants.TXPDO_SM(), *args, **kwargs):
     try:
-      index = hd2int( Pdo.gTxt(el, "Index") )
-      name  = Pdo.gTxt(el, "Name")
-      pdo   = Pdo( el, index, name, sm )
+      index = hd2int( clazz.gTxt(el, "Index") )
+      name  = clazz.gTxt(el, "Name")
+      pdo   = clazz( el, index, name, sm, *args, **kwargs )
       for s in segments:
         pdo.addPdoSegment(s)
 
@@ -825,18 +949,18 @@ class Pdo(object):
       # gather elements with common index in a list
       idxLst     = []
       for e in el.findall("Entry"):
-        entIdx = hd2int( Pdo.gTxt( e, "Index" ) )
+        entIdx = hd2int( clazz.gTxt( e, "Index" ) )
         try:
-          entSub = hd2int( Pdo.gTxt( e, "SubIndex" ) )
+          entSub = hd2int( clazz.gTxt( e, "SubIndex" ) )
           if ( 0 == entSub ):
             raise ValueError("PDO Entries cannot have SubIndex == 0")
         except KeyError as e:
           if ( entIdx != 0 ):
             raise(e)
           entSub = 1
-        entLen = int( Pdo.gTxt( e, "BitLen"         ) )
-        entNam =      Pdo.gTxt( e, "Name",     True )
-        entTyp =      Pdo.gTxt( e, "DataType", True )
+        entLen = int( clazz.gTxt( e, "BitLen"         ) )
+        entNam =      clazz.gTxt( e, "Name",     True )
+        entTyp =      clazz.gTxt( e, "DataType", True )
         if ( 1 == entSub ):
           # start of new array
           if ( lstIdx >= 0 ):
@@ -867,100 +991,160 @@ class Pdo(object):
 
     return pdo
 
-class NetConfig(object):
-  def __init__(self):
-    object.__init__(self)
-    self.macAddr = bytearray( [255 for i in range(6)] )
-    self.ip4Addr = bytearray( [255 for i in range(4)] )
-    self.udpPort = bytearray( [255 for i in range(2)] )
+class ESI(object):
 
-  def setMacAddr(self, a = "ff:ff:ff:ff:ff:ff"):
-    if ( isinstance(a, bytearray) ):
-      self.macAddr = a
+  def __init__(self, root = None):
+    super().__init__()
+    if root is None:
+      root = ET.Element("EtherCATInfo")
+
+      # note that XML schema expects these elements in order !
+      vendor          = ET.SubElement(root, "Vendor")
+      vendorId          = ET.SubElement(vendor,"Id")
+      vendorId.text       = ESIDefaults.VENDOR_ID_TXT()
+      vendorId          = ET.SubElement(vendor,"Name")
+      vendorId.text       = ESIDefaults.VENDOR_NAME_TXT()
+
+      descriptions    = ET.SubElement(root, "Descriptions")
+      groups            = ET.SubElement(descriptions, "Groups")
+      group               = ET.SubElement(groups, "Group")
+      groupType             = ET.SubElement(group, "Type")
+      groupType.text          = ESIDefaults.GROUP_TYPE_TXT()
+      groupName             = ET.SubElement(group, "Name")
+      groupName.text          = ESIDefaults.GROUP_NAME_TXT()
+
+      devices           = ET.SubElement(descriptions, "Devices")
+      device              = ET.SubElement(devices,"Device", Physics="YY")
+      deviceType            = ET.SubElement(device, "Type",
+                                ProductCode=ESIDefaults.DEVICE_PRODUCT_CODE_TXT(),
+                                RevisionNo =ESIDefaults.DEVICE_REVISION_NO_TXT())
+      deviceName            = ET.SubElement(device, "Name")
+      deviceName.text         = ESIDefaults.DEVICE_NAME_TXT()
+
+      groupType             = ET.SubElement(device, "GroupType").text=ESIDefaults.GROUP_TYPE_TXT()
+      fmmu                  = ET.SubElement(device, "Fmmu")
+      fmmu.text               ="Inputs"
+      fmmu                  = ET.SubElement(device, "Fmmu")
+      fmmu.text               ="Outputs"
+      fmmu                  = ET.SubElement(device, "Fmmu")
+      fmmu.text               ="MBoxState"
+      for i in range(4):
+        ET.SubElement(device, "Sm")
     else:
-      self.macAddr = self.convert(a, 6, ":", 16)
+      device = root.find("Descriptions/Devices/Device")
+      if device is None:
+        raise RuntimeError("'Device' node not found in XML -- fix XML or create from scratch")
 
-  def setIp4Addr(self, a = "255.255.255.255"):
-    if ( isinstance(a, bytearray) ):
-      self.ip4Addr = a
+    # While this is configurable nothing will actually happen unless firmware is using
+    # the rxpdo. We assume some LEDs are hooked up.
+    rxPdoEntries = PdoEntry(None, "LED", ESIDefaults.RXPDO_LED_INDEX(), 3, 8, False)
+    rxPdo = ET.Element( "RxPdo" )
+    rxPdo.set( "Fixed",     "1" )
+    rxPdo.set( "Mandatory", "1" )
+    rxPdo.set( "Sm",        str(FirmwareConstants.RXPDO_SM()) )
+    ET.SubElement( rxPdo, "Index" ).text = ESIDefaults.RXPDO_INDEX_TXT()
+    ET.SubElement( rxPdo, "Name"  ).text = "ECAT EVR RxData"
+    rxPdo.extend( rxPdoEntries.elements )
+    rxPdoLen = rxPdoEntries.byteSz * rxPdoEntries.nelms
+    if ( rxPdoLen > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.RXPDO_SM() ) ):
+      raise ValueError("RxPDO size exceeds firmware limit")
+
+    # SM configuration must match firmware
+    sms = device.findall("Sm")
+    if len(sms) < 4 and len(sms) > 0:
+      raise RuntimeError("Unexpected number of 'Sm' nodes found (0 or >= 4 expected) -- fix XML or create from scratch")
+    txt = [ "MBoxOut", "MBoxIn", "Outputs", "Inputs" ]
+    if ( 0 == len(sms) ):
+      sms = [ None for i in range(4) ]
+    self._sms = []
+    for i in range(4):
+      self._sms.append( Sm( sms[i],
+                        FirmwareConstants.ESC_SM_SMA(i),
+                        FirmwareConstants.ESC_SM_LEN(i), 
+                        FirmwareConstants.ESC_SM_SMC(i),
+                        txt[i] ) )
+    self._sms[ FirmwareConstants.RXPDO_SM() ].setSize( rxPdoLen )
+
+    addOrReplace( device, rxPdo )
+    # we'll deal with the TxPDO later (once we have our vendor data)
+
+    mailbox = ET.SubElement( device, "Mailbox" )
+    mailbox.set("DataLinkLayer", "1")
+    mailboxEoE = ET.SubElement(mailbox, "EoE")
+    mailboxEoE.set("IP", "1")
+    mailboxEoE.set("MAC", "1")
+
+    addOrReplace( device, mailbox )
+
+    # parse or construct eeprom + vendor data
+    found = device.find("Eeprom")
+    if ( found is None ):
+      self._vendorData = VendorData( None )
+      # add to tree
+      device.append( self._vendorData.element )
     else:
-      self.ip4Addr = self.convert(a, 4, ".", 10)
+      self._vendorData = VendorData.fromElement( found )
 
-  def setUdpPort(self, a = 0xffff):
-    if ( isinstance(a, bytearray) ):
-      self.udpPort = a
+    found = device.find("TxPdo")
+
+    if ( found is None ):
+      txPdo = Pdo( None, hd2int( ESIDefaults.TXPDO_INDEX_TXT() ), "ECAT EVR TxData", FirmwareConstants.TXPDO_SM() )
+      device.insert( device.index( rxPdo ) + 1, txPdo.element )
     else:
-      self.udpPort = self.convert(a, 2, None, None)
+      txPdo = Pdo.fromElement( found, self._vendorData.segments )
+    self._txPdo = txPdo
+    self._root  = root
+    self.syncElms()
 
-  def promData(self):
-    rv = bytearray()
-    rv.extend( self.macAddr )
-    rv.extend( self.ip4Addr )
-    rv.extend( self.udpPort )
-    return rv
+  @property
+  def element(self):
+    return self._root
 
-  @staticmethod
-  def convert(a, l, sep, bas):
-    if   ( isinstance( a, bytearray ) ):
-      if ( len(a) != l ):
-        raise RuntimeError("NetConfig: bytearray must have exactly {} elements".format(l))
-      ba = a
-    elif ( isinstance( a, str       ) ):
-      if not sep is None:
-        parts = a.split(sep)
-        if ( len(parts) != l ):
-           raise RuntimeError("NetConfig: string (separator '{}') must have {} elements".format(sep, l))
-      ba = bytearray([int(x, bas) for x in parts])
-      if ( len(ba) != l ):
-        raise RuntimeError("NetConfig: string does not split into {} elements".format(l))
-    elif ( isinstance( a, int       ) ):
-      ba = bytearray()
-      for i in range(l):
-        ba.append( ( a & 0xff ) )
-        a >>= 8
-      # address in network-byte order
-      ba.reverse()
-    else:
-        raise RuntimeError("NetConfig: don't know how to convert " + type(a) + "into a network address")
-    return ba
-
+  def syncElms(self):
+    self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self._txPdo.byteSz )
    
 if __name__ == '__main__':
 
-  e = PdoEntry(None, "foo", 0x1100, 4, 16, False)
-  print(e.typeName)
-  print(e.name)
-  print(e.index)
-  print(e.nelms)
-  print(e.bitSize)
-  print(e.byteSz)
-  print(e.isSigned)
-  print(e.indexedName)
-  e.typeName="FOOTYPE"
-  e.name="barname"
-  e.index=1
-  e.bitSize = 32
-  e.isSigned=1
-  e.indexedName=False
-  print(e.typeName)
-  print(e.name)
-  print(e.index)
-  print(e.nelms)
-  print(e.bitSize)
-  print(e.byteSz)
-  print(e.isSigned)
-  print(e.indexedName)
-  
-  pdo = Pdo(None, 0x1600,"PDO",2)
-  s = PdoSegment("S1", 0, 4)
-  print( s.byteSz )
-  print( e.byteSz, e.nelms )
-  pdo.addPdoSegment(s)
-  pdo.addEntry( e )
-  
-  ET.ElementTree(pdo._el).write( '-', pretty_print=True )
-  sys.exit()
-  et =ET.parse('feil.xml')
-  nod = et.findall("//TxPdo")[0]
-  
-  pdo.fromElement(nod, [PdoSegment(8,0)], 2)
+  parser = ET.XMLParser(remove_blank_text=True)
+
+  esi = ESI( ET.parse('feil.xml', parser).getroot() )
+  ET.ElementTree(esi.element).write( '-', pretty_print=True )
+
+  if False:
+    e = PdoEntry(None, "foo", 0x1100, 4, 16, False)
+    print(e.typeName)
+    print(e.name)
+    print(e.index)
+    print(e.nelms)
+    print(e.bitSize)
+    print(e.byteSz)
+    print(e.isSigned)
+    print(e.indexedName)
+    e.typeName="FOOTYPE"
+    e.name="barname"
+    e.index=1
+    e.bitSize = 32
+    e.isSigned=1
+    e.indexedName=False
+    print(e.typeName)
+    print(e.name)
+    print(e.index)
+    print(e.nelms)
+    print(e.bitSize)
+    print(e.byteSz)
+    print(e.isSigned)
+    print(e.indexedName)
+    
+    pdo = Pdo(None, 0x1600,"PDO",2)
+    s = PdoSegment("S1", 0, 4)
+    print( s.byteSz )
+    print( e.byteSz, e.nelms )
+    pdo.addPdoSegment(s)
+    pdo.addEntry( e )
+    
+    ET.ElementTree(pdo._el).write( '-', pretty_print=True )
+    sys.exit()
+    et =ET.parse('feil.xml')
+    nod = et.findall("//TxPdo")[0]
+    
+    pdo.fromElement(nod, [PdoSegment(8,0)], 2)

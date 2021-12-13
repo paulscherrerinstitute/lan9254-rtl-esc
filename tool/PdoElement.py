@@ -1,10 +1,11 @@
 #from PyQt5.QtCore import Qt, QPoint, QItemSelection, QItemSelectionModel
 #from PyQt5.QtGui import QDropEvent
 #from PyQt5.QtWidgets import QTableWidget, QAbstractItemView, QTableWidgetItem, QTableWidgetSelectionRange
-from PyQt5           import QtCore, QtGui, QtWidgets
-from TableWidgetDnD  import TableWidgetDnD
-from contextlib      import contextmanager
-from tool            import PdoSegment
+from PyQt5             import QtCore, QtGui, QtWidgets
+from TableWidgetDnD    import TableWidgetDnD
+from contextlib        import contextmanager
+from tool              import PdoSegment
+from FirmwareConstants import FirmwareConstants
 
 class Sel(QtCore.QItemSelectionModel):
   def __init__(self, *args, **kwargs):
@@ -19,6 +20,58 @@ class Sel(QtCore.QItemSelectionModel):
   def event(self, e):
     print(e)
     return super().event(e)
+
+# Magic factory; creates a subclass of 'clazz'
+# (which is expected to be a 'QValidator' subclass)
+# and furnishes a 'fixup' and connects to signals
+# so that 'setter' may update an associated object
+# from the new QLineEdit text. 'getter' is used
+# to restore the text from an associated object if
+# editing fails or is abandoned.
+def createValidator(lineEdit, getter, setter, clazz, *args, **kwargs):
+
+  class TheValidator(clazz):
+    def __init__(self, lineEdit, getter, setter, *args, **kwargs):
+      super().__init__( *args, **kwargs )
+      def mkRestoreVal(w, g):
+        def act():
+          w.setText( g() )
+        return act
+      def mkSetVal(w, g, s): 
+        def act():
+          try:
+            s( w.text() )
+          except Exception as e:
+            w.setText( g() )
+        return act
+      self._edt = lineEdit
+      self._get = getter
+      self._set = setter
+      if not lineEdit is None:
+        self.connect( lineEdit )
+
+    def connect(self, lineEdit):
+      def mkRestoreVal(w, g):
+        def act():
+          w.setText( g() )
+        return act
+      def mkSetVal(w, g, s): 
+        def act():
+          try:
+            s( w.text() )
+          except Exception as e:
+            w.setText( g() )
+        return act
+      self._edt = lineEdit
+      self._edt.editingFinished.connect( mkRestoreVal( lineEdit, getter ) )
+      self._edt.returnPressed.connect(   mkSetVal(     lineEdit, getter, setter ) )
+      self._edt.setValidator( self )
+      mkRestoreVal( lineEdit, getter ) ()
+
+    def fixup(self, s):
+      return self._get()
+
+  return TheValidator( lineEdit, getter, setter, *args, **kwargs )
 
 class PdoElement(object):
 
@@ -462,7 +515,7 @@ class PdoListWidget(TableWidgetDnD):
       return
 
     ctxtMenu = QtWidgets.QMenu( self )
-    if ( r >= 0 and c >= 0 and  r * self.columnCount() + c <= self._used ):
+    if ( r >= 0 and c >= 0 and  r * self.columnCount() + c < self._used ):
       ctxtMenu.addAction( "Edit PDO Item",   mkEdAct(self, r, c) )
       idx, off = self.atRowCol( r, c )
       ctxtMenu.addAction( "Delete PDO Item", mkDlAct(self, self._items[idx] ) )
@@ -495,7 +548,7 @@ class PdoListWidget(TableWidgetDnD):
   def editItem(self, r, c):
     if ( self.inFixedSegment(r) ):
       return
-    if r * self.columnCount() + c > self._used:
+    if r * self.columnCount() + c >= self._used:
       it = None
     else:
       idx, off = self.atRowCol( r, c )
@@ -539,6 +592,8 @@ class PdoListWidget(TableWidgetDnD):
       minPos = 1
     if ( pos < minPos or pos > maxPos ):
       return "ERROR -- position out of range ({}..{})".format(minPos, maxPos)
+    if ( self._totsz + self.NCOLS * nelms > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.TXPDO_SM() ) ):
+      return "ERROR -- requested segment size would exceed firmware TXPDO size limit"
     try:
       # avoid partial modification; create a dummy object to verify
       # arguments; if this doesn't throw we are OK
