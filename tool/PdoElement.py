@@ -227,10 +227,16 @@ class DialogBase(QtWidgets.QDialog):
     self.buttonBox.accepted.connect( self.accept )
     self.buttonBox.rejected.connect( self.reject )
     self.layout    = QtWidgets.QGridLayout()
-    self.lstRow    = 0
+    self.title     = QtWidgets.QLabel("")
+    self.layout.addWidget( self.title, self.layout.rowCount(), 0, 1, self.layout.columnCount() )
+    self.lstRow    = self.layout.rowCount()
     self.msgLbl    = QtWidgets.QLabel("")
     self.setLayout( self.layout    )
     self.finished.connect( self.dialogDoneCheck )
+
+  def setTitle(self, tit):
+    self.setWindowTitle( tit )
+    self.title.setText( tit )
 
   def addRow(self, lbl, ini, val = None):
     self.layout.addWidget( QtWidgets.QLabel(lbl), self.lstRow, 0 )
@@ -289,7 +295,7 @@ class SegmentEditor(DialogBase):
       tmplNelm = seg.nDWords
       tmplSwap = seg.swap
       tmplPos  = tbl._segs.index(seg)
-    self.setWindowTitle( tit )
+    self.setTitle( tit )
       
     self.nameEdt   = self.addRow( "Name",          tmplName )
     self.posEdt    = self.addRow( "Position in table",  "{:d}".format( tmplPos )    )
@@ -351,7 +357,7 @@ class ItemEditor(DialogBase):
       tmplNelm = itm.nelms
       tmplBySz = itm.byteSz
       tmplSgnd = itm.isSigned
-    self.setWindowTitle( tit )
+    self.setTitle( tit )
       
     self.nameEdt   = self.addRow( "Name",          tmplName )
     v              = self.HEX_VALIDATOR
@@ -522,6 +528,10 @@ class PdoListWidget(TableWidgetDnD):
       def a():
         s.deleteItem(it)
       return a
+    def mkSgAct(s):
+      def a():
+        s.editSegment( -1 )
+      return a
 
     print(pt)
     idx = self.indexAt( pt )
@@ -531,13 +541,18 @@ class PdoListWidget(TableWidgetDnD):
     if ( self.inFixedSegment( r ) ):
       return
 
-    ctxtMenu = QtWidgets.QMenu( self )
-    if ( r >= 0 and c >= 0 and  r * self.columnCount() + c < self._used ):
+    ctxtMenu = QtWidgets.QMenu( "Manage PDO Items", self )
+    if   ( r >= 0 and c >= 0 and  r * self.columnCount() + c < self._used ):
       ctxtMenu.addAction( "Edit PDO Item",   mkEdAct(self, r, c) )
       idx, off = self.atRowCol( r, c )
       ctxtMenu.addAction( "Delete PDO Item", mkDlAct(self, self._items[idx] ) )
-    else:
+    elif ( self._totsz > 0 ):
       ctxtMenu.addAction( "New PDO Item",   mkEdAct(self, r, c) )
+    else:
+      # No segments yet -- they must create segments first!
+      ctxtMenu.setTitle( "You must define Segments before adding PDO Items" )
+      ctxtMenu.addAction( "Create Segment",   mkSgAct(self) )
+
     ctxtMenu.popup( self.viewport().mapToGlobal( pt ) )
 
   def headerMenuEvent(self, pt):
@@ -557,7 +572,7 @@ class PdoListWidget(TableWidgetDnD):
     if ( self.inFixedSegment( r ) ):
       return
     
-    ctxtMenu = QtWidgets.QMenu( self )
+    ctxtMenu = QtWidgets.QMenu( "Manage Segments", self )
     ctxtMenu.addAction( "Edit   Segment", mkEdtAct(self,  r) )
     ctxtMenu.addAction( "Create Segment", mkEdtAct(self, -1) )
     ctxtMenu.popup( self.verticalHeader().mapToGlobal( pt ) )
@@ -565,8 +580,12 @@ class PdoListWidget(TableWidgetDnD):
   def editItem(self, r, c):
     if ( self.inFixedSegment(r) ):
       return
-    if r * self.columnCount() + c >= self._used:
+    if ( r < 0 or c < 0 or  r * self.columnCount() + c >= self._used ):
       it = None
+      if ( 0 == self._totsz ):
+        # There are no segments yet -- give them the segment editor
+        SegmentEditor( self, self )
+        return
     else:
       idx, off = self.atRowCol( r, c )
       it = self._items[idx]
@@ -1088,8 +1107,7 @@ class PdoListWidget(TableWidgetDnD):
                        "(max. {}).\n".format(self._maxHwSegs) +
                        "NOTE: 8-byte swap is emulated by using TWO actual maps\n" +
                        "      per dword!")
-    # make a copy since we will be editing the segment
-    self._segs.append( seg.clone() )
+    self._segs.append( seg )
     self._totsz += seg.nDWords * self.NCOLS
     self.setRowCount( self.rowCount() + seg.nDWords )
     self.render()
@@ -1105,6 +1123,7 @@ class PdoListWidget(TableWidgetDnD):
         raise RuntimeError("cannot delete segment in use - (delete PDO elements first)")
 
       self._segs.remove(seg)
+      self._totsz = newTotal
       r = int(off / self.NCOLS)
       self.setRowCount( r )
       self.renderSegments()

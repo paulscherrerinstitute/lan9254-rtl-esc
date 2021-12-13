@@ -130,7 +130,8 @@ class PdoAdapter(object):
     self._pdoGui = PdoListWidget( vendor.maxNumSegments, parent )
     vb.addWidget( self._pdoGui )
     for s in vendor.segments[1:]:
-      self._pdoGui.addSegment( s )
+      # we don't want to hand over ownership so we make a copy
+      self._pdoGui.addSegment( s.clone() )
     try:
       for e in self._pdo[vendor.numEntries:]:
         print("Adding: byteSz", e.name, e.byteSz, e.isSigned)
