@@ -8,7 +8,7 @@ class FirmwareConstants(object):
 
   @staticmethod
   def EEPROM_CONFIG_DATA_TXT():
-    return "910201440000000000000040" # must be correct!
+    return "91020144000000000000004000000000" # must be correct!
 
   @staticmethod
   def ESC_SM_LEN( sm ):
@@ -55,6 +55,15 @@ class FirmwareConstants(object):
       return ESC_SM_LEN( sm )
 
   @staticmethod
+  def RXMBX_SM():
+    return 0
+
+  @staticmethod
+  def TXMBX_SM():
+    return 1
+
+
+  @staticmethod
   def RXPDO_SM():
     return 2
 
@@ -72,6 +81,14 @@ class FirmwareConstants(object):
 
   @staticmethod
   def TXPDO_NUM_EVENT_DWORDS():
+    return 4
+
+  @staticmethod
+  def EEPROM_LAYOUT_VERSION():
+    return 1
+
+  @staticmethod
+  def EVR_NUM_PULSE_GENS():
     return 4
 
 class HardwareConstants(object):

@@ -5,6 +5,7 @@ from PyQt5             import QtCore, QtGui, QtWidgets
 from TableWidgetDnD    import TableWidgetDnD
 from contextlib        import contextmanager
 from tool              import PdoSegment
+from copy              import copy
 from FirmwareConstants import FirmwareConstants
 
 class Sel(QtCore.QItemSelectionModel):
@@ -84,6 +85,9 @@ class PdoElement(object):
     self.isSigned    = isSigned
     self.typeName    = typeName
     self.indexedName = indexedName
+
+  def clone(self):
+    return copy(self)
 
   @property
   def name(self):
@@ -228,6 +232,7 @@ class DialogBase(QtWidgets.QDialog):
     self.buttonBox.rejected.connect( self.reject )
     self.layout    = QtWidgets.QGridLayout()
     self.title     = QtWidgets.QLabel("")
+    self.title.setObjectName("H2")
     self.layout.addWidget( self.title, self.layout.rowCount(), 0, 1, self.layout.columnCount() )
     self.lstRow    = self.layout.rowCount()
     self.msgLbl    = QtWidgets.QLabel("")
@@ -374,7 +379,7 @@ class ItemEditor(DialogBase):
     self.show()
 
   def delete(self):
-    self.tbl.deleteItem( self.itm ) 
+    return self.dialogError( self.tbl.deleteItem( self.itm ) )
 
   def validInput(self):
     if ( len(self.nelmsEdt.text()) == 0 ):
@@ -712,11 +717,14 @@ class PdoListWidget(TableWidgetDnD):
       return "ERROR - unable to {} element - \n{}".format(s, e.args[0])
 
   def deleteItem(self, it):
-    self._items.remove( it )
-    self._used -= it.byteSz * it.nelms
-    # make sure selection is within valid bounds
-    self.selectItemRange( -1 )
-    self.render()
+    try:
+      self._items.remove( it )
+      self._used -= it.byteSz * it.nelms
+      # make sure selection is within valid bounds
+      self.selectItemRange( -1 )
+      self.render()
+    except Exception as e:
+      return "ERROR -- unable to delete element - \n{}".format( e.args[0] )
 
   @contextmanager
   def lockSelection(self):
@@ -828,6 +836,8 @@ class PdoListWidget(TableWidgetDnD):
       colT = colF
     if ( rowT < 0 ):
       rowT = rowF
+    if len(self._items) == 0:
+      return -1, -1, -1, -1
     fst_idx, fst_bo = self.atRowCol(rowF, colF)
     bottom          = fst_bo
     lst_idx, lst_bo = self.atRowCol(rowT, colT)
@@ -865,7 +875,7 @@ class PdoListWidget(TableWidgetDnD):
 
       self.renderSegments()
 
-      if ( 0 == len( self._items ) ):
+      if ( self.rowCount() == 0 or self.columnCount() == 0 ):
         return
 
       if ( trq_row < 0 ):
@@ -1144,3 +1154,6 @@ class PdoListWidget(TableWidgetDnD):
         eitm.setBackground( bru )
         self.setVerticalHeaderItem(r, eitm)
         r += 1
+
+  def getGuiVals(self):
+    return self._segs, self._items

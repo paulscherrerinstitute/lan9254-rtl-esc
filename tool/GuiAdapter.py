@@ -9,9 +9,11 @@ from   tool         import VendorData, Pdo, NetConfig, ESI
 class VendorDataAdapter(object):
   def __init__(self, vendorData):
     self._vendorData = vendorData
-    self._gui        = None
+    self.__gui       = None
     # we will be editing the netConfig; make a copy
     self._netConfig  = vendorData.netConfig.clone()
+    self._evrCfgGui  = None
+    self._netCfgGui  = None
 
   @property
   def vendorData(self):
@@ -43,6 +45,7 @@ class VendorDataAdapter(object):
     vb  = QtWidgets.QVBoxLayout()
     self._netCfgGui = vb
     lbl = QtWidgets.QLabel("EoE Network Settings")
+    lbl.setObjectName("H2")
     vb.addWidget( lbl )
     frm = QtWidgets.QFormLayout()
 
@@ -68,55 +71,127 @@ class VendorDataAdapter(object):
     return self._netCfgGui
 
   def makeGui(self, pdoAdapt, parent = None):
-    self._gui = FixedPdoForm( None, parent )
-    nidx      = 0
-    eidx      = 0
-    msk       = VendorData.F_WITH_TSTAMP;
-    pdo       = pdoAdapt.pdo
-    flgs      = self._vendorData.flags
-    checked   = bool( flgs & msk )
+    self.__gui = FixedPdoForm( None, parent )
+    nidx       = 0
+    eidx       = 0
+    msk        = VendorData.F_WITH_TSTAMP;
+    pdo        = pdoAdapt.pdo
+    flgs       = self._vendorData.flags
+    checked    = bool( flgs & msk )
     if checked:
-      idx0    = pdo[eidx + 0].index
-      idx1    = pdo[eidx + 1].index
-      eidx   += 2
-      flgs   &= ~msk
+      idx0     = pdo[eidx + 0].index
+      idx1     = pdo[eidx + 1].index
+      eidx    += 2
+      flgs    &= ~msk
     else:
-      idx0    = 0 
-      idx1    = 0 
-    e         = list()
+      idx0     = 0 
+      idx1     = 0 
+    e          = list()
     e.append( PdoElement( self._vendorData.names[nidx + 0], idx0, 4 ) )
     e.append( PdoElement( self._vendorData.names[nidx + 1], idx1, 4 ) )
-    self._gui.addGroup( PdoElementGroup( e, checked ) )
-    nidx     += 2
-    msk     <<= 1
+    self.__gui.addGroup( PdoElementGroup( e, checked ) )
+    nidx      += 2
+    msk      <<= 1
 
-    checked   = bool( flgs & msk )
+    checked    = bool( flgs & msk )
     if checked:
-      idx0    = pdo[eidx].index
-      eidx   += 1
-      flgs   &= ~msk
+      idx0     = pdo[eidx].index
+      eidx    += 1
+      flgs    &= ~msk
     else:
-      idx0    = 0
-    self._gui.addGroup( PdoElement( self._vendorData.names[nidx], idx0, 4, self._vendorData.eventDWords ), checked )
-    nidx     += 1
-    msk     <<= 1
+      idx0     = 0
+    self.__gui.addGroup( PdoElement( self._vendorData.names[nidx], idx0, 4, self._vendorData.eventDWords ), checked )
+    nidx      += 1
+    msk      <<= 1
     while ( nidx < len(self._vendorData.names) ):
       checked = bool( flgs & msk )
       if checked:
-        idx   = pdo[eidx].index
-        eidx += 1
-        flgs &= ~msk
+        idx    = pdo[eidx].index
+        eidx  += 1
+        flgs  &= ~msk
       else:
-        idx   = 0
-      self._gui.addGroup( PdoElement( self._vendorData.names[nidx], idx, 4 ), checked )
-      nidx += 1
-      msk <<= 1
-    return self._gui.topLayout
+        idx    = 0
+      self.__gui.addGroup( PdoElement( self._vendorData.names[nidx], idx, 4 ), checked )
+      nidx    += 1
+      msk    <<= 1
+    return self.__gui.topLayout
+
+  def getGuiVals(self):
+    return self.__gui.getGuiVals()
+
+  def makeEvrCfgGui(self):
+    def mkCodGet(vd, ev):
+      def g():
+         if ( ev >= 10 ):
+           cod = vd.getExtraEvent( ev - 10 )
+         else:
+           cod = vd.getEvrParam(ev).pulseEvent
+         return str(cod)
+      return g
+    def mkCodSet(vd, ev):
+      def s(v):
+         if ( ev >= 10 ):
+           vd.setExtraEvent( ev - 10, int(v) )
+         else:
+           vd.getEvrParam(ev).pulseEvent = int(v)
+      return s
+    def mkDlyGet(vd, ev):
+      def g():
+         return str(vd.getEvrParam(ev).pulseDelay)
+      return g
+    def mkDlySet(vd, ev):
+      def s(v):
+         vd.getEvrParam(ev).pulseDelay = int(v)
+      return s
+    vb  = QtWidgets.QVBoxLayout()
+    self._evrCfgGui = vb
+    lbl = QtWidgets.QLabel("EVR Default Settings")
+    lbl.setObjectName("H2")
+    vb.addWidget( lbl )
+    frm = QtWidgets.QFormLayout()
+
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 4 )
+    g   = mkCodGet( self._vendorData, 0 )
+    s   = mkCodSet( self._vendorData, 0 )
+    createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
+    frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Code"), edt )
+
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 12 )
+    g   = mkDlyGet( self._vendorData, 0 )
+    s   = mkDlySet( self._vendorData, 0 )
+    createValidator( edt, g, s, QtGui.QIntValidator, 0, 10000000 )
+    edt.setToolTip("Delay is in EVR clock cycles")
+    frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Delay"), edt )
+
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 4 )
+    g   = mkCodGet( self._vendorData, 10 )
+    s   = mkCodSet( self._vendorData, 10 )
+    createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
+    edt.setToolTip("When this event is detected LATCH0 is asserted;\n" +
+                   "you also need to define an event to deassert LATCH0!")
+    frm.addRow( QtWidgets.QLabel("Event Code setting  LATCH0"), edt )
+
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 4 )
+    g   = mkCodGet( self._vendorData, 11 )
+    s   = mkCodSet( self._vendorData, 11 )
+    createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
+    edt.setToolTip("When this event is detected LATCH0 is deasserted;\n" +
+                   "you also need to define an event to assert LATCH0!")
+    frm.addRow( QtWidgets.QLabel("Event Code clearing LATCH0"), edt )
+
+
+    vb.addLayout( frm )
+    return self._evrCfgGui
+
 
 class PdoAdapter(object):
   def __init__(self, pdo):
-    self._gui = None
-    self._pdo = pdo
+    self.__gui = None
+    self._pdo  = pdo
 
   @property
   def pdo(self):
@@ -125,8 +200,11 @@ class PdoAdapter(object):
   def makeGui(self, vendorAdapt, parent = None):
     vendor       = vendorAdapt.vendorData
     vb           = QtWidgets.QVBoxLayout()
-    vb.addWidget( QtWidgets.QLabel("EVR Data-Buffer PDO Mappings") )
-    self._gui    = vb
+    lbl          = QtWidgets.QLabel("EVR Data-Buffer PDO Mappings")
+    lbl.setObjectName("H2")
+    vb.addWidget( lbl )
+
+    self.__gui   = vb
     self._pdoGui = PdoListWidget( vendor.maxNumSegments, parent )
     vb.addWidget( self._pdoGui )
     for s in vendor.segments[1:]:
@@ -140,7 +218,10 @@ class PdoAdapter(object):
       print("WARNING -- unable to add all entries found in XML:")
       print( e.args[0] )
     self._pdoGui.render()
-    return self._gui
+    return self.__gui
+
+  def getGuiVals(self):
+    return self._pdoGui.getGuiVals()
 
 class Ip4Validator(QtGui.QRegExpValidator):
   def __init__(self):
@@ -168,12 +249,34 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     title  = "EtherCAT EVR ESI-File and EEPROM Utility"
     window.setWindowTitle( title )
     layout = QtWidgets.QVBoxLayout()
-    layout.addWidget( QtWidgets.QLabel( title ) )
+    lbl    = QtWidgets.QLabel( title )
+    lbl.setObjectName("H1")
+    layout.addWidget( lbl )
     layout.addLayout( VendorDataAdapter.makeNetCfgGui( self ) )
+    layout.addLayout( VendorDataAdapter.makeEvrCfgGui( self ) )
     layout.addLayout( VendorDataAdapter.makeGui( self, self ) )
     layout.addLayout( PdoAdapter.makeGui( self, self )        )
+    btn = QtWidgets.QPushButton("test")
+    def mkTest(s):
+      def a():
+        s.update()
+      return a
+    btn.clicked.connect( mkTest(self) )
+    layout.addWidget( btn )
     window.setLayout( layout ) 
     return window
+
+  def update(self):
+    segments, elements   = PdoAdapter.getGuiVals(self)
+    flags, fixedElements = VendorDataAdapter.getGuiVals(self)
+    print("update: {} segments, {} elements, flags {:02x}, {} fixed elements".format(len(segments), len(elements), flags, len(fixedElements)))
+    self._vendorData.update( flags, segments )
+    allElements = list()
+    allElements.extend( fixedElements )
+    allElements.extend( elements )
+    self._pdo.update( segments, allElements )
+    self._esi.makeProm()
+    ET.ElementTree(self._esi.element).write( '-', xml_declaration = True, method = "xml", pretty_print=True )
 
 if __name__ == "__main__":
 
@@ -181,10 +284,28 @@ if __name__ == "__main__":
   import sys
   from   lxml  import etree as ET
 
-  app = QtWidgets.QApplication(sys.argv)
+  style = (
+           "QLabel#H2 { font: bold italic;"
+         + "            qproperty-alignment: AlignHCenter;"
+         + "            padding:   20;"
+         + "          }"
+         + "QLabel#H1 { font: bold italic huge;"
+         + "            padding:   40;"
+         + "          }"
+          )
 
-  et = ET.parse('feil.xml')
-  esi = ESI( None ) #et.getroot() )
+  app = QtWidgets.QApplication(sys.argv)
+  app.setStyleSheet(style)
+
+  parser = ET.XMLParser(remove_blank_text=True)
+
+  op = QtWidgets.QFileDialog.Options()
+  op |= QtWidgets.QFileDialog.DontUseNativeDialog;
+  parent = None
+#  fn = QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", "", "XML Files (*.xml)", options=op)
+
+  et =  None if True  else ET.parse('feil.xml', parser).getroot()
+  esi = ESI( et )
   guiAdapter = ESIAdapter( esi )
   window     = guiAdapter.makeGui()
   window.show()

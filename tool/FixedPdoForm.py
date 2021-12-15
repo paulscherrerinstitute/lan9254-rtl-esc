@@ -10,7 +10,7 @@ class PdoElementGroup(object):
       self._elements = pdoElementList
     else:
       self.check(pdoElementList)
-      self._elements = list(pdoElementList)
+      self._elements = [ pdoElementList ]
     self._checked = checked
 
   @property
@@ -38,7 +38,6 @@ class LineEditChecker(QtWidgets.QCheckBox):
     if initiallyOn is None:
       initiallyOn = True
     self.setChecked( initiallyOn )
-    print("FOO")
 
   def add(self, ledt):
     if not isinstance(ledt, QtWidgets.QLineEdit):
@@ -54,7 +53,7 @@ class LineEditChecker(QtWidgets.QCheckBox):
       pal = self._pal
     else:
       pal = self._rop
-    ledt.setReadOnly( checked )
+    ledt.setReadOnly( not checked )
     ledt.setPalette( pal )
 
   def __call__(self, onoff):
@@ -66,6 +65,7 @@ class FixedPdoForm(object):
     self._top = QtWidgets.QVBoxLayout()
     vb = self._top
     lbl = QtWidgets.QLabel("Standard PDO Entries")
+    lbl.setObjectName("H2")
     vb.addWidget( lbl )
 #    vb.addItem( QtWidgets.QSpacerItem(5, 50) )
     lbl = QtWidgets.QLabel("Use checkbox to include/exclude from PDO")
@@ -73,6 +73,7 @@ class FixedPdoForm(object):
     self._frm = QtWidgets.QFormLayout()
     self._frm.addRow( QtWidgets.QLabel("Name"), QtWidgets.QLabel("Index (hex)") )
     vb.addLayout( self._frm )
+    self._groups = list()
     if not pdoElementList is None:
       self.addGroup( pdoElementList )
 
@@ -82,13 +83,27 @@ class FixedPdoForm(object):
       chk = self.addRow( els[0], checker=None, checked = grp.initiallyOn )
       for e in els[1:]:
         self.addRow( e, checker=chk )
+      self._groups.append( (grp, chk) )
     elif ( isinstance(grp, PdoElement)      ):
-      self.addRow( grp, checker=None, checked=checked )
+      chk = self.addRow( grp, checker=None, checked=checked )
+      self._groups.append( (PdoElementGroup(grp), chk) )
     elif ( isinstance(grp, list) ):
       for e in grp:
         self.addGroup( e )
     else:
       raise ValueError("Only PdoElement or PdoElementGroup objects may be added to FixedPdoForm")
+
+  def getGuiVals(self):
+    l = list()
+    m = 1
+    f = 0
+    for g in self._groups:
+      if g[1].isChecked():
+        f |= m
+        for e in g[0].elements:
+          l.append(e)
+        m <<= 1
+    return f, l;
 
   def addRow(self, pdoEl, checker = None, checked = True):
     def mkEdtDon(w, e):

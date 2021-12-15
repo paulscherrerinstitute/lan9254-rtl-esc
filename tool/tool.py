@@ -489,6 +489,10 @@ class FixedPdoPart(object):
   def flags(self):
     return self._flags
 
+  # should only be used by subclass 
+  def _setFlags(self, val):
+    self._flags = val
+
   @property
   def eventDWords(self):
     return self._eventDWords
@@ -528,6 +532,8 @@ class FixedPdoPart(object):
       raise ValueError("Entry named '{}' not found".format(nm))
 
   def validateTxPdo(self, pdoEl):
+    if ( pdoEl is None ):
+      return
     entries = pdoEl.findall("Entry")
     eidx    = 0
     nidx    = 0
@@ -544,14 +550,15 @@ class FixedPdoPart(object):
         self.checkEntry( entries[eidx], self._names[nidx] )
         eidx += 1
       fset &= ~ self.F_WITH_EVENTS
-    nidx + 1
+    nidx += 1
     msk = self.F_WITH_EVENTS
     while ( ( nidx < len(self._names) ) and ( eidx < len(entries) ) ):
       msk <<= 1
       if ( ( fset & msk ) != 0 ):
         self.checkEntry( entries[eidx], self._names[nidx] )
       fset &= ~msk
-    if ( fst != 0 ):
+      nidx += 1
+    if ( fset != 0 ):
       raise ValueError("Not all required entries found!")
 
 def findOrAdd(nod, sub):
@@ -664,25 +671,142 @@ class NetConfig(object):
         raise RuntimeError("NetConfig: don't know how to convert " + type(a) + "into a network address")
     return ba
 
+class Evr320PulseParam(object):
+  def __init__(self):
+    self._enabled = False
+    self._width   = 4
+    self._delay   = 0
+    self._event   = 0
+
+  @property
+  def pulseEnabled(self):
+    return self._enabled
+
+  @pulseEnabled.setter
+  def pulseEnabled(self, v):
+    self._enabled = v and (self.pulseWidth != 0)
+
+  @property
+  def pulseWidth(self):
+    return self._width
+
+  @pulseWidth.setter
+  def pulseWidth(self, v):
+    self._width  = v
+    # re-check enabled flag
+    self.pulseEnabled = self.pulseEnabled
+
+  @property
+  def pulseDelay(self):
+    return self._delay
+
+  @pulseDelay.setter
+  def pulseDelay(self, v):
+    self._delay  = v
+
+  @property
+  def pulseEvent(self):
+    return self._event
+
+  @pulseEvent.setter
+  def pulseEvent(self, v):
+    if ( v < 0 or v > 255 ):
+      raise ValueError("Evr320PulseParams -- invalid event code")
+    self._event  = v
+
+  def promData(self):
+    rv = bytearray()
+    x  = self.pulseWidth & ~(1<<31)
+    if self.pulseEnabled:
+      x |= (1<<31)
+    for v in [x, self.pulseDelay]:
+      for i in range(4):
+        rv.append( (v & 255) )
+        v >>= 8
+    rv.append( (self.pulseEvent & 255) )
+    return rv
+
+class ExtraEvents(object):
+  def __init__(self):
+    self._eventCodes = [0,0,0,0]
+
+  def __getitem__(self,i):
+    return self._eventCodes[i]
+
+  def __setitem__(self, i, val):
+    if ( val < 0 or val > 255 ):
+      raise ValueError("ExtraEvents -- invalid event code")
+    self._eventCodes[i] = val
+
+  def __len__(self):
+    return len(self._eventCodes)
+
+  def promData(self):
+    return bytearray(self._eventCodes)
 
 class VendorData(FixedPdoPart):
 
-  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), fixedNames = None):
+  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), evrParams = None, eventCodes = ExtraEvents(), fixedNames = None):
     super().__init__(flags, fixedNames)
     if (el is None):
       el = ET.Element("Eeprom")
-    self._segs      = segments
-    # add dummy segment for fixed / non-editable entries
-    self._segs.insert(0, PdoSegment( "Fixed", 0, self.numEntries ))
+    else:
+      self.validateTxPdo( el.find("../TxPdo") )
     self._netConfig = netConfig
     self._el        = el
-    for s in self._segs:
-      s._lock()
-    self.syncElms()
+    if ( evrParams is None ):
+      self._evrParams = [ Evr320PulseParam() for i in range(FirmwareConstants.EVR_NUM_PULSE_GENS()) ]
+      i = 1
+      for p in self._evrParams:
+        p.pulseDelay = 16*i
+        p.pulseWidth = 256*i + 4
+        p.pulseEvent = i
+        i += 1
+    else:
+      self._evrParams = evrParams
+    self._xtraEvents = eventCodes
+    for i in range(len(self._xtraEvents)):
+      self._xtraEvents[i] = 0x11*(i+1)
+
+    self.update( self.flags, segments )
+
+  def getEvrParam(self, idx):
+    return self._evrParams[idx]
+
+  def getExtraEvent(self, idx):
+    return self._xtraEvents[idx]
+
+  def setExtraEvent(self, idx, val):
+    self._xtraEvents[idx] = val
 
   @property
   def netConfig(self):
     return self._netConfig
+
+  def update(self, flags, segments):
+    self._setFlags( flags )
+    self._segs      = []
+    # make a copy
+    for s in segments:
+      self._segs.append( s.clone() )
+    # add dummy segment for fixed / non-editable entries
+    self._segs.insert(0, PdoSegment( "Fixed", 0, self.numEntries ))
+    for s in self._segs:
+      s._lock()
+    self.syncElms()
+
+  # brute-force; this is not often used
+  @staticmethod
+  def crc8byte(crc, dat):
+    rem = dat ^ crc
+    for i in range(8):
+      if 0 != (rem & 0x80):
+        rem = (rem<<1) ^ 0x07 # XOR with polynomial
+      else:
+        rem = (rem<<1)
+      rem &= 0xff
+    return rem
+      
 
   def syncElms(self):
     self._el.set("AssignToPdi", "1")
@@ -691,7 +815,14 @@ class VendorData(FixedPdoPart):
     se.text = str( HardwareConstants.EEPROM_SIZE_BYTES() )
 
     se = findOrAdd( self._el, "ConfigData" )
-    se.text = FirmwareConstants.EEPROM_CONFIG_DATA_TXT()
+    data = bytearray.fromhex( FirmwareConstants.EEPROM_CONFIG_DATA_TXT() )
+    data.extend( [0 for i in range(14 - len(data))] )
+    crc  = 0xff
+    for d in data[0:14]:
+       crc = self.crc8byte(crc, d)
+    data[14] = crc
+    data[15] = 0
+    se.text  = data.hex()
 
     cat = findOrAdd( self._el, "Category" )
     se  = findOrAdd( cat, "CatNo" )
@@ -700,12 +831,17 @@ class VendorData(FixedPdoPart):
     se  = findOrAdd( cat, "Data" )
     se.text = self.promData().hex()
 
-    vdr = findOrAdd( self._el, "VendorSpecific" )
-    for s in vdr.findall("Segment"):
-      vdr.remove(s)
-    for s in self._segs[1:]:
-      sz64 = s.nDWords if s.swap == 8 else 0
-      ET.SubElement(vdr, "Segment", Swap8="{}".format(sz64)).text = s.name
+    if len( self._segs ) < 2:
+      vdr = self._el.find( "VendorSpecific" )
+      if not vdr is None:
+        self._el.remove( vdr )
+    else:
+      vdr = findOrAdd( self._el, "VendorSpecific" )
+      for s in vdr.findall("Segment"):
+        vdr.remove(s)
+      for s in self._segs[1:]:
+        sz64 = s.nDWords if s.swap == 8 else 0
+        ET.SubElement(vdr, "Segment", Swap8="{}".format(sz64)).text = s.name
 
   @property
   def segments(self):
@@ -721,7 +857,13 @@ class VendorData(FixedPdoPart):
     # last-ditch check; this should have been rejected earlier!
     if ( actualSegs > self.maxNumSegments ):
       raise ValueError("Too many segments")
-    prom = self._netConfig.promData()
+    prom = bytearray()
+    prom.append( FirmwareConstants.EEPROM_LAYOUT_VERSION() )
+    prom.extend( self._netConfig.promData() )
+    prom.append( len( self._evrParams )     )
+    for p in self._evrParams:
+      prom.extend( p.promData() )
+    prom.extend( self._xtraEvents.promData() )
     prom.append( (self._flags & self.F_MASK) )
     prom.append( actualSegs )
     for s in self.segments:
@@ -761,18 +903,51 @@ class VendorData(FixedPdoPart):
     flags   = 0
     nLLSegs = 0
     rem     = 0
+    evrCfg  = None
+    xtraEvt = ExtraEvents()
     try:
       if (len(segments) > 0 and prom is None):
         raise Exception("WARNING: inconsistent vendor-specific data (Segment names found but no hex data); purging all segments!")
-      if len(prom) < 14:
+      if len(prom) < 1 + 12 + 1 + FirmwareConstants.EVR_NUM_PULSE_GENS() * 9 + 2:
         raise Exception("WARNING: truncated vendor-specific prom data; ignoring")
 
-      netCfg.setMacAddr( prom[ 0: 6] )
-      netCfg.setIp4Addr( prom[ 6:10] )
-      netCfg.setUdpPort( prom[10:12] )
+      if ( prom[0] != FirmwareConstants.EEPROM_LAYOUT_VERSION() ):
+        raise Exception("WARNING: vendor-specific prom data version mismatch; ignoring")
 
-      flags   = prom[12] & FixedPdoPart.F_MASK
-      nLLSegs = prom[13]
+      promIdx  = 1
+
+      netCfg.setMacAddr( prom[promIdx +  0: promIdx +  6] )
+      netCfg.setIp4Addr( prom[promIdx +  6: promIdx + 10] )
+      netCfg.setUdpPort( prom[promIdx + 10: promIdx + 12] )
+      promIdx += 12
+      
+      numPulseGens = prom[promIdx]
+      promIdx += 1
+      if ( numPulseGens > 16 ):
+        raise Exception("WARNING: vendor-specific prom data has an unreasonable number of pulse generators; ignoring")
+      evrCfg = []
+      for i in range(numPulseGens):
+        c = Evr320PulseParam()
+        vals = [0,0]
+        for v in range(len(vals)):
+          for j in range(3, -1, -1):
+            vals[v] = (vals[v] << 8) | prom[promIdx + j]
+          promIdx += 4
+        c.pulseDelay  = vals[1]
+        c.pulseWidth  = vals[0] & ~(1<<31)
+        c.pulseEnable = ( (vals[0] & (1<<31)) != 0 )
+        c.pulseEvent  = prom[promIdx]
+        promIdx      += 1
+        evrCfg.append( c )
+
+      for i in range(4):
+        xtraEvt[i] = prom[promIdx]
+        promIdx   += 1
+
+      flags    = prom[promIdx] & FixedPdoPart.F_MASK
+      promIdx += 1
+      nLLSegs  = prom[promIdx]
+      promIdx += 1
 
       if nLLSegs < len(segments):
         raise Exception("WARNING: configured low-level segments fewer than names found; purging all segments")
@@ -780,35 +955,36 @@ class VendorData(FixedPdoPart):
         raise Exception("WARNING: configured low-level segments fewer than configured length; purging all segments")
 
       rem = nLLSegs
-      idx = 14
       for s in segments:
         needed = s.nDWords if 8 == s.swap else 1
         if needed > rem:
           raise Exception("WARNING: less low-level segments in prom descriptor than in VendorSpecific section; purging all segments")
         if ( 8 == s.swap ):
           for i in range(s.nDWords):
-            tmp = PdoSegment.fromPromData( prom[idx:idx+4] )
+            tmp = PdoSegment.fromPromData( prom[promIdx:promIdx+4] )
             if tmp.swap != 4 or tmp.nDWords != 1:
               raise Exception("WARNING: low-level segment inconsistent with 8-byte swap; purging all segments")
             if ( 1 == i ):
               # we find the starting offset in segment #1 !
               s.byteOffset = tmp.byteOffset
-            idx += 4
+            promIdx += 4
         else:
-          tmp  = PdoSegment.fromPromData( prom[idx:idx+4] )
-          idx += 4
+          tmp  = PdoSegment.fromPromData( prom[promIdx:promIdx+4] )
+          promIdx += 4
           s.byteOffset = tmp.byteOffset
           s.nDWords    = tmp.nDWords
           s.swap       = tmp.swap
         rem -= needed
     except Exception as e:
       segments = []
+      evrCfg   = None
       print(e.args[0])
-    return clazz( el, segments, flags, netCfg, *args, **kwargs )
+    return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, *args, **kwargs )
     
 class Pdo(object):
 
   def __init__(self, el, index, name, sm):
+    self._firstElPos = -1
     if el is None:
       el = ET.Element("TxPdo")
       n  = ET.Element("Index")
@@ -820,11 +996,15 @@ class Pdo(object):
       if el.find("Name") is None:
         # Index is mandatory
         el.insert( 1, ET.Element("Name") )
-      for it in {"Entry" : 0, "Exclude" : 1, "Name" : 1, "Index" : 1}:
+      for it in {"Entry" : 0, "Exclude" : 1, "Name" : 1, "Index" : 1}.items():
         e = el.find(it[0])
+        print("Looking for ", it[0])
         if not e is None:
           self._firstElPos = el.index(e) + it[1]
           break
+    if ( self._firstElPos < 1 ):
+      raise ValueError("Pdo -- unable to determine position of first 'Entry' element")
+      
     el.set("Fixed", "1")
     el.set("Mandatory", "1")
     self._el     = el
@@ -932,7 +1112,7 @@ class Pdo(object):
 
     self._byteSz += s.nDWords * 4
 
-  def syncElms(self, segs, elms):
+  def update(self, segs, elms):
     # remove current content
     self.purge()
     # start adding segments
@@ -1029,6 +1209,7 @@ class ESI(object):
       deviceType            = ET.SubElement(device, "Type",
                                 ProductCode=ESIDefaults.DEVICE_PRODUCT_CODE_TXT(),
                                 RevisionNo =ESIDefaults.DEVICE_REVISION_NO_TXT())
+      deviceType.text         = ESIDefaults.DEVICE_TYPE_TXT()
       deviceName            = ET.SubElement(device, "Name")
       deviceName.text         = ESIDefaults.DEVICE_NAME_TXT()
 
@@ -1107,6 +1288,212 @@ class ESI(object):
     self._root  = root
     self.syncElms()
 
+  def mustFind(self, tag, el=None):
+    if el is None:
+      el = self._root
+    rv = el.find(tag)
+    if rv is None:
+      raise KeyError("Element '{}' not found".format( tag ) )
+    return rv
+
+  def findOpt(self, tag, dflt, el=None):
+    if el is None:
+      el = self._root
+    rv = el.find(tag)
+    return dflt if rv is None else rv.text
+
+  def appendInt(self, prom, key, dflt=0, byteSz=4, el=None):
+    if el is None:
+      el = self._root
+    l   = key.split("@")
+    tag = l[0]
+    val = dflt
+    txt = None
+    rv  = el.find(tag)
+    if not rv is None:
+      if ( len(l) > 1 ):
+        txt = rv.get( l[1] )
+      else:
+        txt = rv.text
+    if txt is None:
+      if val is None:
+        raise KeyError("Element '{}' not found".format( key ) )
+    else:
+      val = hd2int( txt )
+    for i in range(byteSz):
+      prom.append( (val & 0xff) )
+      val >>= 8
+
+  def pad(self, prom, l):
+    prom.extend( bytearray([0 for i in range(l)]) )
+
+  def appendMbx(self, prom, smNode):
+    self.appendInt( prom, ".@StartAddress", dflt=None, byteSz=2, el=smNode )
+    self.appendInt( prom, ".@DefaultSize",  dflt=None, byteSz=2, el=smNode )
+   
+
+  def appendCat(self, prom, catId, process, *args):
+    prom.append( (catId >> 0) & 0xff )
+    prom.append( (catId >> 8) & 0xff )
+    pos = len(prom) # record position
+    prom.append( 0x00 )
+    prom.append( 0x00 )
+    process(prom, *args)
+    newpos = len(prom)
+    catLen = newpos - pos + 2
+    if ( (catLen % 2) != 0 ):
+      prom.append( 0x00 )
+      catLen += 1
+    catLen = int( catLen/2 )
+    prom[pos+0] = (catLen >> 0) & 0xff
+    prom[pos+1] = (catLen >> 8) & 0xff
+
+  def catGeneral(self, prom):
+    print("CAT General")
+
+  def catSm(self, prom, sms):
+    for sm in sms: 
+      self.appendInt( prom, ".@StartAddress", dflt=None, byteSz=2, el=sm )
+      self.appendInt( prom, ".@DefaultSize",  dflt=None, byteSz=2, el=sm )
+      self.appendInt( prom, ".@ControlByte",  dflt=None, byteSz=1, el=sm )
+      prom.append(0x00)
+      self.appendInt( prom, ".@Enable",       dflt=None, byteSz=1, el=sm )
+ 
+      t = sm.text
+      if   t == "Inputs":
+        v = 0x04
+      elif t == "Outputs":
+        v = 0x03
+      elif t == "MBoxIn":
+        v = 0x02
+      elif t == "MBoxOut":
+        v = 0x01
+      else:
+        v = 0x00
+      prom.append( (v & 0xff) )
+
+  def catPdo(self, prom, pdos, strDict):
+    print("CAT Pdo")
+    pass
+
+  def catFmmu(self, prom, fmmus):
+    print("CAT Fmmu")
+    l = 0
+    for fmmu in fmmus:
+      t = fmmu.text
+      if   t == "Inputs":
+        v = 0x02
+      elif t == "Outputs":
+        v = 0x01
+      elif t == "MBoxState":
+        v = 0x03
+      else:
+        v = 0xff
+      prom.append( (v & 0xff) )
+      l += 1
+    if ( l % 2 != 0 ):
+      prom.append( 0x00 )
+
+  def catStrings(self, prom, strDict):
+    nStrPos = len(prom)
+    prom.append(0x00) # place holder for num Strings
+    def addStr(s):
+      if s is None or len(s) == 0:
+        return
+      if ( strDict.get( s ) is None ):
+        if len(s) > 255:
+          raise ValueError("Category Strings: string loo long")
+        if ( prom[nStrPos] == 255 ):
+          raise ValueError("Category Strings: too many strings")
+        prom[nStrPos] += 1
+        # add to dictionary
+        strDict[s]     = prom[nStrPos]
+
+        # add to prom
+        prom.append( len(s) )
+        prom.extend( bytearray( s.encode('ascii') ) )
+    def findAddStr(pat):
+      for e in self._root.findall(pat):
+        addStr(e.text)
+    findAddStr(".//TxPdo/Name")
+    findAddStr(".//RxPdo/Name")
+    findAddStr(".//RxPdo/Entry/Name")
+    findAddStr(".//TxPdo/Entry/Name")
+    findAddStr(".//Devices/Device/GroupType")
+    findAddStr(".//Devices/Device/Type")
+    findAddStr(".//Devices/Device/Name")
+
+    if ( (len(prom) - nStrPos ) % 2 != 0 ):
+      prom.append( 0x00 )
+    for i in strDict:
+      print(i)
+
+  def catOther(self, prom, nod):
+    # Only 'Data' is supported ATM
+    print("CAT Other ", nod.find("CatNo").text )
+    prom.extend( bytearray.fromhex( self.mustFind( "Data", nod ).text ) )
+
+  def makeProm(self):
+    prom = bytearray()
+    prom.extend( bytearray.fromhex(self.mustFind(".//Eeprom/ConfigData").text) )
+    self.appendInt( prom, ".//Vendor/Id",                       dflt=None )
+    self.appendInt( prom, ".//Devices/Device/Type@ProductCode", dflt=0 )
+    self.appendInt( prom, ".//Devices/Device/Type@RevisionNo",  dflt=0 )
+    self.appendInt( prom, ".//Devices/Device/Type@SerialNo",    dflt=0 )
+    self.pad(       prom, 8 )
+    nod = self._root.find(".//Eeprom/BootStrap/Data")
+    if not nod is None:
+      d = bytearray.fromhex( nod.text )
+    else:
+      d = bytearray()
+    d.extend([0 for i in range(8 - len(d))])
+    prom.extend(d)
+    sms = self._root.findall(".//Devices/Device/Sm")
+    for idx in [ FirmwareConstants.RXMBX_SM(), FirmwareConstants.TXMBX_SM() ]:
+      if ( len(sms) > idx ):
+        self.appendMbx(prom, sms[idx])
+      else:
+        self.pad(prom, 4)
+    val = 0
+    nod = self._root.find(".//Devices/Device/Mailbox")
+    if ( not nod is None ):
+      for prot in {"AoE" : 0x01, "EoE" : 0x02, "CoE" : 0x04, "FoE" : 0x08,
+                   "SoE" : 0x10, "VoE" : 0x20 }.items():
+        if not nod.find(prot[0]) is None:
+          val |= prot[1]
+    prom.append( (val & 0xff) )
+    prom.append( 0x00          )
+
+    nod = self.mustFind(".//Eeprom/ByteSize")
+    val = int( int(nod.text) * 8/1024 ) - 1
+    prom.append( (val & 0xff) )
+    prom.append( 0x01 ) # version 1 as per spec
+    self.appendCat( prom, 30, self.catGeneral )
+    
+    fmmus = self._root.findall(".//Devices/Device/Fmmu")
+    if ( len(fmmus) > 0 ):
+      self.appendCat( prom, 40, self.catFmmu, fmmus )
+
+    sms   = self._root.findall(".//Devices/Device/Sm")
+    if ( len(sms) > 0 ):
+      self.appendCat( prom, 43, self.catSm, sms )
+
+    strDict = dict()
+
+    self.appendCat( prom, 10, self.catStrings, strDict )
+
+    txpdos = self._root.findall(".//Devices/Device/TxPdo")
+    self.appendCat( prom, 50, self.catPdo, txpdos, strDict )
+
+    rxpdos = self._root.findall(".//Devices/Device/RxPdo")
+    self.appendCat( prom, 51, self.catPdo, rxpdos, strDict )
+
+    for cat in self._root.findall(".//Eeprom/Category"):
+      catNo = int( self.mustFind("CatNo", cat).text )
+      self.appendCat( prom, catNo, self.catOther, cat )
+    prom.append( 0xff )
+    prom.append( 0xff )
+
   @property
   def element(self):
     return self._root
@@ -1126,7 +1513,9 @@ if __name__ == '__main__':
 
   parser = ET.XMLParser(remove_blank_text=True)
 
-  esi = ESI( ET.parse('feil.xml', parser).getroot() )
+  nod = None if True  else ET.parse('keil.xml', parser).getroot()
+
+  esi = ESI( nod )
   ET.ElementTree(esi.element).write( '-', pretty_print=True )
 
   if False:
