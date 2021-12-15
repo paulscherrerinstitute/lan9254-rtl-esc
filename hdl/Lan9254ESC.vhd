@@ -1050,7 +1050,7 @@ report "entering UPDATE_AS " & toString( val );
                v.rptAck(3)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
                v.smDis (3)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
 
-               if (   ( (ESC_SM2_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+               if (   (    r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) = '0'                           ) -- deactivated
                    or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
                        and smlAcceptable( 2, r.config,   r.program.seq(1).val(ESC_SM2_LEN_C'range) )
@@ -1068,7 +1068,7 @@ severity warning;
                   v.errSta            := '1';
                   v.alErr             := EC_ALER_INVALIDOUTPUTSM_C;
                end if;
-               if (   ( (ESC_SM3_ACT_C or  r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
+               if (   (    r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C) = '0'                           ) -- deactivated
                    or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
                        and smlAcceptable( 3, r.config,   r.program.seq(5).val(ESC_SM3_LEN_C'range) )
