@@ -149,18 +149,41 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -v                       : increase verbosity\n");
 	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation)\n");
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
+	fprintf(stderr, "       -i <ireg>[=<val>]        : EVR register access\n");
 	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
 }
 
 static int
-reg(Ecur e, const char *s, uint32_t bas)
+doReg(Ecur e, uint32_t a, uint32_t v, int doWrite)
+{
+	if ( doWrite ) {
+printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
+		if ( ecurWrite32( e, a, &v, 1 ) < 0 ) {
+			fprintf(stderr, "Error: ecurWrite32() failed (address 0x%08" PRIx32 ")\n", a);
+			return -1;
+		}
+	} else {
+		if ( ecurRead32( e, a, &v, 1 ) < 1 ) {
+			fprintf(stderr, "Error: ecurRead32() failed (address 0x%08" PRIx32 ")\n", a);
+			return -1;
+		} else {
+			printf("0x%08" PRIx32 ": 0x%08" PRIx32 " (%" PRId32 ")\n", a, v, v);
+		}
+	}
+	return 0;
+}
+
+#define IREG_A ((0xf<<1) | 0)
+#define IREG_D ((0xf<<1) | 1)
+
+static int
+reg(Ecur e, const char *s, uint32_t bas, int ireg)
 {
 char                *ep = 0;
 unsigned long       reg;
-unsigned long       val;
+unsigned long       val     = 0; /* keep compiler happy */
 int                 haveVal = 0;
 uint32_t            a;
-uint32_t            v;
 
 	reg = strtoul(s, &ep, 0);
 	if ( ep == s ) {
@@ -182,30 +205,22 @@ uint32_t            v;
 		haveVal = 1;
 	}
 
-	a = bas | (reg << 2);
-	if ( haveVal ) {
-		v = val;
-printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
-		if ( ecurWrite32( e, a, &v, 1 ) < 0 ) {
-			fprintf(stderr, "Error: ecurWrite32() failed (address 0x%08" PRIx32 ")\n", a);
+	if ( ireg ) {
+		a = bas | (IREG_A << 2);
+        if ( doReg(e, a, reg, 1) ) {
 			return -1;
 		}
+		a = bas | (IREG_D << 2);
 	} else {
-		if ( ecurRead32( e, a, &v, 1 ) < 1 ) {
-			fprintf(stderr, "Error: ecurRead32() failed (address 0x%08" PRIx32 ")\n", a);
-			return -1;
-		} else {
-			printf("0x%08" PRIx32 ": 0x%08" PRIx32 " (%" PRId32 ")\n", a, v, v);
-		}
+		a = bas | (reg << 2);
 	}
-
-	return 0;
+    return doReg( e, a, val, haveVal );
 }
 
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:tsve:r:";
+char               *optstr        = "ha:tsve:r:i:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
@@ -247,6 +262,7 @@ int                 opt;
 
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
+			case 'i': /* deal with that later */
 				break;
 		}
 		if ( u32_p && ( 1 != sscanf(optarg, "%" SCNi32, u32_p) ) ) {
@@ -273,10 +289,10 @@ int                 opt;
 		switch ( opt ) {
 			default:
 				break;
-
+            case 'i':
 			case 'e':
 			case 'r':
-				if ( reg( e, optarg, evrbas ) ) {
+				if ( reg( e, optarg, evrbas, (opt == 'i') ) ) {
 					goto bail;
 				}
 				break;
