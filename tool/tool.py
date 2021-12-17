@@ -2,9 +2,11 @@
 from   lxml      import etree as ET
 from   functools import wraps
 import sys
+import io
 import copy
 from   FirmwareConstants import FirmwareConstants
 from   AppConstants      import ESIDefaults, HardwareConstants
+from   ESIPromGenerator  import ESIPromGenerator
 
 # Define a decorator that checks if
 # the current state allows the object
@@ -270,8 +272,8 @@ class PdoSegment(object):
       off      = self.byteOffset
 
     for i in range(nentries):
-      pd.append( nentries & 0xff )
-      tmp = (nentries >> 8) & 0x03
+      pd.append( size & 0xff )
+      tmp = (size >> 8) & 0x03
       if   ( 2 == self.swap ):
         tmp |= 0x10
       elif ( 4 == self.swap or 8 == self.swap ):
@@ -482,8 +484,20 @@ class FixedPdoPart(object):
                 "TimestampLatch0Falling",
                 "TimestampLatch1Rising",
                 "TimestampLatch2Falling" ]
-    self._names       = names
+    else:
+      if ( len(names) != 7 ):
+        raise ValueError("names of predefined items must be a list of 7 strings")
     self._eventDWords = FirmwareConstants.TXPDO_NUM_EVENT_DWORDS()
+    n                 = self._eventDWords
+    self._fixed       = [
+      { "name" : names[0], "size" : 32, "nelms": 1 },
+      { "name" : names[1], "size" : 32, "nelms": 1 },
+      { "name" : names[2], "size" : 32, "nelms": n },
+      { "name" : names[3], "size" : 64, "nelms": 1 },
+      { "name" : names[4], "size" : 64, "nelms": 1 },
+      { "name" : names[5], "size" : 64, "nelms": 1 },
+      { "name" : names[6], "size" : 64, "nelms": 1 },
+    ]
 
   @property
   def flags(self):
@@ -497,6 +511,7 @@ class FixedPdoPart(object):
   def eventDWords(self):
     return self._eventDWords
 
+  # number of PDO 'Entry' elements (not byte sizes)
   @property
   def numEntries(self):
     rv = 0
@@ -505,31 +520,30 @@ class FixedPdoPart(object):
     if ( (self.flags & self.F_WITH_EVENTS) ):
       rv += self._eventDWords
     if ( (self.flags & self.F_WITH_LTCH0R) ):
-      rv += 2
+      rv += 1
     if ( (self.flags & self.F_WITH_LTCH0F) ):
-      rv += 2
+      rv += 1
     if ( (self.flags & self.F_WITH_LTCH1R) ):
-      rv += 2
+      rv += 1
     if ( (self.flags & self.F_WITH_LTCH1F) ):
-      rv += 2
+      rv += 1
     return rv
 
   @property
-  def byteSz(self):
-    return 4*self.numEntries
-
-  @property
-  def names(self):
-    return self._names
+  def fixedProperties(self):
+    return self._fixed
 
   @property
   def maxNumSegments(self):
     return self._maxSegs
 
-  def checkEntry(self, e, nm):
-    enm = e.find("Name")
-    if ( enm is None or enm.text != nm ):
+  def checkEntry( self, e, p ):
+    nm = p["name"]
+    sz = p["size"]
+    if ( mustFind(e, "Name").text != nm ):
       raise ValueError("Entry named '{}' not found".format(nm))
+    if ( int( mustFind(e, "BitLen").text ) != sz ):
+      raise ValueError("Bit length of {}('{}') unexpected (expected {:d})".format( e.tag, nm, sz ))
 
   def validateTxPdo(self, pdoEl):
     if ( pdoEl is None ):
@@ -540,26 +554,32 @@ class FixedPdoPart(object):
     # timestamp flag covers both 
     fset    = self._flags
     if ( (fset & self.F_WITH_TSTAMP) != 0 ):
-      self.checkEntry( entries[eidx    ], self._names[nidx    ] )
-      self.checkEntry( entries[eidx + 1], self._names[nidx + 1] )
+      self.checkEntry( entries[eidx    ], self._fixed[nidx    ] )
+      self.checkEntry( entries[eidx + 1], self._fixed[nidx + 1] )
       eidx += 2
       fset &= ~ self.F_WITH_TSTAMP
     nidx += 2
     if ( (self.flags & self.F_WITH_EVENTS) != 0 ):
       for i in range(self._eventDWords):
-        self.checkEntry( entries[eidx], self._names[nidx] )
+        self.checkEntry( entries[eidx], self._fixed[nidx] )
         eidx += 1
       fset &= ~ self.F_WITH_EVENTS
     nidx += 1
     msk = self.F_WITH_EVENTS
-    while ( ( nidx < len(self._names) ) and ( eidx < len(entries) ) ):
+    while ( ( nidx < len(self._fixed) ) and ( eidx < len(entries) ) ):
       msk <<= 1
       if ( ( fset & msk ) != 0 ):
-        self.checkEntry( entries[eidx], self._names[nidx] )
+        self.checkEntry( entries[eidx], self._fixed[nidx] )
       fset &= ~msk
       nidx += 1
     if ( fset != 0 ):
       raise ValueError("Not all required entries found!")
+
+def mustFind(nod, sub):
+  found = nod.find(sub)
+  if found is None:
+    raise KeyError("Mandatory element '{}' not found in '{}'".format(sub, nod.tag))
+  return found
 
 def findOrAdd(nod, sub):
   found = nod.find(sub)
@@ -602,12 +622,20 @@ class Sm(object):
 class NetConfig(object):
   def __init__(self):
     object.__init__(self)
-    self._macAddr = bytearray( [255 for i in range(6)] )
-    self._ip4Addr = bytearray( [255 for i in range(4)] )
-    self._udpPort = bytearray( [255 for i in range(2)] )
+    self._macAddr  = bytearray( [255 for i in range(6)] )
+    self._ip4Addr  = bytearray( [255 for i in range(4)] )
+    self._udpPort  = bytearray( [255 for i in range(2)] )
+    self._modified = False
 
   def clone(self):
     return copy.copy(self)
+
+  @property
+  def modified(self):
+    return self._modified
+
+  def resetModified(self):
+    self._modified = False
 
   @property
   def macAddr(self):
@@ -626,18 +654,21 @@ class NetConfig(object):
       self._macAddr = a
     else:
       self._macAddr = self.convert(a, 6, ":", 16)
+    self._modified = True
 
   def setIp4Addr(self, a = "255.255.255.255"):
     if ( isinstance(a, bytearray) ):
       self._ip4Addr = a
     else:
       self._ip4Addr = self.convert(a, 4, ".", 10)
+    self._modified = True
 
   def setUdpPort(self, a = 0xffff):
     if ( isinstance(a, bytearray) ):
       self._udpPort = a
     else:
       self._udpPort = self.convert(a, 2, None, None)
+    self._modified = True
 
   def promData(self):
     rv = bytearray()
@@ -673,10 +704,18 @@ class NetConfig(object):
 
 class Evr320PulseParam(object):
   def __init__(self):
-    self._enabled = False
-    self._width   = 4
-    self._delay   = 0
-    self._event   = 0
+    self._enabled  = False
+    self._width    = 4
+    self._delay    = 0
+    self._event    = 0
+    self._modified = False
+
+  @property
+  def modified(self):
+    return self._modified
+
+  def resetModified(self):
+    self._modified = False
 
   @property
   def pulseEnabled(self):
@@ -684,7 +723,8 @@ class Evr320PulseParam(object):
 
   @pulseEnabled.setter
   def pulseEnabled(self, v):
-    self._enabled = v and (self.pulseWidth != 0)
+    self._enabled  = v
+    self._modified = True
 
   @property
   def pulseWidth(self):
@@ -692,9 +732,8 @@ class Evr320PulseParam(object):
 
   @pulseWidth.setter
   def pulseWidth(self, v):
-    self._width  = v
-    # re-check enabled flag
-    self.pulseEnabled = self.pulseEnabled
+    self._width    = v
+    self._modified = True
 
   @property
   def pulseDelay(self):
@@ -702,7 +741,9 @@ class Evr320PulseParam(object):
 
   @pulseDelay.setter
   def pulseDelay(self, v):
-    self._delay  = v
+    self._delay    = v
+    self._modified = True
+
 
   @property
   def pulseEvent(self):
@@ -712,7 +753,8 @@ class Evr320PulseParam(object):
   def pulseEvent(self, v):
     if ( v < 0 or v > 255 ):
       raise ValueError("Evr320PulseParams -- invalid event code")
-    self._event  = v
+    self._event    = v
+    self._modified = True
 
   def promData(self):
     rv = bytearray()
@@ -754,6 +796,7 @@ class VendorData(FixedPdoPart):
       self.validateTxPdo( el.find("../TxPdo") )
     self._netConfig = netConfig
     self._el        = el
+    self._modified  = False
     if ( evrParams is None ):
       self._evrParams = [ Evr320PulseParam() for i in range(FirmwareConstants.EVR_NUM_PULSE_GENS()) ]
       i = 1
@@ -769,6 +812,13 @@ class VendorData(FixedPdoPart):
       self._xtraEvents[i] = 0x11*(i+1)
 
     self.update( self.flags, segments )
+
+  @property
+  def modified(self):
+    return self._modified
+
+  def resetModified(self):
+    self._modified = False
 
   def getEvrParam(self, idx):
     return self._evrParams[idx]
@@ -847,9 +897,18 @@ class VendorData(FixedPdoPart):
   def segments(self):
     return self._segs
 
+  # Return the correct size to configure the SM -- this includes the
+  # fixed segment!
+  @property
+  def byteSz(self):
+    sz = 0
+    for s in self.segments:
+      sz += s.byteSz
+    return sz
+
   def promData(self):
     actualSegs = 0
-    for s in self.segments:
+    for s in self.segments[1:]:
       if (8 == s.swap ):
         actualSegs += s.nDWords
       elif s.nDWords > 0:
@@ -866,7 +925,7 @@ class VendorData(FixedPdoPart):
     prom.extend( self._xtraEvents.promData() )
     prom.append( (self._flags & self.F_MASK) )
     prom.append( actualSegs )
-    for s in self.segments:
+    for s in self.segments[1:]:
       if ( s.nDWords > 0 ):
         prom.extend( s.promData() )
     return prom
@@ -933,11 +992,11 @@ class VendorData(FixedPdoPart):
           for j in range(3, -1, -1):
             vals[v] = (vals[v] << 8) | prom[promIdx + j]
           promIdx += 4
-        c.pulseDelay  = vals[1]
-        c.pulseWidth  = vals[0] & ~(1<<31)
-        c.pulseEnable = ( (vals[0] & (1<<31)) != 0 )
-        c.pulseEvent  = prom[promIdx]
-        promIdx      += 1
+        c.pulseDelay   = vals[1]
+        c.pulseWidth   = vals[0] & ~(1<<31)
+        c.pulseEnabled = ( (vals[0] & (1<<31)) != 0 )
+        c.pulseEvent   = prom[promIdx]
+        promIdx       += 1
         evrCfg.append( c )
 
       for i in range(4):
@@ -998,7 +1057,6 @@ class Pdo(object):
         el.insert( 1, ET.Element("Name") )
       for it in {"Entry" : 0, "Exclude" : 1, "Name" : 1, "Index" : 1}.items():
         e = el.find(it[0])
-        print("Looking for ", it[0])
         if not e is None:
           self._firstElPos = el.index(e) + it[1]
           break
@@ -1007,13 +1065,17 @@ class Pdo(object):
       
     el.set("Fixed", "1")
     el.set("Mandatory", "1")
-    self._el     = el
-    self._ents   = []
-    self.index   = index
-    self.sm      = sm
-    self.name    = name
-    self._byteSz = 0
-    self._used   = 0
+    self._el      = el
+    self._ents    = []
+    self.index    = index
+    self.sm       = sm
+    self.name     = name
+    self._segsSz  = 0
+    self._used    = 0
+    self._pdoSize = 0
+
+  def pdoSize(self):
+    return self._pdoSize
 
   @property
   def element(self):
@@ -1024,11 +1086,12 @@ class Pdo(object):
 
   #Remove all entries and segments
   def purge(self):
-    self._byteSz = 0
-    self._used   = 0
+    self._segsSz  = 0
+    self._used    = 0
     for e in self._el.findall("Entry"):
       self._el.remove( e )
-    self._ents   = []
+    self._ents    = []
+    self._pdoSize = 0
 
   @property
   def index(self):
@@ -1049,10 +1112,6 @@ class Pdo(object):
     self._sm = val
 
   @property
-  def byteSz(self):
-    return self._byteSz
-
-  @property
   def name(self):
     return self._name
 
@@ -1061,7 +1120,7 @@ class Pdo(object):
     self._el.find("Name").text = val
     self._name = val
 
-  def addEntry(self, e):
+  def addEntry(self, e, toTreeOnly=False):
     if not isinstance(e, PdoEntry):
       raise TypeError("Pdo.addEntry -- item you are trying to add is not a PdoEntry object")
 
@@ -1078,12 +1137,14 @@ class Pdo(object):
       if not parent is None and parent != self._el:
         raise ValueError("This PDO is not the parent of the element you are trying to add")
 
-    needed = e.byteSz * e.nelms
-    if ( self._used + needed > self._byteSz ):
-      raise ValueError("Pdo.addEntry -- does not fit in allocated segments")
-    self._used += needed
-    e._lock()
-    self._ents.append( e )
+    if ( not toTreeOnly ):
+      needed = e.byteSz * e.nelms
+      if ( self._used + needed > self._segsSz ):
+        print("used {}, needed {}, current size {}".format(self._used, needed, self._segsSz))
+        raise ValueError("Pdo.addEntry -- does not fit in allocated segments")
+      self._used += needed
+      e._lock()
+      self._ents.append( e )
     if parent is None:
       allent = self._el.findall("Entry")
       if 0 == len(allent):
@@ -1091,6 +1152,8 @@ class Pdo(object):
       else:
         pos = self._el.index(allent[-1]) + 1
       self._el[pos:pos] = e.elements
+    # pdoSize measures managed *and* unmanaged elements
+    self._pdoSize += e.byteSz
 
   def gNod(el, tag, noneOk=False):
     rv = el.find(tag)
@@ -1107,19 +1170,27 @@ class Pdo(object):
   def addPdoSegment(self, s):
     if not isinstance(s, PdoSegment):
       raise TypeError("Pdo.addPdoSegment -- item you are trying to add is not a PdoSegment object")
-    if ( self._byteSz + s.nDWords * 4 > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.TXPDO_SM() ) ):
+    if ( self._segsSz + s.nDWords * 4 > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.TXPDO_SM() ) ):
       raise ValueError("Pdo.addPdoSegment -- adding this segment would exceed firmware TXPDO size limit")
 
-    self._byteSz += s.nDWords * 4
+    self._segsSz += s.nDWords * 4
 
-  def update(self, segs, elms):
+  def update(self, segs, externalElements, managedElements):
     # remove current content
     self.purge()
     # start adding segments
     for s in segs:
       self.addPdoSegment( s )
-    for e in elms:
-        self.addEntry( PdoEntry( None, e.name, e.index, e.nelms, 8*e.byteSz, e.isSigned, e.typeName, e.indexedName ) )
+    for e in externalElements:
+        self.addEntry(
+          PdoEntry( None, e.name, e.index, e.nelms, 8*e.byteSz, e.isSigned, e.typeName, e.indexedName ),
+          toTreeOnly = True
+        )
+    for e in managedElements:
+        self.addEntry(
+          PdoEntry( None, e.name, e.index, e.nelms, 8*e.byteSz, e.isSigned, e.typeName, e.indexedName ),
+          toTreeOnly = False
+        )
 
   @classmethod
   def fromElement(clazz, el, segments, sm = FirmwareConstants.TXPDO_SM(), *args, **kwargs):
@@ -1215,9 +1286,9 @@ class ESI(object):
 
       groupType             = ET.SubElement(device, "GroupType").text=ESIDefaults.GROUP_TYPE_TXT()
       fmmu                  = ET.SubElement(device, "Fmmu")
-      fmmu.text               ="Inputs"
-      fmmu                  = ET.SubElement(device, "Fmmu")
       fmmu.text               ="Outputs"
+      fmmu                  = ET.SubElement(device, "Fmmu")
+      fmmu.text               ="Inputs"
       fmmu                  = ET.SubElement(device, "Fmmu")
       fmmu.text               ="MBoxState"
       for i in range(4):
@@ -1288,212 +1359,6 @@ class ESI(object):
     self._root  = root
     self.syncElms()
 
-  def mustFind(self, tag, el=None):
-    if el is None:
-      el = self._root
-    rv = el.find(tag)
-    if rv is None:
-      raise KeyError("Element '{}' not found".format( tag ) )
-    return rv
-
-  def findOpt(self, tag, dflt, el=None):
-    if el is None:
-      el = self._root
-    rv = el.find(tag)
-    return dflt if rv is None else rv.text
-
-  def appendInt(self, prom, key, dflt=0, byteSz=4, el=None):
-    if el is None:
-      el = self._root
-    l   = key.split("@")
-    tag = l[0]
-    val = dflt
-    txt = None
-    rv  = el.find(tag)
-    if not rv is None:
-      if ( len(l) > 1 ):
-        txt = rv.get( l[1] )
-      else:
-        txt = rv.text
-    if txt is None:
-      if val is None:
-        raise KeyError("Element '{}' not found".format( key ) )
-    else:
-      val = hd2int( txt )
-    for i in range(byteSz):
-      prom.append( (val & 0xff) )
-      val >>= 8
-
-  def pad(self, prom, l):
-    prom.extend( bytearray([0 for i in range(l)]) )
-
-  def appendMbx(self, prom, smNode):
-    self.appendInt( prom, ".@StartAddress", dflt=None, byteSz=2, el=smNode )
-    self.appendInt( prom, ".@DefaultSize",  dflt=None, byteSz=2, el=smNode )
-   
-
-  def appendCat(self, prom, catId, process, *args):
-    prom.append( (catId >> 0) & 0xff )
-    prom.append( (catId >> 8) & 0xff )
-    pos = len(prom) # record position
-    prom.append( 0x00 )
-    prom.append( 0x00 )
-    process(prom, *args)
-    newpos = len(prom)
-    catLen = newpos - pos + 2
-    if ( (catLen % 2) != 0 ):
-      prom.append( 0x00 )
-      catLen += 1
-    catLen = int( catLen/2 )
-    prom[pos+0] = (catLen >> 0) & 0xff
-    prom[pos+1] = (catLen >> 8) & 0xff
-
-  def catGeneral(self, prom):
-    print("CAT General")
-
-  def catSm(self, prom, sms):
-    for sm in sms: 
-      self.appendInt( prom, ".@StartAddress", dflt=None, byteSz=2, el=sm )
-      self.appendInt( prom, ".@DefaultSize",  dflt=None, byteSz=2, el=sm )
-      self.appendInt( prom, ".@ControlByte",  dflt=None, byteSz=1, el=sm )
-      prom.append(0x00)
-      self.appendInt( prom, ".@Enable",       dflt=None, byteSz=1, el=sm )
- 
-      t = sm.text
-      if   t == "Inputs":
-        v = 0x04
-      elif t == "Outputs":
-        v = 0x03
-      elif t == "MBoxIn":
-        v = 0x02
-      elif t == "MBoxOut":
-        v = 0x01
-      else:
-        v = 0x00
-      prom.append( (v & 0xff) )
-
-  def catPdo(self, prom, pdos, strDict):
-    print("CAT Pdo")
-    pass
-
-  def catFmmu(self, prom, fmmus):
-    print("CAT Fmmu")
-    l = 0
-    for fmmu in fmmus:
-      t = fmmu.text
-      if   t == "Inputs":
-        v = 0x02
-      elif t == "Outputs":
-        v = 0x01
-      elif t == "MBoxState":
-        v = 0x03
-      else:
-        v = 0xff
-      prom.append( (v & 0xff) )
-      l += 1
-    if ( l % 2 != 0 ):
-      prom.append( 0x00 )
-
-  def catStrings(self, prom, strDict):
-    nStrPos = len(prom)
-    prom.append(0x00) # place holder for num Strings
-    def addStr(s):
-      if s is None or len(s) == 0:
-        return
-      if ( strDict.get( s ) is None ):
-        if len(s) > 255:
-          raise ValueError("Category Strings: string loo long")
-        if ( prom[nStrPos] == 255 ):
-          raise ValueError("Category Strings: too many strings")
-        prom[nStrPos] += 1
-        # add to dictionary
-        strDict[s]     = prom[nStrPos]
-
-        # add to prom
-        prom.append( len(s) )
-        prom.extend( bytearray( s.encode('ascii') ) )
-    def findAddStr(pat):
-      for e in self._root.findall(pat):
-        addStr(e.text)
-    findAddStr(".//TxPdo/Name")
-    findAddStr(".//RxPdo/Name")
-    findAddStr(".//RxPdo/Entry/Name")
-    findAddStr(".//TxPdo/Entry/Name")
-    findAddStr(".//Devices/Device/GroupType")
-    findAddStr(".//Devices/Device/Type")
-    findAddStr(".//Devices/Device/Name")
-
-    if ( (len(prom) - nStrPos ) % 2 != 0 ):
-      prom.append( 0x00 )
-    for i in strDict:
-      print(i)
-
-  def catOther(self, prom, nod):
-    # Only 'Data' is supported ATM
-    print("CAT Other ", nod.find("CatNo").text )
-    prom.extend( bytearray.fromhex( self.mustFind( "Data", nod ).text ) )
-
-  def makeProm(self):
-    prom = bytearray()
-    prom.extend( bytearray.fromhex(self.mustFind(".//Eeprom/ConfigData").text) )
-    self.appendInt( prom, ".//Vendor/Id",                       dflt=None )
-    self.appendInt( prom, ".//Devices/Device/Type@ProductCode", dflt=0 )
-    self.appendInt( prom, ".//Devices/Device/Type@RevisionNo",  dflt=0 )
-    self.appendInt( prom, ".//Devices/Device/Type@SerialNo",    dflt=0 )
-    self.pad(       prom, 8 )
-    nod = self._root.find(".//Eeprom/BootStrap/Data")
-    if not nod is None:
-      d = bytearray.fromhex( nod.text )
-    else:
-      d = bytearray()
-    d.extend([0 for i in range(8 - len(d))])
-    prom.extend(d)
-    sms = self._root.findall(".//Devices/Device/Sm")
-    for idx in [ FirmwareConstants.RXMBX_SM(), FirmwareConstants.TXMBX_SM() ]:
-      if ( len(sms) > idx ):
-        self.appendMbx(prom, sms[idx])
-      else:
-        self.pad(prom, 4)
-    val = 0
-    nod = self._root.find(".//Devices/Device/Mailbox")
-    if ( not nod is None ):
-      for prot in {"AoE" : 0x01, "EoE" : 0x02, "CoE" : 0x04, "FoE" : 0x08,
-                   "SoE" : 0x10, "VoE" : 0x20 }.items():
-        if not nod.find(prot[0]) is None:
-          val |= prot[1]
-    prom.append( (val & 0xff) )
-    prom.append( 0x00          )
-
-    nod = self.mustFind(".//Eeprom/ByteSize")
-    val = int( int(nod.text) * 8/1024 ) - 1
-    prom.append( (val & 0xff) )
-    prom.append( 0x01 ) # version 1 as per spec
-    self.appendCat( prom, 30, self.catGeneral )
-    
-    fmmus = self._root.findall(".//Devices/Device/Fmmu")
-    if ( len(fmmus) > 0 ):
-      self.appendCat( prom, 40, self.catFmmu, fmmus )
-
-    sms   = self._root.findall(".//Devices/Device/Sm")
-    if ( len(sms) > 0 ):
-      self.appendCat( prom, 43, self.catSm, sms )
-
-    strDict = dict()
-
-    self.appendCat( prom, 10, self.catStrings, strDict )
-
-    txpdos = self._root.findall(".//Devices/Device/TxPdo")
-    self.appendCat( prom, 50, self.catPdo, txpdos, strDict )
-
-    rxpdos = self._root.findall(".//Devices/Device/RxPdo")
-    self.appendCat( prom, 51, self.catPdo, rxpdos, strDict )
-
-    for cat in self._root.findall(".//Eeprom/Category"):
-      catNo = int( self.mustFind("CatNo", cat).text )
-      self.appendCat( prom, catNo, self.catOther, cat )
-    prom.append( 0xff )
-    prom.append( 0xff )
-
   @property
   def element(self):
     return self._root
@@ -1506,9 +1371,29 @@ class ESI(object):
   def vendorData(self):
     return self._vendorData
 
+  def update(self):
+    self.syncElms()
+
   def syncElms(self):
-    self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self._txPdo.byteSz )
+    self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self.txPdo.pdoSize() )
    
+  def makeProm(self):
+    return ESIPromGenerator( self._root ).makeProm()
+
+  def writeProm(self, fnam, overwrite=False, prom = None):
+    mode = "wb" if overwrite else "xb"
+    if ( '-' == fnam ):
+      fnam    = sys.stdout.fileno()
+      closefd = False
+    else:
+      closefd = True
+
+    if prom is None:
+      prom = self.makeProm()
+
+    with io.open( fnam, mode=mode, closefd=closefd ) as f:
+      f.write( prom )
+
 if __name__ == '__main__':
 
   parser = ET.XMLParser(remove_blank_text=True)

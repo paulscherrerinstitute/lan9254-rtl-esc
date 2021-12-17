@@ -67,7 +67,6 @@ class FixedPdoForm(object):
     lbl = QtWidgets.QLabel("Standard PDO Entries")
     lbl.setObjectName("H2")
     vb.addWidget( lbl )
-#    vb.addItem( QtWidgets.QSpacerItem(5, 50) )
     lbl = QtWidgets.QLabel("Use checkbox to include/exclude from PDO")
     vb.addWidget( lbl )
     self._frm = QtWidgets.QFormLayout()
@@ -76,6 +75,14 @@ class FixedPdoForm(object):
     self._groups = list()
     if not pdoElementList is None:
       self.addGroup( pdoElementList )
+    self._modified = False
+
+  @property
+  def modified(self):
+    return self._modified
+
+  def resetModified(self):
+    self._modified = False
 
   def addGroup(self, grp, checked = True):
     if   ( isinstance(grp, PdoElementGroup) ):
@@ -102,13 +109,14 @@ class FixedPdoForm(object):
         f |= m
         for e in g[0].elements:
           l.append(e)
-        m <<= 1
+      m <<= 1
     return f, l;
 
   def addRow(self, pdoEl, checker = None, checked = True):
-    def mkEdtDon(w, e):
+    def mkEdtDon(s, w, e):
       def a():
-        e.index = int(w.text(), 16)
+        e.index     = int(w.text(), 16)
+        s._modified = True
       return a
     def mkEdtRst(w, e):
       def a():
@@ -119,7 +127,7 @@ class FixedPdoForm(object):
     ledt.setMaxLength( 8 )
     mkEdtRst(ledt, pdoEl)()
     ledt.editingFinished.connect( mkEdtRst( ledt, pdoEl ) )
-    ledt.returnPressed.connect( mkEdtDon( ledt, pdoEl ) )
+    ledt.returnPressed.connect( mkEdtDon( self, ledt, pdoEl ) )
     val  = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]{1,4}"))
     ledt.setValidator( val )
     # Use a dummy (invisible) checkbox to get things to line up...

@@ -8,20 +8,6 @@ from tool              import PdoSegment
 from copy              import copy
 from FirmwareConstants import FirmwareConstants
 
-class Sel(QtCore.QItemSelectionModel):
-  def __init__(self, *args, **kwargs):
-    super().__init__(*args, *kwargs)
-    super().installEventFilter( self )
-    print("Initializing Sel")
-    
-  def eventFilter(self, o, e):
-    print(o, e)
-    return super().eventFilter(o, e)
-
-  def event(self, e):
-    print(e)
-    return super().event(e)
-
 # Magic factory; creates a subclass of 'clazz'
 # (which is expected to be a 'QValidator' subclass)
 # and furnishes a 'fixup' and connects to signals
@@ -219,10 +205,13 @@ class DialogBase(QtWidgets.QDialog):
 
   HEX_VALIDATOR = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]+"))
 
-  def __init__(self, hasDelete = False, parent = None):
+  def __init__(self, hasDelete = False, parent = None, hasCancel = True):
     super().__init__( parent )
-    self.buttonBox = QtWidgets.QDialogButtonBox( QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel )
-    if hasDelete:
+    opt  = QtWidgets.QDialogButtonBox.Ok
+    if ( hasCancel ):
+      opt |= QtWidgets.QDialogButtonBox.Cancel
+    self.buttonBox = QtWidgets.QDialogButtonBox( opt )
+    if (hasDelete ):
       self.deleteButton = QtWidgets.QPushButton( "Delete" )
       self.deleteButton.clicked.connect( self.delete )
       # use 'reject' role to close the dialog without any further action in 
@@ -242,6 +231,10 @@ class DialogBase(QtWidgets.QDialog):
   def setTitle(self, tit):
     self.setWindowTitle( tit )
     self.title.setText( tit )
+
+  def setMsg(self, msg):
+    self.msgLbl.setText( msg )
+    return self
 
   def addRow(self, lbl, ini, val = None):
     self.layout.addWidget( QtWidgets.QLabel(lbl), self.lstRow, 0 )
@@ -332,7 +325,6 @@ class SegmentEditor(DialogBase):
     offset   = int( self.offstEdt.text(), 16 )
     nelms    = int( self.nelmsEdt.text(),  0 )
     pos      = int( self.posEdt.text(),    0 )
-    print(nelms, self.nelmsEdt.text())
     swap     = PdoSegment.str2swp( self.swapEdt.text() )
     if ( swap is None ):
       raise RuntimeError("Internal error: -- unable to convert swap from string")
@@ -392,7 +384,6 @@ class ItemEditor(DialogBase):
     index    = int( self.indexEdt.text(), 16 )
     nelms    = int( self.nelmsEdt.text(),  0 )
     byteSz , isSigned = PdoElement.str2bs( self.byteSzEdt.text() )
-    print("byteSz", byteSz, isSigned)
     if ( (byteSz is None) or (isSigned is None)):
       raise RuntimeError("Internal error: -- unable to convert byte size from string")
     msg      = self.tbl.modifyItem(self.itm, name, index, byteSz, nelms, isSigned)
@@ -404,7 +395,6 @@ class MyHeaderModel(QtCore.QAbstractItemModel):
   def __init__(self, parent = None):
     super().__init__(parent)
   def rowCount(self, index):
-    print("rowCount -- ", index.row(), index.column())
     return 6
   def columnCount(self, index):
     return 0
@@ -417,7 +407,6 @@ class MyHeader(QtWidgets.QHeaderView):
     self.span = 2
     i = 0
     while i < int(hdr.count()/self.span):
-      print("resizeSection ", i)
       self.resizeSection( i, self.getSectionSizes( i*self.span, (i + 1 )*self.span - 1 ) )
       i += 1
     lst = hdr.count() - 1
@@ -433,7 +422,6 @@ class MyHeader(QtWidgets.QHeaderView):
     sz = 0
     for i in range(f, t+1):
        sz += self._mainHdr.sectionSize(i)
-    print("gss {} -> {} = {}".format(f, t, sz))
     return sz
 
   def updateSizes(self):
@@ -480,6 +468,7 @@ class PdoListWidget(TableWidgetDnD):
     self._topL            = (-1,-1)
     self._botR            = (-1,-1)
     self._maxHwSegs       = maxHwSegs
+    self._modified        = False
     self.selectionModel().selectionChanged.connect( self.on_selection_changed )
     self.clearSelection()
     self.setCurrentCell( 0, 0, QtCore.QItemSelectionModel.Clear )
@@ -518,6 +507,13 @@ class PdoListWidget(TableWidgetDnD):
     self.setContextMenuPolicy( QtCore.Qt.CustomContextMenu )
     self.customContextMenuRequested.connect( self.tableMenuEvent )
 
+  @property
+  def modified(self):
+    return self._modified
+
+  def resetModified(self):
+    self._modified = False
+
   def hasFixedSegment(self):
     return ( len( self._segs ) > 0 and self._segs[0].isFixed() )
 
@@ -538,7 +534,6 @@ class PdoListWidget(TableWidgetDnD):
         s.editSegment( -1 )
       return a
 
-    print(pt)
     idx = self.indexAt( pt )
     r   = idx.row()
     c   = idx.column()
@@ -658,6 +653,7 @@ class PdoListWidget(TableWidgetDnD):
       self._segs.remove( seg )
       self._segs.insert( pos, seg )
       self.renderSegments()
+      self._modified    = True
       return None
 
     except Exception as e:
@@ -684,6 +680,7 @@ class PdoListWidget(TableWidgetDnD):
         except Exception as e:
           print("Warning - unable to select new item")
           print( e.args[0] )
+        self._modified = True
         self.render()
         return None
       else:
@@ -700,12 +697,13 @@ class PdoListWidget(TableWidgetDnD):
       if (  wouldUse > self._totsz ):
         return "ERROR -- not enough space\nreduce item size/nelms"
 
-      it.name     = name
-      it.index    = index
-      it.byteSz   = byteSz
-      it.nelms    = nelms
-      it.isSigned = isSigned
-      self._used  = wouldUse
+      it.name        = name
+      it.index       = index
+      it.byteSz      = byteSz
+      it.nelms       = nelms
+      it.isSigned    = isSigned
+      self._used     = wouldUse
+      self._modified = True
       self.selectItemRange( self._items.index( it ) )
       self.render()
       return None
@@ -719,7 +717,8 @@ class PdoListWidget(TableWidgetDnD):
   def deleteItem(self, it):
     try:
       self._items.remove( it )
-      self._used -= it.byteSz * it.nelms
+      self._used    -= it.byteSz * it.nelms
+      self._modified = True
       # make sure selection is within valid bounds
       self.selectItemRange( -1 )
       self.render()
@@ -898,11 +897,9 @@ class PdoListWidget(TableWidgetDnD):
       n  = 0
       r  = top_row
       c  = top_col
-      print("bot_row, bot_col ", bot_row, bot_col, self.rowCount(), self.columnCount())
       while ( (r < bot_row or (r == bot_row and c <= bot_col)) and (ii < len(self._items)) ):
         it = self._items[ii]
         l  = it.byteSz
-        print("Rendering {}.{}, length {}".format(r,c,l))
         if c + l <= self.columnCount():
           for cel in range(c, c+l):
             self.setCellWidget( r, cel, None )
@@ -945,7 +942,6 @@ class PdoListWidget(TableWidgetDnD):
         while c >= self.columnCount():
           c -= self.columnCount()
           r += 1
-        print("new iteracion ", r, c, ii)
 
       # make sure the rest of the table is cleared (in case we
       # deleted elements
@@ -969,7 +965,6 @@ class PdoListWidget(TableWidgetDnD):
     cc = self.currentColumn()
 
     if self.inFixedSegment(cr):
-      print("CR FIXED")
       self._topL = (-1, -1)
       self._botR = (-1, -1)
       self.showSelection()
@@ -1007,7 +1002,6 @@ class PdoListWidget(TableWidgetDnD):
     self._topL = (tr, tc)
     self._botR = (br, bc)
 
-    print("SELCH", a, b, len(a), len(b), len(self.selectedIndexes()))
     self.showSelection()
 
   def showSelection(self):
@@ -1020,11 +1014,9 @@ class PdoListWidget(TableWidgetDnD):
       self.setCurrentCell( minr, minc, QtCore.QItemSelectionModel.SelectCurrent )
       if ( minr < 0 or maxr < 0 ):
         return # nothing selected
-      print("showSelection ", minr, minc, maxr, maxc)
       r = minr
       c = minc
       while ( r < maxr ) or ( ( r == maxr ) and ( c <= maxc ) ):
-        print("Adding {}/{}".format(r,c))
         self.setRangeSelected( QtWidgets.QTableWidgetSelectionRange(r,c,r,c), True )
         c += self.columnSpan( r, c )
         if ( c >= self.columnCount() ):
@@ -1063,7 +1055,6 @@ class PdoListWidget(TableWidgetDnD):
       return
     if ( self.inFixedSegment( drop_row ) ):
       return
-    print("MoveItems, dst_idx", dst_idx)
     nl = []
     if ( dst_idx < 0 ):
       return
@@ -1082,7 +1073,6 @@ class PdoListWidget(TableWidgetDnD):
       tgt_idx = frm_idx + dst_idx - end_idx
     self._items = nl
     tgt_off = self.idx2bo( tgt_idx )
-    print("TGT_OFF / IDX ", tgt_off, tgt_idx )
 
     off_diff  = self.rc2bo( self._botR[0], self._botR[1] )
     off_diff -= self.rc2bo( self._topL[0], self._topL[1] )

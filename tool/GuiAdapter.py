@@ -1,17 +1,17 @@
 import sys
-from   PyQt5        import QtCore,QtGui,QtWidgets
+from   PyQt5              import QtCore,QtGui,QtWidgets
 # GUI
-from   PdoElement   import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator
-from   FixedPdoForm import FixedPdoForm, PdoElementGroup
+from   PdoElement         import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator, DialogBase
+from   FixedPdoForm       import FixedPdoForm, PdoElementGroup
 # XML interface
-from   tool         import VendorData, Pdo, NetConfig, ESI
+from   tool               import VendorData, Pdo, NetConfig, ESI
 
 class VendorDataAdapter(object):
   def __init__(self, vendorData):
     self._vendorData = vendorData
     self.__gui       = None
-    # we will be editing the netConfig; make a copy
-    self._netConfig  = vendorData.netConfig.clone()
+    # we will be editing the netConfig in place; don't copy
+    self._netConfig  = vendorData.netConfig
     self._evrCfgGui  = None
     self._netCfgGui  = None
 
@@ -70,6 +70,10 @@ class VendorDataAdapter(object):
     vb.addLayout( frm )
     return self._netCfgGui
 
+  def makeFixedPdoEl(self, which, idx):
+    p = self._vendorData.fixedProperties[which]
+    return PdoElement( p["name"], idx, int( ( p["size"] + 7 ) / 8 ), p["nelms"] )
+
   def makeGui(self, pdoAdapt, parent = None):
     self.__gui = FixedPdoForm( None, parent )
     nidx       = 0
@@ -87,8 +91,8 @@ class VendorDataAdapter(object):
       idx0     = 0 
       idx1     = 0 
     e          = list()
-    e.append( PdoElement( self._vendorData.names[nidx + 0], idx0, 4 ) )
-    e.append( PdoElement( self._vendorData.names[nidx + 1], idx1, 4 ) )
+    e.append( self.makeFixedPdoEl(nidx + 0, idx0) )
+    e.append( self.makeFixedPdoEl(nidx + 1, idx1) )
     self.__gui.addGroup( PdoElementGroup( e, checked ) )
     nidx      += 2
     msk      <<= 1
@@ -100,10 +104,10 @@ class VendorDataAdapter(object):
       flgs    &= ~msk
     else:
       idx0     = 0
-    self.__gui.addGroup( PdoElement( self._vendorData.names[nidx], idx0, 4, self._vendorData.eventDWords ), checked )
+    self.__gui.addGroup( self.makeFixedPdoEl( nidx, idx0 ), checked )
     nidx      += 1
     msk      <<= 1
-    while ( nidx < len(self._vendorData.names) ):
+    while ( nidx < len(self._vendorData.fixedProperties) ):
       checked = bool( flgs & msk )
       if checked:
         idx    = pdo[eidx].index
@@ -111,7 +115,7 @@ class VendorDataAdapter(object):
         flgs  &= ~msk
       else:
         idx    = 0
-      self.__gui.addGroup( PdoElement( self._vendorData.names[nidx], idx, 4 ), checked )
+      self.__gui.addGroup( self.makeFixedPdoEl( nidx, idx ), checked )
       nidx    += 1
       msk    <<= 1
     return self.__gui.topLayout
@@ -121,27 +125,33 @@ class VendorDataAdapter(object):
 
   def makeEvrCfgGui(self):
     def mkCodGet(vd, ev):
+      # ensure that the event is actually enabled
+      if ( ev < 10 ):
+        vd.getEvrParam(ev).pulseEnabled = True
       def g():
-         if ( ev >= 10 ):
-           cod = vd.getExtraEvent( ev - 10 )
-         else:
-           cod = vd.getEvrParam(ev).pulseEvent
-         return str(cod)
+        if ( ev >= 10 ):
+          cod = vd.getExtraEvent( ev - 10 )
+        else:
+          cod = vd.getEvrParam(ev).pulseEvent
+        return str(cod)
       return g
     def mkCodSet(vd, ev):
+      # ensure that the event is actually enabled
+      if ( ev < 10 ):
+        vd.getEvrParam(ev).pulseEnabled = True
       def s(v):
-         if ( ev >= 10 ):
-           vd.setExtraEvent( ev - 10, int(v) )
-         else:
-           vd.getEvrParam(ev).pulseEvent = int(v)
+        if ( ev >= 10 ):
+          vd.setExtraEvent( ev - 10, int(v) )
+        else:
+          vd.getEvrParam(ev).pulseEvent = int(v)
       return s
     def mkDlyGet(vd, ev):
       def g():
-         return str(vd.getEvrParam(ev).pulseDelay)
+        return str(vd.getEvrParam(ev).pulseDelay)
       return g
     def mkDlySet(vd, ev):
       def s(v):
-         vd.getEvrParam(ev).pulseDelay = int(v)
+        vd.getEvrParam(ev).pulseDelay = int(v)
       return s
     vb  = QtWidgets.QVBoxLayout()
     self._evrCfgGui = vb
@@ -212,7 +222,6 @@ class PdoAdapter(object):
       self._pdoGui.addSegment( s.clone() )
     try:
       for e in self._pdo[vendor.numEntries:]:
-        print("Adding: byteSz", e.name, e.byteSz, e.isSigned)
         self._pdoGui.add( PdoElement( e.name, e.index, e.byteSz, e.nelms, e.isSigned, e.typeName, e.indexedName ) )
     except Exception as e:
       print("WARNING -- unable to add all entries found in XML:")
@@ -242,7 +251,8 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
   def __init__(self, esi):
     VendorDataAdapter.__init__(self, esi.vendorData)
     PdoAdapter.__init__(self, esi.txPdo)
-    self._esi = esi
+    self._esi  = esi
+    self._main = None
 
   def makeGui(self, parent=None):
     window = QtWidgets.QWidget()
@@ -256,27 +266,59 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     layout.addLayout( VendorDataAdapter.makeEvrCfgGui( self ) )
     layout.addLayout( VendorDataAdapter.makeGui( self, self ) )
     layout.addLayout( PdoAdapter.makeGui( self, self )        )
-    btn = QtWidgets.QPushButton("test")
-    def mkTest(s):
-      def a():
-        s.update()
-      return a
-    btn.clicked.connect( mkTest(self) )
-    layout.addWidget( btn )
-    window.setLayout( layout ) 
-    return window
+    window.setLayout( layout )
+    main       = QtWidgets.QMainWindow()
+    self._main = main
+    main.setCentralWidget(window)
+    menuBar    = QtWidgets.QMenuBar()
+    fileMenu   = menuBar.addMenu( "File" )
+
+    def fileSaveDialog(slf, typ):
+      op  = QtWidgets.QFileDialog.Options()
+      op |= QtWidgets.QFileDialog.DontUseNativeDialog;
+      parent = slf._main
+      return QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", "", typ, options=op)
+
+    def mkSaveAs(slf):
+      def saveAs():
+        fn = fileSaveDialog(self, "XML Files (*.xml);;All Files (*)")
+        try:
+          self.update()
+          self.saveTo( fn[0] )
+        except Exception as e:
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + e.args[0] ).show()
+      return saveAs
+
+    def mkWriteSii(slf):
+      def writeSii():
+        fn = fileSaveDialog(self, "SII Files (*.sii);;All Files (*)")
+        try:
+          self.update()
+          self._esi.writeProm( 'feil.sii', overwrite=True )
+        except Exception as e:
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + e.args[0] ).show()
+      return writeSii
+
+    def mkQuit():
+      def quit():
+        sys.exit(0)
+      return quit
+    fileMenu.addAction( "Save As" ).triggered.connect( mkSaveAs( self ) )
+    fileMenu.addAction( "Write SII (EEPROM) File" ).triggered.connect( mkWriteSii( self ) )
+    fileMenu.addAction( "Quit" ).triggered.connect( mkQuit() )
+    main.setMenuBar( menuBar )
+    return main
+
+  def saveTo(self, fnam):
+    ET.ElementTree(self._esi.element).write( fnam, xml_declaration = True, method = "xml", pretty_print=True )
 
   def update(self):
     segments, elements   = PdoAdapter.getGuiVals(self)
     flags, fixedElements = VendorDataAdapter.getGuiVals(self)
-    print("update: {} segments, {} elements, flags {:02x}, {} fixed elements".format(len(segments), len(elements), flags, len(fixedElements)))
     self._vendorData.update( flags, segments )
-    allElements = list()
-    allElements.extend( fixedElements )
-    allElements.extend( elements )
-    self._pdo.update( segments, allElements )
-    self._esi.makeProm()
-    ET.ElementTree(self._esi.element).write( '-', xml_declaration = True, method = "xml", pretty_print=True )
+    self._pdo.update( segments, fixedElements, elements )
+    self._esi.update()
+
 
 if __name__ == "__main__":
 
@@ -299,13 +341,13 @@ if __name__ == "__main__":
 
   parser = ET.XMLParser(remove_blank_text=True)
 
-  op = QtWidgets.QFileDialog.Options()
-  op |= QtWidgets.QFileDialog.DontUseNativeDialog;
-  parent = None
-#  fn = QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", "", "XML Files (*.xml)", options=op)
-
-  et =  None if True  else ET.parse('feil.xml', parser).getroot()
+  et  =  None if False else ET.parse('feil.xml', parser).getroot()
   esi = ESI( et )
+
+  if ( False ):
+    esi.writeProm( 'feil.sii', overwrite=True )
+    sys.exit(0)
+
   guiAdapter = ESIAdapter( esi )
   window     = guiAdapter.makeGui()
   window.show()

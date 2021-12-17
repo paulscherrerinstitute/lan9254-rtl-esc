@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "ecur.h"
 
@@ -151,6 +152,12 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
 	fprintf(stderr, "       -i <ireg>[=<val>]        : EVR register access\n");
 	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
+    fprintf(stderr, "                                  reg: [<range>@]<offset\n");
+    fprintf(stderr, "                                  range selects 0..7 sub-devices\n");
+    fprintf(stderr, "                                  (at base-addr (range<<19)).\n");
+	fprintf(stderr, "       -m <mem>[=<val>]         : like 'reg' but uses byte-addresses;\n");
+	fprintf(stderr, "                                  note that they still must be word-\n");
+	fprintf(stderr, "                                  aligned; this is a convenience option.\n");
 }
 
 static int
@@ -177,42 +184,59 @@ printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
 #define IREG_D ((0xf<<1) | 1)
 
 static int
-reg(Ecur e, const char *s, uint32_t bas, int ireg)
+reg(Ecur e, const char *s, uint32_t bas, int ireg, int shft)
 {
 char                *ep = 0;
 unsigned long       reg;
 unsigned long       val     = 0; /* keep compiler happy */
 int                 haveVal = 0;
 uint32_t            a;
+const char         *at;
+const char         *op = s;
 
-	reg = strtoul(s, &ep, 0);
-	if ( ep == s ) {
-		fprintf(stderr, "Error: invalid EVR register (unable to scan)\n");
+    if ( (at = strchr( s, '@' )) ) {
+        bas = strtoul( s, &ep, 0);
+		if ( ep != at ) {
+			fprintf(stderr, "Error: invalid range (unable to scan)\n");
+			return -1;
+		}
+		if ( bas >= 8 ) {
+			fprintf(stderr, "Error: invalid range (must be 0..7)\n");
+			return -1;
+		}
+		bas <<= 19;
+
+		op = at + 1;
+	}
+
+	reg = strtoul(op, &ep, 0);
+	if ( ep == op ) {
+		fprintf(stderr, "Error: invalid register (unable to scan)\n");
 		return -1;
 	}
 	while ( ' ' == *ep ) ep++;
 	if ( *ep ) {
 		if ( '=' != *ep ) {
-			fprintf(stderr, "Error: invalid EVR assigment ('=' expected)\n");
+			fprintf(stderr, "Error: invalid assigment ('=' expected)\n");
 			return -1;
 		}
-		s = ep + 1;
-		val = strtoul(s, &ep, 0);
-		if ( ep == s ) {
-			fprintf(stderr, "Error: invalid EVR register value (unable to scan)\n");
+		op = ep + 1;
+		val = strtoul(op, &ep, 0);
+		if ( ep == op ) {
+			fprintf(stderr, "Error: invalid register value (unable to scan)\n");
 			return -1;
 		}
 		haveVal = 1;
 	}
 
 	if ( ireg ) {
-		a = bas | (IREG_A << 2);
+		a = bas | (IREG_A << shft);
         if ( doReg(e, a, reg, 1) ) {
 			return -1;
 		}
-		a = bas | (IREG_D << 2);
+		a = bas | (IREG_D << shft);
 	} else {
-		a = bas | (reg << 2);
+		a = bas | (reg << shft);
 	}
     return doReg( e, a, val, haveVal );
 }
@@ -220,7 +244,7 @@ uint32_t            a;
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:tsve:r:i:";
+char               *optstr        = "ha:tsve:r:i:m:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
@@ -228,11 +252,13 @@ Ecur                e             = 0;
 uint32_t            hbibas        = (7<<19);
 uint32_t            escbas        = (6<<19);
 uint32_t            evrbas        = (0<<19);
+uint32_t            regbas        = (0<<19);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
 int                 verbose       = 0;
 uint32_t           *u32_p         = 0;
 int                 opt;
+const char         *at, *arg;
 
 	while ( (opt = getopt(argc, argv, optstr)) > 0 ) {
         u32_p = 0;
@@ -260,6 +286,11 @@ int                 opt;
 				verbose++;
 				break;
 
+            case 'b':
+				u32_p = &regbas;
+				break;
+
+			case 'm': /* deal with that later */
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
 			case 'i': /* deal with that later */
@@ -269,6 +300,11 @@ int                 opt;
 			fprintf(stderr, "Error: Unable to scan argument to option %d\n", opt);
 			goto bail;
 		}
+	}
+
+	if ( regbas >= 8 ) {
+		fprintf(stderr, "device index must be 0..7\n");
+		goto bail;
 	}
 
 	if ( ! (e = ecurOpen( dip, dprt, verbose )) ) {
@@ -286,13 +322,23 @@ int                 opt;
 
 	optind = 1;
 	while ( (opt = getopt( argc, argv, optstr )) > 0 ) {
+
+		arg = optarg;
+
 		switch ( opt ) {
 			default:
 				break;
             case 'i':
 			case 'e':
+				if ( (at = strchr(optarg, '@')) ) {
+					fprintf(stderr, "Warning: range ('@') ignored for EVR access!\n");
+					arg = at + 1;
+				}
+				regbas = evrbas;
+				/* fall thru */
+			case 'm':
 			case 'r':
-				if ( reg( e, optarg, evrbas, (opt == 'i') ) ) {
+				if ( reg( e, arg, regbas, (opt == 'i'), (opt == 'm' ? 0 : 2) ) ) {
 					goto bail;
 				}
 				break;
