@@ -828,6 +828,7 @@ class VendorData(FixedPdoPart):
 
   def setExtraEvent(self, idx, val):
     self._xtraEvents[idx] = val
+    self._modified        = True
 
   @property
   def netConfig(self):
