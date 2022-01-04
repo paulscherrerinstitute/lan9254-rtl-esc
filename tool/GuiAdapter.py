@@ -4,6 +4,7 @@ from   PyQt5              import QtCore,QtGui,QtWidgets
 from   PdoElement         import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator, DialogBase
 from   FixedPdoForm       import FixedPdoForm, PdoElementGroup
 # XML interface
+from   lxml               import etree as ET
 from   ToolCore           import VendorData, Pdo, NetConfig, ESI
 
 class VendorDataAdapter(object):
@@ -269,12 +270,21 @@ class QuitDialog(DialogBase):
     if ( 1 == result ):
       sys.exit(0)
 
+class MyMainWindow(QtWidgets.QMainWindow):
+  def __init__(self, gui, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._gui = gui
+
+  def closeEvent(self, event):
+    self._gui.mkQuit( event.accept, event.ignore )()
+
 class ESIAdapter(VendorDataAdapter, PdoAdapter):
-  def __init__(self, esi):
+  def __init__(self, esi, fnam = None):
     VendorDataAdapter.__init__(self, esi.vendorData)
     PdoAdapter.__init__(self, esi.txPdo)
     self._esi  = esi
     self._main = None
+    self._fnam = fnam
 
   def makeGui(self, parent=None):
     window = QtWidgets.QWidget()
@@ -284,12 +294,16 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     lbl    = QtWidgets.QLabel( title )
     lbl.setObjectName("H1")
     layout.addWidget( lbl )
-    layout.addLayout( VendorDataAdapter.makeNetCfgGui( self ) )
-    layout.addLayout( VendorDataAdapter.makeEvrCfgGui( self ) )
-    layout.addLayout( VendorDataAdapter.makeGui( self, self ) )
-    layout.addLayout( PdoAdapter.makeGui( self, self )        )
+    hlay   = QtWidgets.QHBoxLayout()
+    vlay   = QtWidgets.QVBoxLayout()
+    layout.addLayout( hlay )
+    hlay  .addLayout( vlay )
+    vlay.addLayout( VendorDataAdapter.makeNetCfgGui( self ) )
+    vlay.addLayout( VendorDataAdapter.makeEvrCfgGui( self ) )
+    vlay.addLayout( VendorDataAdapter.makeGui( self, self ) )
+    hlay.addLayout( PdoAdapter.makeGui( self, self )        )
     window.setLayout( layout )
-    main       = QtWidgets.QMainWindow()
+    main       = MyMainWindow( self )
     self._main = main
     main.setCentralWidget(window)
     menuBar    = QtWidgets.QMenuBar()
@@ -301,6 +315,16 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
       op |= QtWidgets.QFileDialog.DontUseNativeDialog;
       parent = slf._main
       return QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", "", typ, options=op)
+
+    def mkSave(slf):
+      def save():
+        try:
+          self.update()
+          self.saveTo( self._fnam )
+          self.resetModified()
+        except Exception as e:
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
+      return save
 
     def mkSaveAs(slf):
       def saveAs():
@@ -329,18 +353,22 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
           DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
       return writeSii
 
-    def mkQuit():
-      def quit():
-        if ( self.modified() ):
-          QuitDialog( parent = self._main ).show()
-        else:
-          sys.exit(0)
-      return quit
+    if ( not self._fnam is None ):
+      fileMenu.addAction( "Save" ).triggered.connect( mkSave( self ) )
     fileMenu.addAction( "Save As" ).triggered.connect( mkSaveAs( self ) )
     fileMenu.addAction( "Write SII (EEPROM) File" ).triggered.connect( mkWriteSii( self ) )
-    fileMenu.addAction( "Quit" ).triggered.connect( mkQuit() )
+    fileMenu.addAction( "Quit" ).triggered.connect( self.mkQuit() )
     main.setMenuBar( menuBar )
     return main
+
+  def mkQuit( self, accept = lambda : sys.exit(0), ignore = lambda : None ):
+    def quit():
+      if ( self.modified() ):
+        QuitDialog( parent = self._main ).show()
+        ignore()
+      else:
+        accept()
+    return quit
 
   def saveTo(self, fnam):
     ET.ElementTree(self._esi.element).write( fnam, xml_declaration = True, method = "xml", pretty_print=True )
@@ -358,33 +386,3 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
   def resetModified(self):
     PdoAdapter.resetModified(self)
     VendorDataAdapter.resetModified(self)
-
-
-if __name__ == "__main__":
-
-  from   PyQt5 import QtCore,QtGui,QtWidgets
-  import sys
-  from   lxml  import etree as ET
-
-  style = (
-           "QLabel#H2 { font: bold italic;"
-         + "            qproperty-alignment: AlignHCenter;"
-         + "            padding:   20;"
-         + "          }"
-         + "QLabel#H1 { font: bold italic huge;"
-         + "            padding:   40;"
-         + "          }"
-          )
-
-  app = QtWidgets.QApplication(sys.argv)
-  app.setStyleSheet(style)
-
-  parser = ET.XMLParser(remove_blank_text=True)
-
-  et  =  None if False else ET.parse('feil.xml', parser).getroot()
-  esi = ESI( et )
-
-  guiAdapter = ESIAdapter( esi )
-  window     = guiAdapter.makeGui()
-  window.show()
-  app.exec()
