@@ -799,12 +799,6 @@ class VendorData(FixedPdoPart):
     self._modified  = False
     if ( evrParams is None ):
       self._evrParams = [ Evr320PulseParam() for i in range(FirmwareConstants.EVR_NUM_PULSE_GENS()) ]
-      i = 1
-      for p in self._evrParams:
-        p.pulseDelay = 16*i
-        p.pulseWidth = 256*i + 4
-        p.pulseEvent = i
-        i += 1
     else:
       self._evrParams = evrParams
     self._xtraEvents = eventCodes
@@ -812,13 +806,20 @@ class VendorData(FixedPdoPart):
       self._xtraEvents[i] = 0x11*(i+1)
 
     self.update( self.flags, segments )
+    self.resetModified()
 
   @property
   def modified(self):
-    return self._modified
+    rv = self._modified or self._netConfig.modified
+    for p in self._evrParams:
+      rv = rv or p.modified
+    return rv
 
   def resetModified(self):
     self._modified = False
+    self._netConfig.resetModified()
+    for p in self._evrParams:
+      p.resetModified()
 
   def getEvrParam(self, idx):
     return self._evrParams[idx]
@@ -1038,7 +1039,7 @@ class VendorData(FixedPdoPart):
     except Exception as e:
       segments = []
       evrCfg   = None
-      print(e.args[0])
+      print( str( e ) )
     return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, *args, **kwargs )
     
 class Pdo(object):

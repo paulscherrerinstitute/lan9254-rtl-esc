@@ -123,6 +123,13 @@ class VendorDataAdapter(object):
   def getGuiVals(self):
     return self.__gui.getGuiVals()
 
+  def modified(self):
+    return self.vendorData.modified or self.__gui.modified
+
+  def resetModified(self):
+    self.vendorData.resetModified()
+    self.__gui.resetModified()
+
   def makeEvrCfgGui(self):
     def mkCodGet(vd, ev):
       # ensure that the event is actually enabled
@@ -225,12 +232,18 @@ class PdoAdapter(object):
         self._pdoGui.add( PdoElement( e.name, e.index, e.byteSz, e.nelms, e.isSigned, e.typeName, e.indexedName ) )
     except Exception as e:
       print("WARNING -- unable to add all entries found in XML:")
-      print( e.args[0] )
+      print( str(e) )
     self._pdoGui.render()
     return self.__gui
 
   def getGuiVals(self):
     return self._pdoGui.getGuiVals()
+
+  def modified(self):
+    return self._pdoGui.modified
+
+  def resetModified(self):
+    self._pdoGui.resetModified()
 
 class Ip4Validator(QtGui.QRegExpValidator):
   def __init__(self):
@@ -246,6 +259,15 @@ class Ip4Validator(QtGui.QRegExpValidator):
         if int(x) > 255:
           return QtGui.QValidator.Invalid
     return st
+
+class QuitDialog(DialogBase):
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, hasDelete = False, **kwargs)
+    self.setMsg("There are unmodified changes - really Quit?")
+
+  def dialogDoneCheck(self, result):
+    if ( 1 == result ):
+      sys.exit(0)
 
 class ESIAdapter(VendorDataAdapter, PdoAdapter):
   def __init__(self, esi):
@@ -272,6 +294,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     main.setCentralWidget(window)
     menuBar    = QtWidgets.QMenuBar()
     fileMenu   = menuBar.addMenu( "File" )
+    self.resetModified()
 
     def fileSaveDialog(slf, typ):
       op  = QtWidgets.QFileDialog.Options()
@@ -282,26 +305,36 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     def mkSaveAs(slf):
       def saveAs():
         fn = fileSaveDialog(self, "XML Files (*.xml);;All Files (*)")
+        if ( 0 == len( fn[0] ) ):
+          # cancel
+          return
         try:
           self.update()
           self.saveTo( fn[0] )
+          self.resetModified()
         except Exception as e:
-          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + e.args[0] ).show()
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
       return saveAs
 
     def mkWriteSii(slf):
       def writeSii():
         fn = fileSaveDialog(self, "SII Files (*.sii);;All Files (*)")
+        if ( 0 == len( fn[0] ) ):
+          # cancel
+          return
         try:
           self.update()
-          self._esi.writeProm( 'feil.sii', overwrite=True )
+          self._esi.writeProm( fn[0], overwrite=True )
         except Exception as e:
-          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + e.args[0] ).show()
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
       return writeSii
 
     def mkQuit():
       def quit():
-        sys.exit(0)
+        if ( self.modified() ):
+          QuitDialog( parent = self._main ).show()
+        else:
+          sys.exit(0)
       return quit
     fileMenu.addAction( "Save As" ).triggered.connect( mkSaveAs( self ) )
     fileMenu.addAction( "Write SII (EEPROM) File" ).triggered.connect( mkWriteSii( self ) )
@@ -318,6 +351,13 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     self._vendorData.update( flags, segments )
     self._pdo.update( segments, fixedElements, elements )
     self._esi.update()
+
+  def modified(self):
+    return PdoAdapter.modified(self) or VendorDataAdapter.modified(self)
+
+  def resetModified(self):
+    PdoAdapter.resetModified(self)
+    VendorDataAdapter.resetModified(self)
 
 
 if __name__ == "__main__":
@@ -343,10 +383,6 @@ if __name__ == "__main__":
 
   et  =  None if False else ET.parse('feil.xml', parser).getroot()
   esi = ESI( et )
-
-  if ( False ):
-    esi.writeProm( 'feil.sii', overwrite=True )
-    sys.exit(0)
 
   guiAdapter = ESIAdapter( esi )
   window     = guiAdapter.makeGui()

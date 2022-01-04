@@ -679,7 +679,7 @@ class PdoListWidget(TableWidgetDnD):
           self.selectItemRange( pos )
         except Exception as e:
           print("Warning - unable to select new item")
-          print( e.args[0] )
+          print( str( e ) )
         self._modified = True
         self.render()
         return None
@@ -1127,6 +1127,7 @@ class PdoListWidget(TableWidgetDnD):
       r = int(off / self.NCOLS)
       self.setRowCount( r )
       self.renderSegments()
+      self._modified = True
       return None
     except Exception as e:
       return "ERROR -- unable to delete segment\n" + e.args[0]
