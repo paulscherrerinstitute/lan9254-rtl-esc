@@ -4,7 +4,7 @@
 from PyQt5             import QtCore, QtGui, QtWidgets
 from TableWidgetDnD    import TableWidgetDnD
 from contextlib        import contextmanager
-from tool              import PdoSegment
+from ToolCore          import PdoSegment
 from copy              import copy
 from FirmwareConstants import FirmwareConstants
 

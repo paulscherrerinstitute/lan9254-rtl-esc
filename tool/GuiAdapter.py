@@ -4,7 +4,7 @@ from   PyQt5              import QtCore,QtGui,QtWidgets
 from   PdoElement         import PdoElement, PdoListWidget, PdoSegment, FixedPdoSegment, createValidator, DialogBase
 from   FixedPdoForm       import FixedPdoForm, PdoElementGroup
 # XML interface
-from   tool               import VendorData, Pdo, NetConfig, ESI
+from   ToolCore           import VendorData, Pdo, NetConfig, ESI
 
 class VendorDataAdapter(object):
   def __init__(self, vendorData):
