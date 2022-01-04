@@ -286,6 +286,13 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     self._main = None
     self._fnam = fnam
 
+  @staticmethod
+  def qopen(nam):
+    f = QtCore.QFile( nam )
+    if (not f.open( QtCore.QFile.ReadOnly | QtCore.QFile.Text ) ):
+      raise FileNotFoundError( nam )
+    return f
+
   def makeGui(self, parent=None):
     window = QtWidgets.QWidget()
     title  = "EtherCAT EVR ESI-File and EEPROM Utility"
@@ -313,18 +320,23 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     def mkHelp():
       from   PyQt5.QtWebKitWidgets import QWebView
       import markdown
+      nm = sys.path[0] + "/README.md"
+      self.qopen( nm ).close()
       def hlp():
         if ( self._hlp is None ):
           w = QWebView()
           w.setWindowTitle( "EsiToolGui Help" )
-          f = QtCore.QFile( "README.md" )
-          f.open( QtCore.QFile.ReadOnly | QtCore.QFile.Text )
           try:
-            w.setHtml( markdown.markdown( QtCore.QTextStream( f ).readAll() ) )
-          finally:
-            f.close()
-          self._hlp = w
-        self._hlp.show()
+            f = self.qopen( nm )
+            try:
+              w.setHtml( markdown.markdown( QtCore.QTextStream( f ).readAll() ) )
+              self._hlp = w
+            finally:
+              f.close()
+          except:
+            pass
+        if ( not self._hlp is None ):
+          self._hlp.show()
       return hlp
     try:
       h = mkHelp()

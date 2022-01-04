@@ -40,7 +40,7 @@ if __name__ == "__main__":
     try:
       fn       = args[0]
       try:
-        schema = ET.XMLSchema( ET.parse( io.open( 'EtherCATInfo.xsd','r' ) ) )
+        schema = ET.XMLSchema( ET.parse( io.open( sys.path[0] + '/EtherCATInfo.xsd','r' ) ) )
       except Exception as e:
         print("Warning: unable to process 'EtherCATInfo.xsd' or 'EtherCATBase.xsd' schema -- skipping XML schema verification")
 
