@@ -308,6 +308,30 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     main.setCentralWidget(window)
     menuBar    = QtWidgets.QMenuBar()
     fileMenu   = menuBar.addMenu( "File" )
+    self._hlp  = None
+
+    def mkHelp():
+      from   PyQt5.QtWebKitWidgets import QWebView
+      import markdown
+      def hlp():
+        if ( self._hlp is None ):
+          w = QWebView()
+          w.setWindowTitle( "EsiToolGui Help" )
+          f = QtCore.QFile( "README.md" )
+          f.open( QtCore.QFile.ReadOnly | QtCore.QFile.Text )
+          try:
+            w.setHtml( markdown.markdown( QtCore.QTextStream( f ).readAll() ) )
+          finally:
+            f.close()
+          self._hlp = w
+        self._hlp.show()
+      return hlp
+    try:
+      h = mkHelp()
+      menuBar.addMenu( "Help" ).addAction( "Help" ).triggered.connect( h )
+    except Exception as e:
+      print(str(e))
+      pass
     self.resetModified()
 
     def fileSaveDialog(slf, typ):

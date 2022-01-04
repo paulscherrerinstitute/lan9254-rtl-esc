@@ -483,7 +483,7 @@ class FixedPdoPart(object):
                 "TimestampLatch0Rising",
                 "TimestampLatch0Falling",
                 "TimestampLatch1Rising",
-                "TimestampLatch2Falling" ]
+                "TimestampLatch1Falling" ]
     else:
       if ( len(names) != 7 ):
         raise ValueError("names of predefined items must be a list of 7 strings")
