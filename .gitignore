@@ -7,3 +7,9 @@ work-*.cf
 hdl/*tb
 hdl/lan9254escrun
 sw/ecurcli
+tool/__pycache__
+tool/EtherCATBase.xsd
+tool/EtherCATInfo.xsd
+tool/*.sii
+tool/*.xml
+README.TODO
