@@ -45,9 +45,12 @@ entity Lan9254ESC is
       -- user may delay initialization by deasserting 'valid'.
       configReq   : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
       configAck   : out ESCConfigAckType;
+      configRst   : out std_logic;
 
       eepWriteReq : out EEPROMWriteWordReqType;
       eepWriteAck : in  EEPROMWriteWordAckType := EEPROM_WRITE_WORD_ACK_ASSERT_C;
+
+      eepEmul     : out std_logic;
 
       extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G) := (others => LAN9254REQ_INIT_C);
       extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G);
@@ -339,6 +342,8 @@ architecture rtl of Lan9254ESC is
       decim                : natural;
       hbiWaitTimer         : HBIWaitTimeType;
       eepWriteReqVld       : std_logic;
+      eepEmulActive        : std_logic;
+      configRst            : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -378,7 +383,9 @@ architecture rtl of Lan9254ESC is
       mbxErr               => MBX_ERROR_INIT_C,
       decim                => 0,
       hbiWaitTimer         => 0,
-      eepWriteReqVld       => '0'
+      eepWriteReqVld       => '0',
+      eepEmulActive        => '0',
+      configRst            => '1'
    );
 
    type HBIMuxRegType is record
@@ -773,16 +780,32 @@ begin
             if ( REG_IO_TEST_ENABLE_G ) then
                testRegisterIO(v, r, repLoc);
             else
-               v.state := CONF;
+               if ( '0' = r.program.don ) then
+                  scheduleRegXact( v,
+                     (
+                        0 => RWXACT( RD0 ), -- read twice (after reset)
+                        1 => RWXACT( RD0 )
+                     )
+                  );
+               else
+                  v.state := CONF;
+               end if;
             end if;
 
          when CONF =>
-            if ( r.configAck.ack = '0' ) then
-               v.configAck.ack := '1';
-            elsif ( configReq.valid = '1' ) then
-               v.config        := configReq;
-               v.configAck.ack := '0';
-               v.state         := INIT;
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C ) ) );
+            else
+               if ( r.configAck.ack = '0' ) then
+                  v.eepEmulActive := r.program.seq(0).val( EC_EEP_CSR_EMUL_IDX_C );
+report "EEPROM emulation active: " & std_logic'image( v.eepEmulActive );
+                  v.configRst     := '0';
+                  v.configAck.ack := '1';
+               elsif ( configReq.valid = '1' ) then
+                  v.config        := configReq;
+                  v.configAck.ack := '0';
+                  v.state         := INIT;
+               end if;
             end if;
 
          when INIT =>
@@ -1833,5 +1856,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    req        <= reqLoc;
    configAck  <= r.configAck;
+
+   configRst  <= r.configRst;
+   eepEmul    <= r.eepEmulActive;
 
 end architecture rtl;

@@ -70,6 +70,8 @@ package Lan9254ESCPkg is
       bena     => HBI_BE_W0_C
    );
 
+   constant EC_EEP_CSR_EMUL_IDX_C        : natural :=  5;
+
    subtype EEPROMCommandType is std_logic_vector(2 downto 0);
 
    constant EEPROM_NOOP_C  : std_logic_vector(2 downto 0) := "000";
