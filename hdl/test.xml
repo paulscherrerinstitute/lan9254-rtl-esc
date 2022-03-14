@@ -643,8 +643,8 @@
         </Profile>
         <Fmmu>Outputs</Fmmu>
         <Fmmu>Inputs</Fmmu>
-        <Sm ControlByte="#x26" DefaultSize="48" Enable="1" StartAddress="#x1000">MBoxOut</Sm>
-        <Sm ControlByte="#x22" DefaultSize="48" Enable="1" StartAddress="#x1080">MBoxIn</Sm>
+        <Sm ControlByte="#x26" DefaultSize="80" Enable="1" StartAddress="#x1000">MBoxOut</Sm>
+        <Sm ControlByte="#x22" DefaultSize="80" Enable="1" StartAddress="#x1080">MBoxIn</Sm>
         <Sm ControlByte="#x24" DefaultSize="3"   Enable="1" StartAddress="#x1100">Outputs</Sm>
         <Sm ControlByte="#x20" DefaultSize="4"   Enable="1" StartAddress="#x1180">Inputs</Sm>
         <RxPdo Fixed="true" Mandatory="true" Sm="2">

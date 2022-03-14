@@ -13,7 +13,7 @@ class FirmwareConstants(object):
   @staticmethod
   def ESC_SM_LEN( sm ):
     if   sm in [0, 1]:
-      return 48
+      return 80
     elif sm in [2, 3]:
       return 128
     else:
