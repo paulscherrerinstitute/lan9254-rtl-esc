@@ -263,15 +263,7 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                      v.wordCount := 1;
                   else
                      v.wordCount := 0;
-                     if    ( r.hasMac ) then
-                        v.state := GET_MAC;
-                     elsif ( r.hasIp ) then
-                        v.state := GET_IP;
-                     else
-                        v.state     := RESP;
-                        v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
-                        v.drained   := '0';
-                     end if;
+                     v.state     := GET_MAC;
                   end if;
                end if;
             end if;
@@ -286,18 +278,14 @@ report "Unexpected frame # " & integer'image(to_integer(v.frameNo)) & " exp " & 
                end if;
 
                if ( 2 = r.wordCount ) then
-                  v.macAddr(1 downto 0) := r.macAddrTmp(1 downto 0);
-                  v.macAddr(         2) := mbxMstIb.data;
-                  v.wordCount           := 0;
-                  v.macAddrVld          := '1';
+                  if ( r.hasMac ) then
+                     v.macAddr(1 downto 0) := r.macAddrTmp(1 downto 0);
+                     v.macAddr(         2) := mbxMstIb.data;
+                     v.macAddrVld          := '1';
 report "SET IP PARAMS -- NEW MAC";
-                  if ( r.hasIp ) then
-                     v.state := GET_IP;
-                  else
-                     v.state     := RESP;
-                     v.rspStatus := EOE_ERR_CODE_SUCCESS_C;
-                     v.drained   := mbxMstIb.last;
                   end if;
+                  v.wordCount    := 0;
+                  v.state        := GET_IP;
                else
                   v.macAddrTmp( r.wordCount ) := mbxMstIb.data;
                   v.wordCount                 := r.wordCount + 1;
@@ -315,18 +303,20 @@ report "SET IP PARAMS -- NEW MAC";
                end if;
 
                if ( 1 = r.wordCount ) then
+                  v.rspStatus  := EOE_ERR_CODE_SUCCESS_C;
+                  if ( r.hasIp ) then
 report "SET IP PARAMS -- NEW IP: "
        & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)( 7 downto  0)))) & "."
        & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)(15 downto  8)))) & "."
        & integer'image(to_integer(unsigned(mbxMstIb.data ( 7 downto  0)))) & "."
        & integer'image(to_integer(unsigned(mbxMstIb.data (15 downto  8))));
-                  if ( ( r.ip4AddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
-                     v.ip4Addr(0) := r.ip4AddrTmp(0);
-                     v.ip4Addr(1) := mbxMstIb.data;
-                     v.ip4AddrVld := '1';
-                     v.rspStatus  := EOE_ERR_CODE_SUCCESS_C;
-                  else
-                     v.rspStatus  := EOE_ERR_CODE_UNSUP_DHCP_C;
+                     if ( ( r.ip4AddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
+                        v.ip4Addr(0) := r.ip4AddrTmp(0);
+                        v.ip4Addr(1) := mbxMstIb.data;
+                        v.ip4AddrVld := '1';
+                     else
+                        v.rspStatus  := EOE_ERR_CODE_UNSUP_DHCP_C;
+                     end if;
                   end if;
                   v.wordCount     := 0;
                   v.state         := RESP;
