@@ -796,30 +796,32 @@ begin
             if ( '0' = r.program.don ) then
                scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C ) ) );
             else
-               if ( r.configAck.ack = '0' ) then
-                  v.eepEmulActive := r.program.seq(0).val( EC_EEP_CSR_EMUL_IDX_C );
+               v.eepEmulActive := r.program.seq(0).val( EC_EEP_CSR_EMUL_IDX_C );
 report "EEPROM emulation active: " & std_logic'image( v.eepEmulActive );
-                  v.configRst     := '0';
-                  v.configAck.ack := '1';
-               elsif ( configReq.valid = '1' ) then
-                  v.config        := configReq;
-                  v.configAck.ack := '0';
-                  v.state         := INIT;
-               end if;
+               v.configRst     := '0';
+               v.configAck.ack := '1';
+               v.state         := INIT;
             end if;
 
          when INIT =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact(
-                  v,
-                  (
-                     0 => RWXACT( EC_REG_AL_EMSK_C, r.emask           ),
-                     1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
-                     2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
-                  )
-               );
+            if ( r.configAck.ack = '1' ) then
+               if ( configReq.valid = '1' ) then
+                  v.config        := configReq;
+                  v.configAck.ack := '0';
+               end if;
             else
-               v.state := UPDATE_AS;
+               if ( '0' = r.program.don ) then
+                  scheduleRegXact(
+                     v,
+                     (
+                        0 => RWXACT( EC_REG_AL_EMSK_C, r.emask           ),
+                        1 => RWXACT( EC_REG_IRQ_ENA_C, EC_IRQ_ENA_INIT_C ),
+                        2 => RWXACT( EC_REG_IRQ_CFG_C, EC_IRQ_CFG_INIT_C )
+                     )
+                  );
+               else
+                  v.state := UPDATE_AS;
+               end if;
             end if;
 
          when POLL_IRQ =>
