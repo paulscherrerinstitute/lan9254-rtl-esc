@@ -46,6 +46,9 @@ entity Lan9254ESC is
       configReq   : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
       configAck   : out ESCConfigAckType;
 
+      eepWriteReq : out EEPROMWriteWordReqType;
+      eepWriteAck : in  EEPROMWriteWordAckType := EEPROM_WRITE_WORD_ACK_ASSERT_C;
+
       extHBIReq   : in  Lan9254ReqArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G) := (others => LAN9254REQ_INIT_C);
       extHBIRep   : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G);
 
@@ -335,6 +338,7 @@ architecture rtl of Lan9254ESC is
       mbxErr               : MbxErrorType;
       decim                : natural;
       hbiWaitTimer         : HBIWaitTimeType;
+      eepWriteReqVld       : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -373,7 +377,8 @@ architecture rtl of Lan9254ESC is
       rxMBXTyp             => (others => '0'),
       mbxErr               => MBX_ERROR_INIT_C,
       decim                => 0,
-      hbiWaitTimer         => 0
+      hbiWaitTimer         => 0,
+      eepWriteReqVld       => '0'
    );
 
    type HBIMuxRegType is record
@@ -733,7 +738,8 @@ begin
          txMBXMst,
          rxMBXRdy,
          txMBXBufWRdy, txMBXBufRDat, txMBXBufHaveBup,
-         configReq
+         configReq,
+         eepWriteAck
    ) is
       variable v         : RegType;
       variable val       : std_logic_vector(31 downto 0);
@@ -1218,6 +1224,11 @@ severity warning;
                end if;
             end if;
 
+            -- No need to check the 'emulation' bit in EEP_CSR_C; we don't get
+            -- an EEP event when not in emulation mode.
+            -- NOTE: when in emulation mode we write to the *real* eeprom. This
+            --       allows us to boot-strap or fix a fault EEPROM from emulation
+            --       mode!
          when EEP_EMUL =>
             if ( '0' = r.program.don ) then
                -- read CSR last; we keep it in the same position;
@@ -1233,12 +1244,18 @@ severity warning;
             else
                case r.program.seq(2).val(10 downto 8) is
                   when EEPROM_WRITE_C =>
---DONX                     writeEEPROMEmul( eeprom, r.program.seq(1).val, r.program.seq(0).val );
-                     v.state := EEP_WRITE;
+                     v.eepWriteReqVld := '1';
+                     v.state          := EEP_WRITE;
+report "EEP_WRITE CSR" & integer'image(to_integer(signed(r.program.seq(0).val)));
+report "         VLO" & integer'image(to_integer(signed(r.program.seq(1).val)));
+report "         VHI" & integer'image(to_integer(signed(r.program.seq(2).val)));
 
                   when EEPROM_READ_C | EEPROM_RELD_C  =>
                      readEEPROMEmul( eeprom, r.program.seq(1).val, v.program.seq(0).val, v.program.seq(1).val );
                      v.state := EEP_READ;
+report "EEP_READ CSR" & integer'image(to_integer(signed(r.program.seq(0).val)));
+report "         VLO" & integer'image(to_integer(signed(r.program.seq(1).val)));
+report "         VHI" & integer'image(to_integer(signed(r.program.seq(2).val)));
 
                   when others  =>
                      report "UNSUPPORTED EE EMULATION COMMAND " & integer'image(to_integer(unsigned(r.program.seq(2).val)))
@@ -1247,18 +1264,21 @@ severity warning;
                end case;
             end if;
 
-        when EEP_WRITE =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val ) ) );
+         when EEP_WRITE =>
+            if ( r.eepWriteReqVld = '1' ) then
+               if ( eepWriteAck.ack = '1' ) then
+                  v.eepWriteReqVld := '0';
+               end if;
             else
-               v.state := HANDLE_AL_EVENT;
+               if ( '0' = r.program.don ) then
+                  scheduleRegXact( v, ( 0 => RWXACT( EC_REG_EEP_CSR_C, r.program.seq(2).val ) ) );
+               else
+                  v.state := HANDLE_AL_EVENT;
+               end if;
             end if;
 
         when EEP_READ =>
             if ( '0' = r.program.don ) then
---report "EEP_READ CSR" & integer'image(to_integer(signed(r.program.seq(0).val)));
---report "         VLO" & integer'image(to_integer(signed(r.program.seq(1).val)));
---report "         VHI" & integer'image(to_integer(signed(r.program.seq(2).val)));
                -- the EEPROM contents are now in r.program.seq(1/2).val
                scheduleRegXact(
                   v,
@@ -1588,6 +1608,16 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          end if;
       end if;
    end process P_SEQ;
+
+   P_EEP_WRITE : process ( r ) is
+      variable v : EEPROMWriteWordReqType;
+   begin
+      v := EEPROM_WRITE_WORD_REQ_INIT_C;
+      v.waddr     := unsigned( r.program.seq(1).val( v.waddr'range ) );
+      v.wdata     := r.program.seq(0).val( v.wdata'range );
+      v.valid     := r.eepWriteReqVld;
+      eepWriteReq <= v;
+   end process P_EEP_WRITE;
 
    U_MBX_BUF : entity work.ESCTxMbxBuf
       generic map (

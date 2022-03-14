@@ -49,6 +49,9 @@ entity Lan9254ESCWrapper is
       escConfigReq            : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
       escConfigAck            : out ESCConfigAckType;
 
+      eepWriteReq             : out EEPROMWriteWordReqType;
+      eepWriteAck             : in  EEPROMWriteWordAckType := EEPROM_WRITE_WORD_ACK_ASSERT_C;
+
       -- TXPDO
       txPDOMst                : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
       txPDORdy                : out std_logic;
@@ -177,6 +180,9 @@ begin
 
          configReq   => escConfigReq,
          configAck   => escConfigAck,
+
+         eepWriteReq => eepWriteReq,
+         eepWriteAck => eepWriteAck,
 
          rxPDOMst    => rxPDOMst,
          rxPDORdy    => rxPDORdy,
