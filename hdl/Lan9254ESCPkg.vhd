@@ -270,6 +270,11 @@ package Lan9254ESCPkg is
       ack              => '1'
    );
 
+   -- the device has 2 latch inputs
+   constant EC_NUM_LATCH_INP_C : natural := 2;
+   -- the device has 2 sync outputs
+   constant EC_NUM_SYNC_OUT_C  : natural := 2;
+
 end package LAN9254ESCPkg;
 
 package body LAN9254ESCPkg is
