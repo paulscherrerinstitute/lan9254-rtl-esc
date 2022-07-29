@@ -24,6 +24,8 @@ package ESCBasicTypesPkg is
    function toString(constant x : std_logic_vector) return string;
    function toString(constant x : unsigned        ) return string;
 
+   function toVHDL(constant idx : integer; constant arr : Slv08Array) return string;
+
    function toSl(constant a: boolean) return std_logic;
 
    function bswap(constant x: unsigned)         return unsigned;
@@ -36,6 +38,12 @@ package ESCBasicTypesPkg is
       constant a: in integer;
       constant b: in integer
    ) return integer;
+
+   function ite(
+      constant c: in boolean;
+      constant a: in string;
+      constant b: in string
+   ) return string;
 
 end package ESCBasicTypesPkg;
 
@@ -158,5 +166,25 @@ package body ESCBasicTypesPkg is
       if ( c ) then return a; else return b; end if;
    end function ite;
 
+   function ite(
+      constant c: in boolean;
+      constant a: in string;
+      constant b: in string
+   ) return string is
+   begin
+      if ( c ) then return a; else return b; end if;
+   end function ite;
+
+   function toVHDL(constant idx : integer; constant arr : Slv08Array) return string is
+      constant thisone : string := 
+         integer'image(idx) & " => x""" & toString(arr(idx)) & """"
+         & ite( idx = arr'high, LF & ")", "," & LF );
+   begin
+      if ( idx = arr'low ) then
+         return "(" & LF & thisone;
+      else
+         return toVHDL(idx - 1, arr) & thisone;
+      end if;
+   end function toVHDL;
 
 end package body ESCBasicTypesPkg;
