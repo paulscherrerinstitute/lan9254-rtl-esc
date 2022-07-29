@@ -201,8 +201,6 @@ package Lan9254ESCPkg is
       valid    : std_logic;
    end record ESCConfigReqType;
 
-   function toVHDL(constant cfg : ESCConfigReqType) return string;
-
    type ESCConfigAckType is record
       ack      : std_logic;
    end record ESCConfigAckType;
@@ -405,14 +403,5 @@ package body LAN9254ESCPkg is
    begin
       return c; 
    end function toESCConfigReqType;
-
-   function toVHDL(constant cfg : ESCConfigReqType) return string is
-   begin
-      return "(" & LF &
-             "  sm2Len => x""" & toString( cfg.sm2Len ) & """," & LF &
-             "  sm3Len => x""" & toString( cfg.sm3Len ) & """," & LF &
-             "  valid  => "    & std_logic'image( cfg.valid ) & LF &
-             ")";
-   end function toVHDL;
 
 end package body LAN9254ESCPkg;

@@ -52,8 +52,6 @@ package IPAddrConfigPkg is
       constant udpPort : std_logic_vector := ""
    ) return IPAddrConfigReqType;
 
-   function toVHDL(constant cfg : IPAddrConfigReqType) return string;
-
 end package IPAddrConfigPkg;
 
 package body IPAddrConfigPkg is
@@ -126,19 +124,5 @@ package body IPAddrConfigPkg is
    begin
       return c;
    end function toIPAddrConfigReqType;
-
-   function toVHDL(constant cfg : IPAddrConfigReqType)
-      return string is
-      constant dfl : IPAddrConfigReqType := makeIpAddrConfigReq;
-   begin
-      return "( " & LF &
-             "  macAddr    => x""" & ite( cfg.macAddrVld = '1', toString( cfg.macAddr ), toString( dfl.macAddr ) ) & """," & LF &
-             "  macAddrVld => " & std_logic'image(cfg.macAddrVld) & "," & LF &
-             "  ip4Addr    => x""" & ite( cfg.ip4AddrVld = '1', toString( cfg.ip4Addr ), toString( dfl.ip4Addr ) ) & """," & LF &
-             "  ip4AddrVld => " & std_logic'image(cfg.ip4AddrVld) & "," & LF &
-             "  udpPort    => x""" & ite( cfg.udpPortVld = '1', toString( cfg.udpPort ), toString( dfl.udpPort ) ) & """," & LF &
-             "  udpPortVld => " & std_logic'image(cfg.udpPortVld) & LF &
-             ")";
-   end function toVHDL;
 
 end package body IPAddrConfigPkg;
