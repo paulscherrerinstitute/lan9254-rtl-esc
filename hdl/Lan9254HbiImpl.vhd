@@ -5,6 +5,7 @@ use ieee.math_real.all;
 
 use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
+use work.IlaWrappersPkg.all;
 
 -- RTL ('real') implementation of HBI interface for driving the
 -- LAN9254 from the FPGA fabric.
@@ -120,6 +121,36 @@ begin
    assert DATA_WIDTH_G = 16 report "Only DATA_WIDTH_G = 16 implemented ATM, sorry" severity failure;
    assert ADDR_WIDTH_G = 16 report "Only ADDR_WIDTH_G = 16 implemented ATM, sorry" severity failure;
    assert MUXED_MODE_G      report "Only MUXED_MODE_G = true implemented ATM, sorry" severity failure;
+
+   GEN_ILA : if ( GEN_ILA_G ) generate
+      signal probe0 : std_logic_vector(63 downto 0) := (others => '0');
+      signal probe1 : std_logic_vector(63 downto 0) := (others => '0');
+      signal probe2 : std_logic_vector(63 downto 0) := (others => '0');
+      signal probe3 : std_logic_vector(63 downto 0) := (others => '0');
+   begin
+      probe0(15 downto  0) <= r.hbiOut.ad(15 downto 0);
+      probe0(17 downto 16) <= r.hbiOut.ale;
+      probe0(19 downto 18) <= r.hbiOut.be;
+      probe0(          20) <= r.hbiOut.rs;
+      probe0(          21) <= r.hbiOut.ws;
+      probe0(          22) <= r.hbiOut.cs;
+      probe0(          23) <= r.hbiOut.ad_t(0);
+      probe0(63 downto 24) <= (others => '0');
+
+      probe1(15 downto  0) <= hbiInp.ad(15 downto 0);
+      probe1(          16) <= hbiInp.waitAck;
+      probe1(          17) <= waitAckSync;
+      probe1(63 downto 18) <= (others => '0');
+
+      U_ILA : component Ila_256
+         port map (
+            clk     => clk,
+            probe0  => probe0,
+            probe1  => probe1,
+            probe2  => probe2,
+            probe3  => probe3
+         );
+   end generate GEN_ILA;
 
    -- wait/ack is supplied asynchronously!
    U_WA_SYNC : entity work.SynchronizerBit

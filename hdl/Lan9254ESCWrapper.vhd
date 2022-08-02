@@ -23,6 +23,8 @@ entity Lan9254ESCWrapper is
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
+      GEN_ESC_ILA_G           : boolean := true;
+      GEN_U2B_ILA_G           : boolean := true;
       NUM_EXT_HBI_MASTERS_G   : natural := 1;
       EXT_HBI_MASTERS_PRI_G   : integer := 0;
       NUM_BUS_SUBS_G          : natural range 0 to 4 := 0;
@@ -170,7 +172,8 @@ begin
          REG_IO_TEST_ENABLE_G    => REG_IO_TEST_ENABLE_G,
          NUM_EXT_HBI_MASTERS_G   => NUM_HBI_MASTERS_C,
          EXT_HBI_MASTERS_PRI_G   => EXT_HBI_MASTERS_PRI_G,
-         TXMBX_TEST_G            => TXMBX_TEST_G
+         TXMBX_TEST_G            => TXMBX_TEST_G,
+         GEN_ILA_G               => GEN_ESC_ILA_G
       )
       port map (
          clk         => clk,
@@ -601,7 +604,8 @@ begin
 
       U_BUS_MST : entity work.Udp2Bus
          generic map (
-            MAX_FRAME_SIZE_G  => MAX_UDP_SIZE_C
+            MAX_FRAME_SIZE_G  => MAX_UDP_SIZE_C,
+            GEN_ILA_G         => GEN_U2B_ILA_G
          )
          port map (
             clk               => clk,

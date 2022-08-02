@@ -110,7 +110,8 @@ use     work.IlaWrappersPkg.all;
 --    This may lead to unexpected results if the user forgets to increment the sequence number.
 entity Udp2Bus is
    generic (
-      MAX_FRAME_SIZE_G : natural
+      MAX_FRAME_SIZE_G : natural;
+      GEN_ILA_G        : boolean := true
    );
    port (
       clk         : in  std_logic;
@@ -150,8 +151,6 @@ architecture rtl of Udp2Bus is
    constant ADL_IDX_C   : natural :=  0;
 
    constant MAX_PAYLOAD_WORDS_C : natural := MAX_FRAME_SIZE_G / 2;
-
-   constant GEN_ILA_C   : boolean := true;
 
    function cmd2be(constant cmd : std_logic_vector(15 downto 0))
    return std_logic_vector is
@@ -248,12 +247,12 @@ architecture rtl of Udp2Bus is
 
 begin
 
-   GEN_NO_ILA : if ( not GEN_ILA_C ) generate
+   GEN_NO_ILA : if ( not GEN_ILA_G ) generate
       ilaTrgOb <= ilaTrgIb;
       ilaAckIb <= ilaAckOb;
    end generate GEN_NO_ILA;
 
-   GEN_ILA : if ( GEN_ILA_C ) generate
+   GEN_ILA : if ( GEN_ILA_G ) generate
 
       signal probe0      : std_logic_vector(63 downto 0) := (others => '0');
       signal probe1      : std_logic_vector(63 downto 0) := (others => '0');

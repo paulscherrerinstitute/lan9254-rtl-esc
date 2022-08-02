@@ -22,6 +22,7 @@ entity Lan9254HBI is
       DATA_WIDTH_G   : positive range 16   to 16   := 16;
       ADDR_WIDTH_G   : positive range 16   to 16   := 16;
       MUXED_MODE_G   : boolean  range true to true := true;
+      GEN_ILA_G      : boolean                     := true;
       CLOCK_FREQ_G   : real
    );
    port (

@@ -32,7 +32,8 @@ entity Lan9254ESC is
       -- external HBI masters with an index < 0 have a higher
       -- priority than internal masters; external masters with
       -- index >= 0 have a lower priority than internal masters.
-      EXT_HBI_MASTERS_PRI_G   : integer := 0
+      EXT_HBI_MASTERS_PRI_G   : integer := 0;
+      GEN_ILA_G               : boolean := true
    );
    port (
       clk         : in  std_logic;
@@ -87,8 +88,6 @@ entity Lan9254ESC is
 end entity Lan9254ESC;
 
 architecture rtl of Lan9254ESC is
-
-   constant GEN_ILA_C                 : boolean := true;
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
@@ -1792,7 +1791,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
    debug(22)            <= reqLoc.valid;
    debug(23)            <= rep.valid;
 
-   G_GEN_ILA : if ( GEN_ILA_C ) generate
+   G_GEN_ILA : if ( GEN_ILA_G ) generate
 
       signal     probe0          : std_logic_vector(63 downto 0) := (others => '0');
       signal     probe1          : std_logic_vector(63 downto 0) := (others => '0');
@@ -1849,7 +1848,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    end generate G_GEN_ILA;
 
-   G_GEN_NO_ILA : if ( not GEN_ILA_C ) generate
+   G_GEN_NO_ILA : if ( not GEN_ILA_G ) generate
       ilaTrigOb <= ilaTrigIb;
       ilaTackIb <= ilaTackOb;
    end generate G_GEN_NO_ILA;
