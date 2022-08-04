@@ -39,6 +39,7 @@ foreach f {
   AddressGenerator.vhd
   IPAddrConfigPkg.vhd
   DeviceDna7.vhd
+  StrmMux.vhd
 } {
   loadSource    -path "$::DIR_PATH/hdl/$f"
 }
