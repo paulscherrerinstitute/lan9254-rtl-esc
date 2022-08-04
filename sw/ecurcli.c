@@ -143,7 +143,7 @@ uint32_t            a;
 
 static void usage(const char *nm)
 {
-	fprintf(stderr, "usage: %s [-hst] [-a <dst_ip>] [-e <evr_reg>[=<value>]]\n", nm);
+	fprintf(stderr, "usage: %s [-hst] [-a <dst_ip>] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
 	fprintf(stderr, "       -h                       : this message\n");
 	fprintf(stderr, "       -t                       : run basic test (connection to target required)\n");
 	fprintf(stderr, "       -s                       : print networking stats for target\n");
@@ -158,20 +158,40 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -m <mem>[=<val>]         : like 'reg' but uses byte-addresses;\n");
 	fprintf(stderr, "                                  note that they still must be word-\n");
 	fprintf(stderr, "                                  aligned; this is a convenience option.\n");
+	fprintf(stderr, "       -w <width>               : width (1,2,4); must be used with -m\n");
 }
 
 static int
-doReg(Ecur e, uint32_t a, uint32_t v, int doWrite)
+doReg(Ecur e, uint32_t a, uint32_t v, int doWrite, unsigned w)
 {
+uint16_t v16 = (uint16_t)v;
+uint8_t  v8  = (uint8_t) v;
+int      st;
+const char *bitws = (1 == w ? "8" : (2 == w ? "16" : "32"));
+
+	if ( (a & (w - 1)) ) {
+		fprintf(stderr, "Error: address (0x%x) not aligned to width (%d)\n", a, w);
+		return -1;
+	}
 	if ( doWrite ) {
 printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
-		if ( ecurWrite32( e, a, &v, 1 ) < 0 ) {
-			fprintf(stderr, "Error: ecurWrite32() failed (address 0x%08" PRIx32 ")\n", a);
+		switch ( w ) {
+			case 1:   st = ecurWrite8 ( e, a, &v8,  1 ); break;
+			case 2:   st = ecurWrite16( e, a, &v16, 1 ); break;
+			default:  st = ecurWrite32( e, a, &v,   1 ); break;
+		}
+		if ( st < 0 ) {
+			fprintf(stderr, "Error: ecurWrite%s() failed (address 0x%08" PRIx32 ")\n", bitws, a);
 			return -1;
 		}
 	} else {
-		if ( ecurRead32( e, a, &v, 1 ) < 1 ) {
-			fprintf(stderr, "Error: ecurRead32() failed (address 0x%08" PRIx32 ")\n", a);
+		switch ( w ) {
+			case 1:   st = ecurRead8 ( e, a, &v8,  1 ); v = v8;  break;
+			case 2:   st = ecurRead16( e, a, &v16, 1 ); v = v16; break;
+			default:  st = ecurRead32( e, a, &v,   1 );          break;
+		}
+		if ( st < 1 ) {
+			fprintf(stderr, "Error: ecurRead%s() failed (address 0x%08" PRIx32 ")\n", bitws, a);
 			return -1;
 		} else {
 			printf("0x%08" PRIx32 ": 0x%08" PRIx32 " (%" PRId32 ")\n", a, v, v);
@@ -184,7 +204,7 @@ printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
 #define IREG_D ((0xf<<1) | 1)
 
 static int
-reg(Ecur e, const char *s, uint32_t bas, int ireg, int shft)
+reg(Ecur e, const char *s, uint32_t bas, int ireg, int shft, int width)
 {
 char                *ep = 0;
 unsigned long       reg;
@@ -230,21 +250,22 @@ const char         *op = s;
 	}
 
 	if ( ireg ) {
+        width = 4;
 		a = bas | (IREG_A << shft);
-        if ( doReg(e, a, reg, 1) ) {
+        if ( doReg(e, a, reg, 1, width) ) {
 			return -1;
 		}
 		a = bas | (IREG_D << shft);
 	} else {
 		a = bas | (reg << shft);
 	}
-    return doReg( e, a, val, haveVal );
+    return doReg( e, a, val, haveVal, width );
 }
 
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:tsve:r:i:m:";
+char               *optstr        = "ha:tsve:r:i:m:w:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
@@ -259,6 +280,7 @@ int                 verbose       = 0;
 uint32_t           *u32_p         = 0;
 int                 opt;
 const char         *at, *arg;
+uint32_t            width         = 4;
 
 	while ( (opt = getopt(argc, argv, optstr)) > 0 ) {
         u32_p = 0;
@@ -290,6 +312,10 @@ const char         *at, *arg;
 				u32_p = &regbas;
 				break;
 
+            case 'w':
+                u32_p = &width;
+                break;
+
 			case 'm': /* deal with that later */
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
@@ -300,6 +326,13 @@ const char         *at, *arg;
 			fprintf(stderr, "Error: Unable to scan argument to option %d\n", opt);
 			goto bail;
 		}
+		switch ( width ) {
+			case 1: case 2: case 4:
+				break;
+			default:
+				fprintf(stderr, "-w argument must be 1,2 or 4\n");
+				goto bail;
+        }
 	}
 
 	if ( regbas >= 8 ) {
@@ -338,7 +371,7 @@ const char         *at, *arg;
 				/* fall thru */
 			case 'm':
 			case 'r':
-				if ( reg( e, arg, regbas, (opt == 'i'), (opt == 'm' ? 0 : 2) ) ) {
+				if ( reg( e, arg, regbas, (opt == 'i'), (opt == 'm' ? 0 : (1 == width ? 0 : ( 2 == width ? 1 : 4))), width) ) {
 					goto bail;
 				}
 				break;
