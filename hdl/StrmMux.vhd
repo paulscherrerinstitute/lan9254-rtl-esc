@@ -15,8 +15,15 @@ entity StrmMux is
       rst         : in  std_logic;
 
       -- the mux is arbitrated when masters try to write; once a master
-      -- is granted the mux it holds it until it asserts its corresponding
+      -- is granted the mux it holds it until it de-asserts its corresponding
       -- bit in 'busLock' (and 'last' is seen)
+      -- The protocol is as follows:
+      --  1.  set lock bit
+      --  2.  try sending commands/data on the stream. This will only
+      --      proceed one nobody else holds the lock.
+      --  3.  go on using the stream/i2c master + bus; nobody else
+      --      can do so.
+      --  4.  clear lock bit.
       busLock     : in  std_logic_vector(NUM_MSTS_G - 1 downto 0)    := (others => '0');
 
       reqMstIb    : in  Lan9254StrmMstArray(NUM_MSTS_G - 1 downto 0) := (others => LAN9254STRM_MST_INIT_C);
