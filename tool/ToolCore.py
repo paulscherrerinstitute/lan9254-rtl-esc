@@ -7,6 +7,8 @@ import copy
 from   FirmwareConstants import FirmwareConstants
 from   AppConstants      import ESIDefaults, HardwareConstants
 from   ESIPromGenerator  import ESIPromGenerator
+from   ClockDriver       import ClockDriver
+import VersaClock6Driver # importing a driver registers it
 
 # Define a decorator that checks if
 # the current state allows the object
@@ -619,16 +621,10 @@ class Sm(object):
     self._el.set("DefaultSize",  "{:d}".format(self._size))
     self._el.set("Enable",       "{:d}".format(self._ena))
 
-class NetConfig(object):
+class Configurable(object):
   def __init__(self):
-    object.__init__(self)
-    self._macAddr  = bytearray( [255 for i in range(6)] )
-    self._ip4Addr  = bytearray( [255 for i in range(4)] )
-    self._udpPort  = bytearray( [255 for i in range(2)] )
+    super().__init__()
     self._modified = False
-
-  def clone(self):
-    return copy.copy(self)
 
   @property
   def modified(self):
@@ -636,6 +632,55 @@ class NetConfig(object):
 
   def resetModified(self):
     self._modified = False
+
+  def clone(self):
+    return copy.copy(self)
+
+class ClockConfig(Configurable):
+
+  def __init__(self, freqMHz = 100.333, driverName = "VersaClock6"):
+    super().__init__()
+    try:
+      self._drv = ClockDriver.findDriver( driverName )
+    except KeyError:
+      raise KeyError("No driver for requested clock ({}) found".format( driverName ))
+    self._freqMHz  = self._drv.acceptable( freqMHz )
+
+  @property
+  def freqMHz(self):
+    return self._freqMHz
+
+  def setFreqMHz(self, f):
+    f = float( f )
+    self._freqMHz  = self._drv.acceptable( f )
+    self._modified = True
+
+  # check if the requested frequency can be synthesized
+  # returns actual frequency or raises a RuntimeError if
+  # no close frequency can be produced
+  def acceptable(self, f):
+    return self._drv.acceptable( f )
+
+  def mkInitProg(self):
+    return self._drv.mkInitProg( self._freqMHz )
+
+  def driverName(self):
+    return self._drv.name
+
+  @property
+  def freqMHzLow(self):
+    return self._drv.freqMHzLow
+
+  @property
+  def freqMHzHigh(self):
+    return self._drv.freqMHzHigh
+
+class NetConfig(Configurable):
+  def __init__(self):
+    super().__init__()
+    self._macAddr  = bytearray( [255 for i in range(6)] )
+    self._ip4Addr  = bytearray( [255 for i in range(4)] )
+    self._udpPort  = bytearray( [255 for i in range(2)] )
 
   @property
   def macAddr(self):
@@ -702,20 +747,13 @@ class NetConfig(object):
         raise RuntimeError("NetConfig: don't know how to convert " + type(a) + "into a network address")
     return ba
 
-class Evr320PulseParam(object):
+class Evr320PulseParam(Configurable):
   def __init__(self):
+    super().__init__()
     self._enabled  = False
     self._width    = 4
     self._delay    = 0
     self._event    = 0
-    self._modified = False
-
-  @property
-  def modified(self):
-    return self._modified
-
-  def resetModified(self):
-    self._modified = False
 
   @property
   def pulseEnabled(self):
@@ -788,7 +826,7 @@ class ExtraEvents(object):
 
 class VendorData(FixedPdoPart):
 
-  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), evrParams = None, eventCodes = ExtraEvents(), fixedNames = None):
+  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), evrParams = None, eventCodes = ExtraEvents(), clockConfig = ClockConfig(), fixedNames = None ):
     super().__init__(flags, fixedNames)
     if (el is None):
       el = ET.Element("Eeprom")
@@ -805,12 +843,14 @@ class VendorData(FixedPdoPart):
     for i in range(len(self._xtraEvents)):
       self._xtraEvents[i] = 0x11*(i+1)
 
+    self._clockConfig = clockConfig
+
     self.update( self.flags, segments )
     self.resetModified()
 
   @property
   def modified(self):
-    rv = self._modified or self._netConfig.modified
+    rv = self._modified or self._netConfig.modified or self._clockConfig.modified
     for p in self._evrParams:
       rv = rv or p.modified
     return rv
@@ -818,6 +858,7 @@ class VendorData(FixedPdoPart):
   def resetModified(self):
     self._modified = False
     self._netConfig.resetModified()
+    self._clockConfig.resetModified()
     for p in self._evrParams:
       p.resetModified()
 
@@ -834,6 +875,10 @@ class VendorData(FixedPdoPart):
   @property
   def netConfig(self):
     return self._netConfig
+
+  @property
+  def clockConfig(self):
+    return self._clockConfig
 
   def update(self, flags, segments):
     self._setFlags( flags )
@@ -876,24 +921,43 @@ class VendorData(FixedPdoPart):
     data[15] = 0
     se.text  = data.hex()
 
-    cat = findOrAdd( self._el, "Category" )
+    for c in self._el.findall( "Category" ):
+      self._el.remove(c)
+
+    vdr = findOrAdd( self._el, "VendorSpecific" )
+    for s in vdr.findall("Segment"):
+      vdr.remove(s)
+    for s in self._segs[1:]:
+      sz64 = s.nDWords if s.swap == 8 else 0
+      ET.SubElement(vdr, "Segment", Swap8="{}".format(sz64)).text = s.name
+    for s in vdr.findall("ClockFreqMHz"):
+      vdr.remove(s)
+    ET.SubElement(
+      vdr,
+      "ClockFreqMHz",
+      DriverName=self._clockConfig.driverName()
+    ).text = "{:.8g}".format( self._clockConfig.freqMHz )
+
+    cat = ET.SubElement( self._el, "Category" )
     se  = findOrAdd( cat, "CatNo" )
     se.text = FirmwareConstants.DEVSPECIFIC_CATEGORY_TXT()
 
     se  = findOrAdd( cat, "Data" )
     se.text = self.promData().hex()
 
-    if len( self._segs ) < 2:
-      vdr = self._el.find( "VendorSpecific" )
-      if not vdr is None:
-        self._el.remove( vdr )
-    else:
-      vdr = findOrAdd( self._el, "VendorSpecific" )
-      for s in vdr.findall("Segment"):
-        vdr.remove(s)
-      for s in self._segs[1:]:
-        sz64 = s.nDWords if s.swap == 8 else 0
-        ET.SubElement(vdr, "Segment", Swap8="{}".format(sz64)).text = s.name
+    # categories must precede VendorSpecific
+    self._el.insert( self._el.index( vdr ), cat )
+
+    cat = ET.SubElement( self._el, "Category" )
+    se  = findOrAdd( cat, "CatNo" )
+    se.text = FirmwareConstants.I2C_INITPRG_CATEGORY_TXT()
+
+    se  = findOrAdd( cat, "Data" )
+    se.text = self.i2cInitProg().hex()
+
+    # categories must precede VendorSpecific
+    self._el.insert( self._el.index( vdr ), cat )
+
 
   @property
   def segments(self):
@@ -932,6 +996,14 @@ class VendorData(FixedPdoPart):
         prom.extend( s.promData() )
     return prom
 
+  def i2cInitProg(self):
+    p = bytearray()
+    p.extend( self._clockConfig.mkInitProg() )
+    # End marker
+    p.append( 0xff )
+    p.append( 0xff )
+    return p
+
   @property
   def element(self):
     return self._el
@@ -941,6 +1013,8 @@ class VendorData(FixedPdoPart):
     # look for segment names and 8-byte swap info
     segments = []
     vdr = el.find("VendorSpecific")
+    clkFrqMHz = None
+    clkDrvNam = None
     if (not vdr is None):
       for s in vdr.findall("Segment"):
         swap8words = s.get("Swap8")
@@ -950,6 +1024,10 @@ class VendorData(FixedPdoPart):
           swap8words = int(swap8words)
         swap = 8 if swap8words > 0 else 0
         segments.append( PdoSegment( s.text, 0, swap8words, swap ) )
+      s = vdr.find("ClockFreqMHz")
+      if not s is None:
+        clkDrvNam = s.get("DriverName")
+        clkFrqMHz = float( s.text )
     # look for prom data
     prom = None
     cat = el.find("Category")
@@ -1036,11 +1114,13 @@ class VendorData(FixedPdoPart):
           s.nDWords    = tmp.nDWords
           s.swap       = tmp.swap
         rem -= needed
+      clkCfg = ClockConfig( clkFrqMHz, clkDrvNam )
     except Exception as e:
       segments = []
       evrCfg   = None
+      clkCfg   = ClockConfig()
       print( str( e ) )
-    return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, *args, **kwargs )
+    return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, *args, **kwargs )
     
 class Pdo(object):
 

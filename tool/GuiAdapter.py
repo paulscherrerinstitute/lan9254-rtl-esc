@@ -13,8 +13,11 @@ class VendorDataAdapter(object):
     self.__gui       = None
     # we will be editing the netConfig in place; don't copy
     self._netConfig  = vendorData.netConfig
+    # we will be editing the clkConfig in place; don't copy
+    self._clkConfig  = vendorData.clockConfig
     self._evrCfgGui  = None
     self._netCfgGui  = None
+    self._clkCfgGui  = None
 
   @property
   def vendorData(self):
@@ -22,6 +25,31 @@ class VendorDataAdapter(object):
 
   def getSegmentList(self):
     return vendorData.segments
+
+  def makeClkCfgGui(self):
+    def mkFrqGet(c):
+      def act():
+        return "{:.8g}".format( c.freqMHz )
+      return act
+    def mkFrqSet(c):
+      def act(f):
+        c.setFreqMHz(f)
+      return act
+    vb  = QtWidgets.QVBoxLayout()
+    self._clkCfgGui = vb
+    lbl = QtWidgets.QLabel("Event Reference Clock")
+    lbl.setObjectName("H2")
+    vb.addWidget( lbl )
+    frm = QtWidgets.QFormLayout()
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 14 )
+    # create restorer and setter
+    g = mkFrqGet( self._clkConfig )
+    s = mkFrqSet( self._clkConfig )
+    createValidator( edt, g, s, QtGui.QDoubleValidator, self._clkConfig.freqMHzLow, self._clkConfig.freqMHzHigh, 8 )
+    frm.addRow( QtWidgets.QLabel("Frequency [MHz]"), edt )
+    vb.addLayout( frm )
+    return self._clkCfgGui
 
   def makeNetCfgGui(self):
     def mkMacSet(c):
@@ -306,6 +334,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     layout.addLayout( hlay )
     hlay  .addLayout( vlay )
     vlay.addLayout( VendorDataAdapter.makeNetCfgGui( self ) )
+    vlay.addLayout( VendorDataAdapter.makeClkCfgGui( self ) )
     vlay.addLayout( VendorDataAdapter.makeEvrCfgGui( self ) )
     vlay.addLayout( VendorDataAdapter.makeGui( self, self ) )
     hlay.addLayout( PdoAdapter.makeGui( self, self )        )

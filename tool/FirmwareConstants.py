@@ -80,6 +80,10 @@ class FirmwareConstants(object):
     return "1"
 
   @staticmethod
+  def I2C_INITPRG_CATEGORY_TXT():
+    return "2"
+
+  @staticmethod
   def TXPDO_NUM_EVENT_DWORDS():
     return 4
 
