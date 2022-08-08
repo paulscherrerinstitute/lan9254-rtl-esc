@@ -208,21 +208,24 @@ architecture rtl of Lan9254ESC is
    end function smcAcceptable;
 
    function smlAcceptable(
-      constant sm       : in  natural range 2 to 3;
-      constant cfg      : in  ESCConfigReqType;
-      constant act      : in  ESCVal16Type
+      constant sm       : in  natural;
+      constant act      : in  ESCVal16Type;
+      constant reqState : in  EscStateType
    ) return boolean is
       variable lim      : unsigned(ESCVal16Type'range);
       variable val      : unsigned(ESCVal16Type'range);
    begin
-      if ( sm = 2 ) then
-         lim := unsigned(ESC_SM2_MXL_C);
-         val := unsigned(cfg.sm2Len   );
-      else
-         lim := unsigned(ESC_SM3_MXL_C);
-         val := unsigned(cfg.sm3Len   );
-      end if;
-      return (val <= lim) and (unsigned(act) = val);
+      case ( sm ) is
+         when 0 =>
+            lim := unsigned(ESC_SM0_MXL_C);
+         when 2 =>
+            lim := unsigned(ESC_SM2_MXL_C);
+         when 3 =>
+            lim := unsigned(ESC_SM3_MXL_C);
+         when others =>
+            return false;
+      end case;
+      return (unsigned(act) <= lim);
    end function smlAcceptable;
 
    type RWXactType is record
@@ -307,6 +310,7 @@ architecture rtl of Lan9254ESC is
       state                : ControllerStateType;
       config               : ESCConfigReqType;
       configAck            : ESCConfigAckType;
+      sm0Len               : ESCVal16Type;
       testPhas             : natural range 0 to 6;
       testFail             : natural range 0 to 31;
       reqState             : ESCStateType;
@@ -349,6 +353,7 @@ architecture rtl of Lan9254ESC is
       state                => TEST,
       config               => ESC_CONFIG_REQ_INIT_C,
       configAck            => ESC_CONFIG_ACK_INIT_C,
+      sm0Len               => (others => '0'),
       testPhas             => 0,
       testFail             => 0,
       reqState             => INIT,
@@ -948,7 +953,13 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
             if ( r.reqState = BOOT ) then
                if ( r.curState = INIT or r.curState = BOOT ) then
                   -- retrieve station address # NOT IMPLEMENTED
-                  -- start boot mailbox       # NOT IMPLEMENTED
+                  -- start boot mailbox
+                  v.txMBXRst    := '0';
+                  v.txMBXReplay := NONE;
+                  v.smDis(1)    := '0';
+                  v.smDis(0)    := '0';
+                  v.state       := CHECK_MBOX;
+report "starting BOOT MBOX";
                else
                   if ( r.curState = OP ) then
                      -- stop output           # FIXME
@@ -960,7 +971,11 @@ report "CUR-STATE " & integer'image(ESCStateType'pos(r.curState)) & " REQ-STATE 
                end if;
             elsif ( r.curState = BOOT ) then
                if ( r.reqState = INIT ) then
-                  -- stop boot mailbox       # NOT IMPLEMENTED
+                  -- stop boot mailbox
+                  v.txMBXRst    := '1';
+                  v.smDis(1)    := '1';
+                  v.smDis(0)    := '1';
+                  v.state       := EN_DIS_SM;
                else
                   -- stop boot mailbox       # SOES doesn't do that -- should we?
                   v.errSta      := '1';
@@ -1083,10 +1098,11 @@ report "entering UPDATE_AS " & toString( val );
                if (   (    r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C) = '0'                           ) -- deactivated
                    or (    ( (ESC_SM2_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM2_SMA_C     =  r.program.seq(0).val(ESC_SM2_SMA_C'range) )
-                       and smlAcceptable( 2, r.config,   r.program.seq(1).val(ESC_SM2_LEN_C'range) )
+                       and smlAcceptable( 2, r.program.seq(1).val(ESC_SM2_LEN_C'range), r.reqState )
                        and smcAcceptable( ESC_SM2_SMC_C, r.program.seq(2).val(ESC_SM2_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
+                  v.config.sm2Len := r.program.seq(1).val(ESC_SM2_LEN_C'range);
                else
 report "CHECK SM2 FAILED ACT: " & integer'image(to_integer( unsigned( r.program.seq(3).val ) ))
        & " PSA " & integer'image(to_integer( unsigned( r.program.seq(0).val ) ))
@@ -1101,10 +1117,11 @@ severity warning;
                if (   (    r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C) = '0'                           ) -- deactivated
                    or (    ( (ESC_SM3_ACT_C and r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
                        and ( ESC_SM3_SMA_C     =  r.program.seq(4).val(ESC_SM3_SMA_C'range) )
-                       and smlAcceptable( 3, r.config,   r.program.seq(5).val(ESC_SM3_LEN_C'range) )
+                       and smlAcceptable( 3, r.program.seq(5).val(ESC_SM3_LEN_C'range), r.reqState )
                        and smcAcceptable( ESC_SM3_SMC_C, r.program.seq(6).val(ESC_SM3_SMC_C'range) ) )
                ) then
                   -- PASSED CHECK
+                  v.config.sm3Len := r.program.seq(5).val(ESC_SM3_LEN_C'range);
                else
 report "CHECK SM3 FAILED"
 severity warning;
@@ -1137,11 +1154,12 @@ severity warning;
                v.rptAck(1)         := r.program.seq(7).val(EC_SM_ACT_RPT_IDX_C);
                v.smDis (1)         := not r.program.seq(7).val(EC_SM_ACT_DIS_IDX_C);
                if (   ( (ESC_SM0_ACT_C or  r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '0'   ) -- deactivated
-                   or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1' )
-                       and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range) )
-                       and ( ESC_SM0_LEN_C     =  r.program.seq(1).val(ESC_SM0_LEN_C'range) )
+                   or (    ( (ESC_SM0_ACT_C and r.program.seq(3).val(EC_SM_ACT_DIS_IDX_C)) = '1'     )
+                       and ( ESC_SM0_SMA_C     =  r.program.seq(0).val(ESC_SM0_SMA_C'range)          )
+                       and smlAcceptable( 0, r.program.seq(1).val(ESC_SM0_LEN_C'range), r.reqState   )
                        and smcAcceptable( ESC_SM0_SMC_C, r.program.seq(2).val(ESC_SM0_SMC_C'range) ) )
                ) then
+                  v.sm0Len := r.program.seq(1).val(ESC_SM0_LEN_C'range);
                   -- PASSED CHECK
                else
 report "CHECK SM0 FAILED ACT: " & integer'image(to_integer( unsigned( r.program.seq(3).val ) ))
@@ -1227,7 +1245,7 @@ severity warning;
                   ) then
                   if ( r.curState = SAFEOP or r.curState = OP ) then
                      v.state := CHECK_SM;
-                  elsif ( r.curState = PREOP ) then
+                  elsif ( r.curState = PREOP or r.curState = BOOT ) then
                      v.state := CHECK_MBOX;
                   end if;
                elsif ( r.curState /= INIT and ( r.rptAck(1) /= r.program.seq(1).val(EC_SM_ACT_RPT_IDX_C) ) ) then
@@ -1387,7 +1405,7 @@ report  "RX-MBX Header: len "
                v.rxMBXLen := unsigned(r.program.seq(1).val(15 downto  0));
                v.rxMBXCnt := unsigned(r.program.seq(3).val(MBX_CNT_RNG_T));
                v.rxMBXTyp := r.program.seq(3).val(11 downto 8);
-               if ( v.rxMBXLen > to_integer(unsigned(ESC_SM0_LEN_C ) - MBX_HDR_SIZE_C) ) then
+               if ( v.rxMBXLen > to_integer(unsigned( r.sm0Len ) - MBX_HDR_SIZE_C) ) then
                   v.state    := HANDLE_AL_EVENT;
                   if ( v.mbxErr.vld = '0' ) then
                      v.mbxErr.code := MBX_ERR_CODE_INVALIDSIZE_C;
@@ -1414,7 +1432,7 @@ report  "RX-MBX Header: len "
 
          when SM0_RELEASE =>
             if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( unsigned(EC_REG_RXMBX_L_C.addr), HBI_BE_B0_C ) ) );
+               scheduleRegXact( v, ( 0 => RWXACT( EC_BYTE_REG_F( ESC_SM0_SMA_C, r.sm0Len, -1 ) ) ) );
             else
                v.state := HANDLE_AL_EVENT;
             end if;
@@ -1682,7 +1700,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          stop        => r.txMBXRst,
 
          trg         => rxMBXTrg,
-         smLen       => (unsigned(ESC_SM0_LEN_C) - MBX_HDR_SIZE_C),
+         smLen       => (unsigned( r.sm0Len ) - MBX_HDR_SIZE_C),
          len         => rxMBXLen,
          typ         => rxMBXTyp,
 

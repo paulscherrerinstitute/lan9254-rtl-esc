@@ -167,6 +167,7 @@ package Lan9254ESCPkg is
 
    constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
    constant ESC_SM0_SMC_C                               : ESCVal08Type :=   x"26";
+   constant ESC_SM0_MXL_C                               : ESCVal16Type := x"0080";
    constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0050";
    constant ESC_SM0_ACT_C                               : std_logic    := '1';
 
@@ -236,8 +237,8 @@ package Lan9254ESCPkg is
 
    -- define a 'register' pointing to the last byte of the RX and TX PDOS.
    -- these can be read or written, respectively to release the SM buffers.
-   constant EC_REG_RXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM0_SMA_C, ESC_SM0_LEN_C, -1 );
    constant EC_REG_TXMBX_L_C : EcRegType := EC_BYTE_REG_F( ESC_SM1_SMA_C, ESC_SM1_LEN_C, -1 );
+   -- the RXMBX can be resized dynamically
 
    function toSlv(constant arg : ESCStateType) return std_logic_vector;
 

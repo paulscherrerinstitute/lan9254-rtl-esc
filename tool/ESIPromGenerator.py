@@ -397,12 +397,13 @@ class ESIPromGenerator(object):
     self.pad(       prom, 8 )
 
     #Bootstrap Mailbox
-    nod = self.findOpt(".//Eeprom/BootStrap/Data", dflt=None, el=devNod )
+    nod = self.findOpt(".//Eeprom/BootStrap", dflt=None, el=devNod )
     if not nod is None:
-      d = bytearray.fromhex( nod.text )
+      d = bytearray.fromhex( nod )
     else:
-      d = bytearray()
-    d.extend([0 for i in range(8 - len(d))])
+      d = bytearray(8)
+    if ( len(d) != 8 ):
+      raise ValueError("BootStrap data must be 8 octets long")
     prom.extend(d)
 
     #Standard Mailbox
