@@ -68,9 +68,19 @@ package body ESCBasicTypesPkg is
    end function max;
 
    function numBits(constant x : integer) return integer is
+      variable rv : integer;
+      variable  m : integer;
    begin
-      if ( x = 0 ) then return 1; end if;
-      return integer( floor( log2( real( x ) ) ) ) + 1;
+      m  := 2;
+      rv := 1;
+      while ( x > (m - 1) ) loop
+         m  := m + m;
+         rv := rv + 1;
+      end loop;
+      return rv;
+-- *** I had ghdl ( v1.0.0/gcc ) produce floor(log2(real(8))) => 2 !
+--      if ( x = 0 ) then return 1; end if;
+--      return integer( floor( log2( real( x ) ) ) ) + 1;
    end function numBits;
 
    -- convert a real counter value to an 'natural' that can
