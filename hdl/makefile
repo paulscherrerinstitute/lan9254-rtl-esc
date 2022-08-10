@@ -16,6 +16,7 @@ SIITOOL=siitool
 PROG+=lan9254escrun lan9254esctb txmbxtb eoetb
 PROG+=strmframebuftb udp2bustb devicedna7tb
 PROG+=udp2busmuxtb
+PROG+=escfoetb
 
 EVRPDO_S:=EvrTxPDO.vhd EvrTxPDOPkg.vhd EvrTxPDOSimWrapper.vhd
 
@@ -29,9 +30,11 @@ OBJS+=ESCEoETx.o ESCSmRx.o MicroUDPPkg.o MicroUDPRx.o MicroUDPTx.o IPV4ChkSum.o
 OBJS+=ESCTxPDO.o Lan9254ESCWrapper.o MicroUDPIPMux.o ESCTxMbx.o StrmFrameBuf.o
 OBJS+=Udp2BusPkg.o Udp2Bus.o Lan9254UdpBusPkg.o Udp2BusMux.o DeviceDna7.o
 OBJS+=AddressGenerator.o IPAddrConfigPkg.o SynchronizerBit.o $(EVRPDO_O)
+OBJS+=ESCFoE.o
+OBJS+=StrmFifoSync.o
 
 TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
-TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o
+TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o
 
 # Default target
 all: $(PROG)
@@ -63,6 +66,9 @@ udp2bustb: Udp2BusTb.o $(OBJS)
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 devicedna7tb: DeviceDna7Tb.o DeviceDna7.o
+	$(GHDL) -e $(GHDLFLAGS) $@
+
+escfoetb: ESCFoETb.o $(OBJS)
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 # Run target
@@ -134,6 +140,9 @@ EvrTxPDO.o: SynchronizerBit.o Lan9254ESCPkg.o Udp2BusPkg.o  EvrTxPDOPkg.o
 EvrTxPDOSimWrapper.o: EvrTxPDO.o ESCBasicTypesPkg.o
 Lan9254Pkg.o: ESCBasicTypesPkg.o
 Lan9254UdpBusPkg.o: Udp2BusPkg.o Lan9254Pkg.o
+ESCFoE.o: ESCBasicTypesPkg.o Lan9254Pkg.o Lan9254ESCPkg.o ESCMbxPkg.o
+StrmFifoSync.o: ESCBasicTypesPkg.o Lan9254Pkg.o
+ESCFoETb.o: $(OBJS)
 clean:
 	$(RM) $(OBJS) $(PROG) dump.ghw work-*.cf $(addprefix e~, $(addsuffix .o,$(PROG))) $(TOPS) EEPROMContentPkg.vhd eeprom.bin $(EVRPDO_S:%.vhd=%.o)
 
