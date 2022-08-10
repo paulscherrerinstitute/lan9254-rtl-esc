@@ -14,6 +14,7 @@ package ESCMbxPkg is
    constant MBX_TYP_ERR_C                         : ESCMbxType := x"0";
    constant MBX_TYP_EOE_C                         : ESCMbxType := x"2";
    constant MBX_TYP_COE_C                         : ESCMbxType := x"3";
+   constant MBX_TYP_FOE_C                         : ESCMbxType := x"4";
    constant MBX_TYP_VOE_C                         : ESCMbxType := x"F";
 
    constant EC_VENDOR_ID_PSI_C                    : std_logic_vector(31 downto 0)  := x"0050_5349";
@@ -55,6 +56,24 @@ package ESCMbxPkg is
    constant EOE_HDR_SIZE_C                        : natural                        := 4;
    constant EOE_MAX_FRAME_SIZE_C                  : natural                        := 1472;
 
+   constant FOE_OP_RRQ_C                          : std_logic_vector(7 downto 0)   := x"01";
+   constant FOE_OP_WRQ_C                          : std_logic_vector(7 downto 0)   := x"02";
+   constant FOE_OP_DATA_C                         : std_logic_vector(7 downto 0)   := x"03";
+   constant FOE_OP_ACK_C                          : std_logic_vector(7 downto 0)   := x"04";
+   constant FOE_OP_ERR_C                          : std_logic_vector(7 downto 0)   := x"05";
+   constant FOE_OP_BUSY_C                         : std_logic_vector(7 downto 0)   := x"06";
+
+   constant FOE_ERR_CODE_VENDOR_C                 : std_logic_vector(15 downto 0)  := x"8000";
+   constant FOE_ERR_CODE_NOTFOUND_C               : std_logic_vector(15 downto 0)  := x"8001";
+   constant FOE_ERR_CODE_ACCESS_C                 : std_logic_vector(15 downto 0)  := x"8002";
+   constant FOE_ERR_CODE_DISKFULL_C               : std_logic_vector(15 downto 0)  := x"8003";
+   constant FOE_ERR_CODE_ILLEGAL_C                : std_logic_vector(15 downto 0)  := x"8004";
+   constant FOE_ERR_CODE_PACKETNO_C               : std_logic_vector(15 downto 0)  := x"8005";
+   constant FOE_ERR_CODE_EXISTS_C                 : std_logic_vector(15 downto 0)  := x"8006";
+   constant FOE_ERR_CODE_NOUSER_C                 : std_logic_vector(15 downto 0)  := x"8007";
+   constant FOE_ERR_CODE_BOOTSTRAPONLY_C          : std_logic_vector(15 downto 0)  := x"8008";
+   constant FOE_ERR_CODE_NOTINBOOTSTRAP_C         : std_logic_vector(15 downto 0)  := x"8009";
+   constant FOE_ERR_CODE_NORIGHTS_C               : std_logic_vector(15 downto 0)  := x"800A";
 
    type MbxErrorType is record
       code : std_logic_vector(15 downto 0);
