@@ -1689,6 +1689,10 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       );
 
    GEN_RX_MBX : if ( ENABLE_EOE_G or ENABLE_VOE_G ) generate
+      signal sm0Len : unsigned(15 downto 0);
+   begin
+
+      sm0Len <= unsigned( r.sm0Len ) - MBX_HDR_SIZE_C;
 
    U_SM_RX  : entity work.ESCSmRx
       generic map (
@@ -1700,7 +1704,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          stop        => r.txMBXRst,
 
          trg         => rxMBXTrg,
-         smLen       => (unsigned( r.sm0Len ) - MBX_HDR_SIZE_C),
+         smLen       => sm0Len,
          len         => rxMBXLen,
          typ         => rxMBXTyp,
 
