@@ -12,6 +12,7 @@ use work.IPAddrConfigPkg.all;
 use work.IlaWrappersPkg.all;
 use work.Udp2BusPkg.all;
 use work.Lan9254UdpBusPkg.all;
+use work.ESCFoEPkg.all;
 
 entity Lan9254ESCWrapper is
    generic (
@@ -20,6 +21,8 @@ entity Lan9254ESCWrapper is
       DISABLE_TXPDO_G         : boolean := false;
       ENABLE_VOE_G            : boolean := false;
       ENABLE_EOE_G            : boolean := true;
+      -- FoE is enabled if the file-name array is not empty
+      FOE_FILE_MAP_G          : FoeFileNameArray := FOE_FILE_NAME_ARRAY_EMPTY_C;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
@@ -74,13 +77,16 @@ entity Lan9254ESCWrapper is
       extHBIRep               : out Lan9254RepArray(NUM_EXT_HBI_MASTERS_G - 1 + EXT_HBI_MASTERS_PRI_G downto EXT_HBI_MASTERS_PRI_G)  := (others => LAN9254REP_INIT_C);
 
       -- Register access via UDP
-       -- external masters
+      -- external masters
       busMstReq               : in  Udp2BusReqArray(NUM_BUS_MSTS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
       busMstRep               : out Udp2BusRepArray(NUM_BUS_MSTS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
         -- external subordinates
       busSubReq               : out Udp2BusReqArray(NUM_BUS_SUBS_G - 1 downto 0) := (others => UDP2BUSREQ_INIT_C);
       busSubRep               : in  Udp2BusRepArray(NUM_BUS_SUBS_G - 1 downto 0) := (others => UDP2BUSREP_ERROR_C);
 
+      -- FOE interface
+      foeMst                  : out FoEMstType := FOE_MST_INIT_C;
+      foeSub                  : in  FoESubType := FOE_SUB_ASSERT_C;
 
       -- debugging
       escState                : out ESCStateType;
@@ -105,19 +111,27 @@ architecture rtl of Lan9254ESCWrapper is
       if ( c ) then return a; else return b; end if;
    end function ite;
 
+   constant ENABLE_FOE_C      : boolean := (FOE_FILE_MAP_G'length > 0 );
 
-   constant NUM_MBX_ERRS_C    : natural := 1;
+   constant NUM_MBX_ERRS_C    : natural := 2;
+   constant EOE_MBX_ERR_IDX_C : natural := 0;
+   constant FOE_MBX_ERR_IDX_C : natural := 1;
 
-   constant NUM_RXMBX_PROTO_C : natural := 1;
+   constant NUM_RXMBX_PROTO_C : natural := 2;
 
-   constant GEN_RXMBX_MUX_C   : boolean := ( NUM_RXMBX_PROTO_C > 1 );
+   constant ENB_RXMBX_PROTO_C : natural :=   boolean'pos( ENABLE_EOE_G )
+                                           + boolean'pos( ENABLE_FOE_C );
+
+   constant GEN_RXMBX_MUX_C   : boolean := ( ENB_RXMBX_PROTO_C > 1 );
 
    constant EOE_RX_STRM_IDX_C : natural := 0;
+   constant FOE_RX_STRM_IDX_C : natural := 1;
 
-   constant NUM_TXMBX_PROTO_C : natural := 3;
+   constant NUM_TXMBX_PROTO_C : natural := 4;
    constant ERR_TX_STRM_IDX_C : natural := 0;
    constant EOE_RP_STRM_IDX_C : natural := 1;
    constant EOE_TX_STRM_IDX_C : natural := 2;
+   constant FOE_TX_STRM_IDX_C : natural := 3;
 
    constant NUM_HBI_MASTERS_C : natural := NUM_EXT_HBI_MASTERS_G + ite( ENABLE_EOE_G, 1, 0 );
    constant HBI_MASTERS_R_C   : integer := EXT_HBI_MASTERS_PRI_G;
@@ -130,10 +144,12 @@ architecture rtl of Lan9254ESCWrapper is
    constant EXT_CFG_IDX_C     : natural := 0;
    constant EOE_CFG_IDX_C     : natural := 1;
 
+
    signal   txMbxMst          : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
    signal   txMbxRdy          : std_logic;
    signal   rxMbxMst          : Lan9254StrmMstType;
    signal   rxMbxRdy          : std_logic          := '1';
+   signal   rxMbxSiz          : unsigned(15 downto 0);
 
    signal   errMst            : MbxErrorArray   (NUM_MBX_ERRS_C - 1 downto 0) := (others => MBX_ERROR_INIT_C );
    signal   errRdy            : std_logic_vector(NUM_MBX_ERRS_C - 1 downto 0) := (others => '1'              );
@@ -168,6 +184,7 @@ begin
          DISABLE_TXPDO_G         => DISABLE_TXPDO_G,
          ENABLE_VOE_G            => ENABLE_VOE_G,
          ENABLE_EOE_G            => ENABLE_EOE_G,
+         ENABLE_FOE_G            => ENABLE_FOE_C,
          TXPDO_MAX_UPDATE_FREQ_G => TXPDO_MAX_UPDATE_FREQ_G,
          REG_IO_TEST_ENABLE_G    => REG_IO_TEST_ENABLE_G,
          NUM_EXT_HBI_MASTERS_G   => NUM_HBI_MASTERS_C,
@@ -204,10 +221,10 @@ begin
 
          rxMBXMst    => rxMbxMst,
          rxMBXRdy    => rxMbxRdy,
+         rxMBXSiz    => rxMbxSiz,
 
-
-         mbxErrMst   => errMst(0),
-         mbxErrRdy   => errRdy(0),
+         mbxErrMst   => errMst(EOE_MBX_ERR_IDX_C),
+         mbxErrRdy   => errRdy(EOE_MBX_ERR_IDX_C),
 
          extHBIReq   => locHBIReq,
          extHBIRep   => locHBIRep,
@@ -247,7 +264,10 @@ begin
    GEN_RXMBX_MUX : if ( GEN_RXMBX_MUX_C ) generate
    U_RXMBX_MUX : entity work.ESCRxMbxMux
       generic map (
-         STREAM_CONFIG_G  => (EOE_RX_STRM_IDX_C => MBX_TYP_EOE_C)
+         STREAM_CONFIG_G  => (
+            EOE_RX_STRM_IDX_C => MBX_TYP_EOE_C,
+            FOE_RX_STRM_IDX_C => MBX_TYP_FOE_C
+         )
       )
       port map (
          clk              => clk,
@@ -262,8 +282,14 @@ begin
    end generate GEN_RXMBX_MUX;
 
    GEN_NO_RXMBX_MUX : if ( not GEN_RXMBX_MUX_C ) generate
-      rxStmMst(EOE_RX_STRM_IDX_C) <= rxMbxMst;
-      rxMbxRdy                    <= rxStmRdy(EOE_RX_STRM_IDX_C);
+      GEN_NO_RXMBX_MUX_EOE : if    ( ENABLE_EOE_G ) generate
+         rxStmMst(EOE_RX_STRM_IDX_C) <= rxMbxMst;
+         rxMbxRdy                    <= rxStmRdy(EOE_RX_STRM_IDX_C);
+      end generate;
+      GEN_NO_RXMBX_MUX_FOE : if ( ENABLE_FOE_C ) generate
+         rxStmMst(FOE_RX_STRM_IDX_C) <= rxMbxMst;
+         rxMbxRdy                    <= rxStmRdy(FOE_RX_STRM_IDX_C);
+      end generate;
    end generate GEN_NO_RXMBX_MUX;
 
    -- Error mailbox stream
@@ -645,12 +671,115 @@ begin
 
    end generate GEN_EOE;
 
+   GEN_FOE : if ( ENABLE_FOE_C ) generate
+      signal foeStrmMst         : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      signal foeStrmRdy         : std_logic          := '1';
+      signal foeBusy            : std_logic          := '0';
+      signal foeErr             : std_logic;
+
+      signal fifoRstReq         : std_logic;
+      signal fifoErrSum         : std_logic;
+      signal fifoErrSumReg      : std_logic          := '0';
+
+      signal emptySlots         : unsigned(12 downto 0);
+   begin
+
+      U_FOE : entity work.ESCFoE
+         generic map (
+            FILE_MAP_G => FOE_FILE_MAP_G
+         )
+         port map (
+            clk               => clk,
+            rst               => rst,
+
+            mbxMstIb          => rxStmMst(FOE_RX_STRM_IDX_C),
+            mbxRdyIb          => rxStmRdy(FOE_RX_STRM_IDX_C),
+
+            mbxMstOb          => txStmMst(FOE_TX_STRM_IDX_C),
+            mbxRdyOb          => txStmRdy(FOE_TX_STRM_IDX_C),
+
+            mbxErrMst         => errMst(FOE_MBX_ERR_IDX_C),
+            mbxErrRdy         => errRdy(FOE_MBX_ERR_IDX_C),
+
+            -- mailbox size without mailbox header (but including FOE header)
+            mbxSize           => rxMbxSiz,
+
+            foeMst            => foeStrmMst,
+            foeRdy            => foeStrmRdy,
+            foeBusy           => foeBusy,
+            -- we detected an error
+            foeErr            => foeErr,
+            -- downstream error
+            foeAbort          => foeSub.abort,
+            foeDone           => foeSub.done,
+            foeDoneAck        => foeMst.doneAck,
+            foeFile0WP        => foeSub.file0WP,
+            foeFileIdx        => foeMst.fileIdx,
+            debug             => open
+
+         );
+
+      U_FOE_BUF : entity work.StrmFifoSync
+         port map (
+            clk               => clk,
+            rst               => fifoRstReq,
+            fifoRst           => foeMst.fifoRst,
+
+            strmMstIb         => foeStrmMst,
+            strmRdyIb         => foeStrmRdy,
+
+            emptySlots        => emptySlots,
+
+            strmMstOb         => foeMst.strmMst,
+            strmRdyOb         => foeSub.strmRdy
+         );
+
+      foeMst.err <= foeErr;
+
+      fifoErrSum <= foeErr or foeSub.abort;
+      fifoRstReq <= rst or (fifoErrSum and not fifoErrSumReg);
+
+      P_FIFORST : process ( clk ) is
+      begin
+         if ( rising_edge( clk ) ) then
+            if ( rst = '1' ) then
+               fifoErrSumReg <= '0';
+            else
+               fifoErrSumReg <= fifoErrSum;
+            end if;
+         end if;
+      end process P_FIFORST;
+
+      P_BUSY : process ( emptySlots, rxMbxSiz ) is
+      begin
+         if ( emptySlots < rxMbxSiz - FOE_HDR_SIZE_C ) then
+            foeBusy <= '1';
+         else
+            foeBusy <= '0';
+         end if;
+      end process P_BUSY;
+
+   end generate GEN_FOE;
+
    NO_GEN_EOE : if ( not ENABLE_EOE_G ) generate
 
       txStmMst(EOE_TX_STRM_IDX_C) <= LAN9254STRM_MST_INIT_C;
       rxStmRdy(EOE_RX_STRM_IDX_C) <= '1';
 
-   end generate;
+      errMst  (EOE_MBX_ERR_IDX_C) <= MBX_ERROR_INIT_C;
+
+   end generate NO_GEN_EOE;
+
+   NO_GEN_FOE : if ( not ENABLE_FOE_C ) generate
+
+      txStmMst(FOE_TX_STRM_IDX_C) <= LAN9254STRM_MST_INIT_C;
+      rxStmRdy(FOE_RX_STRM_IDX_C) <= '1';
+
+      errMst  (FOE_MBX_ERR_IDX_C) <= MBX_ERROR_INIT_C;
+
+      foeMst                      <= FOE_MST_INIT_C;
+
+   end generate NO_GEN_FOE;
 
    stats <= statsLoc;
 

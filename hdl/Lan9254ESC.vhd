@@ -20,6 +20,7 @@ entity Lan9254ESC is
       DISABLE_RXPDO_G         : boolean := false;
       ENABLE_VOE_G            : boolean := false;
       ENABLE_EOE_G            : boolean := false;
+      ENABLE_FOE_G            : boolean := false;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       -- e.g., if the user decides to use the HBI interface
@@ -59,17 +60,19 @@ entity Lan9254ESC is
       escState    : out ESCStateType;
       debug       : out std_logic_vector(23 downto 0);
 
-      txPDOMst    : in  Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
+      txPDOMst    : in  Lan9254PDOMstType     := LAN9254PDO_MST_INIT_C;
       txPDORdy    : out std_logic;
 
-      rxPDOMst    : out Lan9254PDOMstType := LAN9254PDO_MST_INIT_C;
-      rxPDORdy    : in  std_logic         := '1';
+      rxPDOMst    : out Lan9254PDOMstType     := LAN9254PDO_MST_INIT_C;
+      rxPDORdy    : in  std_logic             := '1';
 
-      txMBXMst    : in  LAN9254StrmMstType := LAN9254STRM_MST_INIT_C;
+      txMBXMst    : in  LAN9254StrmMstType    := LAN9254STRM_MST_INIT_C;
       txMBXRdy    : out std_logic;
 
-      rxMBXMst    : out LAN9254StrmMstType := LAN9254STRM_MST_INIT_C;
-      rxMBXRdy    : in  std_logic          := '1';
+      rxMBXMst    : out LAN9254StrmMstType    := LAN9254STRM_MST_INIT_C;
+      rxMBXRdy    : in  std_logic             := '1';
+      -- current size of the mailbox (without MBX header)
+      rxMBXSiz    : out unsigned(15 downto 0) := (others => '0');
 
       irq         : in  std_logic := EC_IRQ_ACT_C; -- defaults to polling mode
 
@@ -1416,6 +1419,7 @@ report  "RX-MBX Header: len "
                   v.state           := SM0_RELEASE;
                elsif (    (    ( ENABLE_EOE_G and ( MBX_TYP_EOE_C = v.rxMBXTyp ) )
                             or ( ENABLE_VOE_G and ( MBX_TYP_VOE_C = v.rxMBXTyp ) )
+                            or ( ENABLE_FOE_G and ( MBX_TYP_FOE_C = v.rxMBXTyp ) )
                           )
                       and r.txMBXRst = '0'
                      ) then
@@ -1688,11 +1692,11 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          haveBackup  => txMBXBufHaveBup
       );
 
-   GEN_RX_MBX : if ( ENABLE_EOE_G or ENABLE_VOE_G ) generate
-      signal sm0Len : unsigned(15 downto 0);
+   GEN_RX_MBX : if ( ENABLE_EOE_G or ENABLE_VOE_G or ENABLE_FOE_G ) generate
+      signal sm0PldLen : unsigned(15 downto 0);
    begin
 
-      sm0Len <= unsigned( r.sm0Len ) - MBX_HDR_SIZE_C;
+      sm0PldLen <= unsigned( r.sm0Len ) - MBX_HDR_SIZE_C;
 
    U_SM_RX  : entity work.ESCSmRx
       generic map (
@@ -1704,7 +1708,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          stop        => r.txMBXRst,
 
          trg         => rxMBXTrg,
-         smLen       => sm0Len,
+         smLen       => sm0PldLen,
          len         => rxMBXLen,
          typ         => rxMBXTyp,
 
@@ -1717,6 +1721,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          debug       => rxMBXDebug,
          stats       => stats(0 downto 0)
       );
+
+      rxMbxSiz <= sm0PldLen;
 
       P_REFORMAT : process ( rxMBXPDO ) is
       begin

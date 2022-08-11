@@ -7,6 +7,7 @@ use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
+use work.ESCFoEPkg.all;
 
 -- FoE Write-File supported only at this point
 
@@ -16,7 +17,7 @@ entity ESCFoE is
       -- that can be written.
       -- The selection (if any valid filename was received) is presented
       -- on 'foeFileIdx'.
-      FILE_MAP_G        : Slv08Array
+      FILE_MAP_G        : FoEFileNameArray
    );
    port (
       clk               : in  std_logic;
@@ -71,11 +72,11 @@ entity ESCFoE is
       foeDone           : in  std_logic := '1';
       foeDoneAck        : out std_logic;
       -- Indicate whether the file with index 0 in FILE_MAP_G is write-
-      -- protected (foeFile0WrEn = '0').
-      foeFile0WrEn      : in  std_logic := '0';
+      -- protected (foeFile0WP = '1').
+      foeFile0WP        : in  std_logic := '1';
       -- Index into FILE_MAP_G that should be written.
       -- This valid with the first beat on 'foeMst' until 'foeDone and foeDoneAck'
-      foeFileIdx        : out natural;
+      foeFileIdx        : out natural range 0 to 15;
 
       debug             : out std_logic_vector(15 downto 0) := (others => '0')
    );
@@ -124,7 +125,7 @@ architecture rtl of ESCFoE is
 
 begin
 
-   P_COMB : process ( r, mbxMstIb, mbxRdyOb, mbxSize, mbxErrRdy, foeRdy, foeBusy, foeAbort, foeDone, foeFile0WrEn ) is
+   P_COMB : process ( r, mbxMstIb, mbxRdyOb, mbxSize, mbxErrRdy, foeRdy, foeBusy, foeAbort, foeDone, foeFile0WP ) is
       variable v   : RegType;
    begin
       v := r;
@@ -244,7 +245,7 @@ begin
 
                   L_FILEN : for i in FILE_MAP_G'range loop
                      if ( FILE_MAP_G(i) = mbxMstIb.data(7 downto 0) ) then
-                        if ( ( foeFile0WrEn = '0' ) and ( i = 0 ) ) then
+                        if ( ( foeFile0WP = '1' ) and ( i = 0 ) ) then
                            v.err.code    := FOE_ERR_CODE_NORIGHTS_C;
                         else
                            v.err.code    := (others => '0');

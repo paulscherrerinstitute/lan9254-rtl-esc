@@ -25,8 +25,6 @@ architecture rtl of ESCFoETb is
 
    constant EMPTY_C          : DataArray(0 downto 1) := (others => (others => '0'));
 
-   constant DEPTH_C          : natural            := (PG_SIZE_G);
-
    signal clk                : std_logic          := '0';
    signal rst                : std_logic          := '1';
 
@@ -38,6 +36,8 @@ architecture rtl of ESCFoETb is
    signal rxMbxMst           : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
    signal rxMbxRdy           : std_logic          := '0';
 
+   signal foeMstFrag         : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+   signal foeRdyFrag         : std_logic          := '1';
    signal foeMst             : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
    signal foeRdy             : std_logic          := '1';
 
@@ -50,8 +50,7 @@ architecture rtl of ESCFoETb is
    signal foeDone            : std_logic          := '0';
    signal foeDoneAck         : std_logic;
 
-   signal emptySlots         : unsigned(numBits(DEPTH_C) - 1 downto 0);
-   signal fullSlots          : unsigned(numBits(DEPTH_C) - 1 downto 0);
+   signal emptySlots         : unsigned(12 downto 0);
  
    signal mbxMuxMstIb        : Lan9254StrmMstArray(N_MBX_C - 1 downto 0);
    signal mbxMuxRdyIb        : std_logic_vector   (N_Mbx_C - 1 downto 0);
@@ -60,9 +59,8 @@ architecture rtl of ESCFoETb is
 
    signal numOps             : natural            := 0;
 
+   signal fifoRstReq         : std_logic;
    signal fifoRst            : std_logic;
-
-   signal foeData            : std_logic_vector(7 downto 0);
 
    signal rcvData            : DataArray( 0 to 256 );
 
@@ -80,14 +78,16 @@ architecture rtl of ESCFoETb is
       others => (others => 'X')
    );
 
-   type RdrStateType is (IDLE, ERASE, WAIT_DATA, RDEN, READ, RDELAY, DONE);
+   type RdrStateType is (IDLE, ERASE, READ, RDELAY, DONE);
 
    type RegType is record
       state    :  RdrStateType;
       count    :  natural;
       pgCount  :  natural;
       lastSeen :  boolean;
-      rdEn     :  std_logic;
+      rdy      :  std_logic;
+      done     :  std_logic;
+      fifoRst  :  std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
@@ -95,7 +95,9 @@ architecture rtl of ESCFoETb is
       count    => 0,
       pgCount  => 0,
       lastSeen => false,
-      rdEn     => '0'
+      rdy      => '0',
+      done     => '0',
+      fifoRst  => '1'
    );
 
    signal foeReg : RegType := REG_INIT_C;
@@ -208,6 +210,15 @@ architecture rtl of ESCFoETb is
    begin
       opc := FOE_OP_BUSY_C;
       while ( opc = FOE_OP_BUSY_C ) loop
+
+         -- mimick ethercat loop delay the FOE module can't accept new
+         -- ethercat polling until a downstream state machine has
+         -- recovered from error processing or signalled it has finished
+         -- a write operation.
+         for i in 0 to 20 loop
+            wait until rising_edge( clk );
+         end loop;
+
          sendFrame(mIb, d, v, op, trunc);
          waitResp(rOb, typ, opc, val);
          if ( trunc < 6 and trunc >= 0 ) then
@@ -217,7 +228,9 @@ architecture rtl of ESCFoETb is
             assert typ = MBX_TYP_FOE_C               severity failure;
          end if;
       end loop;
-      assert opc = expOp severity failure;
+      assert opc = expOp
+         report "opcode mismatch; expected 0x" & toString(expOp) & " got 0x" & toString(opc)
+         severity failure;
       if ( expVal(0) /= 'X' ) then
          assert val = expVal  severity failure;
       else
@@ -341,8 +354,8 @@ begin
          -- mailbox size without mailbox header (but including FOE header)
          mbxSize           => to_unsigned(MBX_SIZE_C, 16),
 
-         foeMst            => foeMst,
-         foeRdy            => foeRdy,
+         foeMst            => foeMstFrag,
+         foeRdy            => foeRdyFrag,
          foeBusy           => foeBusy,
          -- we detected an error
          foeErr            => foeErr,
@@ -350,7 +363,7 @@ begin
          foeAbort          => foeAbort,
          foeDone           => foeDone,
          foeDoneAck        => foeDoneAck,
-         foeFile0WrEn      => '1',
+         foeFile0WP        => '0',
          foeFileIdx        => foeFileIdx,
          debug             => open
 
@@ -383,23 +396,18 @@ begin
       );
 
    U_FIFO : entity work.StrmFifoSync
-      generic map (
-         -- depth in bytes
-         DEPTH_G  => DEPTH_C
-      )
       port map (
          clk               => clk,
-         rst               => fifoRst,
+         rst               => fifoRstReq,
+         fifoRst           => fifoRst,
 
-         strmMstIb         => foeMst,
-         strmRdyIb         => foeRdy,
+         strmMstIb         => foeMstFrag,
+         strmRdyIb         => foeRdyFrag,
 
          emptySlots        => emptySlots,
-         fullSlots         => fullSlots,
 
-         -- data available on cycle after rdEn is asserted
-         dataOut           => foeData,
-         rdEn              => foeReg.rdEn
+         strmMstOb         => foeMst,
+         strmRdyOb         => foeRdy
       );
 
    P_BUSY : process ( emptySlots ) is
@@ -411,15 +419,7 @@ begin
       end if;
    end process P_BUSY;
 
-   P_FIFORST : process ( rst, foeReg ) is
-   begin
-      fifoRst <= rst;
-      foeDone <= '0';
-      if ( foeReg.state = DONE ) then
-         foeDone <= '1';
-         fifoRst <= '1';
-      end if;
-   end process P_FIFORST;
+   fifoRstReq <= rst or foeReg.fifoRst;
 
    P_FOE  : process ( clk ) is
       variable v       : std_logic_vector(15 downto 0);
@@ -428,15 +428,15 @@ begin
       variable tmp8    : std_logic_vector( 7 downto 0);
    begin
       if ( rising_edge( clk ) ) then
-         if ( ( foeMst.last and foeMst.valid and foeRdy ) = '1' ) then
-            foeReg.lastSeen <= true;
-         end if;
+
+         foeReg.fifoRst <= '0';
 
          case ( foeReg.state ) is
             when IDLE =>
                if ( foeErr = '1' ) then
-                  foeReg.state <= DONE;
-               elsif ( fullSlots > 0 ) then
+                  foeReg.state   <= DONE;
+                  foeReg.fifoRst <= '1';
+               elsif ( foeMst.valid = '1' ) then
                   foeReg.count    <= 0;
                   foeReg.pgCount  <= 0;
                   foeReg.state    <= ERASE;
@@ -448,62 +448,54 @@ begin
                   foeReg.count <= foeReg.count + 1;
                else
                   foeReg.count <= 0;
-                  foeReg.state <= WAIT_DATA;
+                  foeReg.state <= READ;
+                  foeReg.rdy   <= '1';
                end if;
-
-            when WAIT_DATA =>
-               if ( foeErr = '1' ) then
-                  foeReg.state <= DONE;
-               elsif ( ( fullSlots >= PG_SIZE_G ) or foeReg.lastSeen ) then
-                  if ( fullSlots = 0 ) then
-                     foeReg.state <= DONE;
-                  else
-                     foeReg.rdEn  <= '1';
-                     foeReg.state <= RDEN;
-                     if ( fullSlots >= PG_SIZE_G ) then
-                        foeReg.pgCount <= PG_SIZE_G - 1;
-                     else
-                        foeReg.pgCount <= to_integer( fullSlots - 1 );
-                     end if;
-                  end if;
-               end if;
-
-            when RDEN =>
-               if ( foeReg.pgCount = 0 ) then
-                  foeReg.rdEn <= '0';
-               end if;
-               foeReg.state <= READ;
 
             when READ =>
                if ( foeErr = '1' ) then
-                  foeReg.state <= DONE;
+                  foeReg.state   <= DONE;
+                  foeReg.fifoRst <= '1';
                elsif ( foeReg.count >= MEM_SIZE_C ) then
-                  foeAbort     <= '1';
-                  foeReg.state <= DONE;
+                  foeAbort       <= '1';
+                  foeReg.fifoRst <= '1';
+                  foeReg.state   <= DONE;
                else
-                  report "FOE READ 0x" & toString( foeData );
-                  rcvData(foeReg.count) <= foeData;
-                  foeReg.count          <= foeReg.count   + 1;
-                  if ( foeReg.pgCount = 0 ) then
-                     foeReg.state   <= RDELAY;
-                     foeReg.pgCount <= 100;
-                  else
-                     if ( foeReg.pgCount = 1 ) then
-                        foeReg.rdEn    <= '0';
+                  report "FOE READ 0x" & toString( foeMst.data(7 downto 0) );
+                  if ( foeMst.valid = '1' ) then
+                     rcvData(foeReg.count) <= foeMst.data(7 downto 0);
+                     foeReg.count          <= foeReg.count   + 1;
+                     if ( (foeReg.pgCount = 0) or (foeMst.last = '1') ) then
+                        if ( foeMst.last = '1' ) then
+                           foeReg.lastSeen <= true;
+                        end if;
+                        foeReg.state   <= RDELAY;
+                        foeReg.pgCount <= 100;
+                        foeReg.rdy     <= '0';
+                     else
+                        foeReg.pgCount <= foeReg.pgCount - 1;
                      end if;
-                     foeReg.pgCount <= foeReg.pgCount - 1;
                   end if;
                end if;
 
             when RDELAY =>
                if ( foeReg.pgCount = 0 ) then
-                  foeReg.state <= WAIT_DATA;
+                  if ( foeReg.lastSeen ) then
+                     foeReg.state   <= DONE;
+                  else
+                     foeReg.rdy     <= '1';
+                     foeReg.state   <= READ;
+                  end if;
                else
                   foeReg.pgCount <= foeReg.pgCount - 1;
                end if;
 
             when DONE =>
-               if ( foeDoneAck = '1' ) then
+               foeReg.rdy <= '0';
+               if ( (not foeReg.done and not fifoRst) = '1' ) then
+                  foeReg.done <= '1';
+               elsif ( (foeReg.done and foeDoneAck) = '1' ) then
+                  foeReg.done <= '0';
                   if ( foeErr = '0' ) then
                      for i in 0 to foeReg.count - 1 loop
                         if ( numOps /= 5 ) then
@@ -519,7 +511,6 @@ begin
                   rcvData      <= (others => (others => 'X'));
                   foeAbort     <= '0';
                   foeReg.state <= IDLE;
-                  foeReg.rdEn  <= '0';
                   numOps       <= numOps + 1;
                end if;
           
@@ -531,9 +522,12 @@ begin
       end if;
    end process P_FOE;
 
-   P_FIDX : process ( foeMst, foeFileIdx ) is
+   foeDone <= foeReg.done;
+   foeRdy  <= foeReg.rdy;
+
+   P_FIDX : process ( foeMstFrag, foeFileIdx ) is
    begin
-      if ( foeMst.valid = '1' ) then
+      if ( foeMstFrag.valid = '1' ) then
          assert foeFileIdx = 0 severity failure;
       end if;
    end process P_FIDX;
