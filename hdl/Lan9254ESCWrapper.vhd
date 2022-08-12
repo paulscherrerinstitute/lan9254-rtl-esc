@@ -92,6 +92,8 @@ entity Lan9254ESCWrapper is
       escState                : out ESCStateType;
       debug                   : out std_logic_vector(23 downto 0);
 
+      foeDebug                : out std_logic_vector(63 downto 0);
+
       stats                   : out StatCounterArray(21 downto 0) := (others => STAT_COUNTER_INIT_C);
       testFailed              : out std_logic_vector( 4 downto 0)
    );
@@ -715,7 +717,7 @@ begin
             foeDoneAck        => foeMst.doneAck,
             foeFile0WP        => foeSub.file0WP,
             foeFileIdx        => foeMst.fileIdx,
-            debug             => open
+            debug             => foeDebug
 
          );
 
