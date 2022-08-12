@@ -26,6 +26,8 @@ package ESCBasicTypesPkg is
 
    function toSl(constant a: boolean) return std_logic;
 
+   function toSlv(constant x: integer; constant l : natural) return std_logic_vector;
+
    function bswap(constant x: unsigned)         return unsigned;
    function bswap(constant x: std_logic_vector) return std_logic_vector;
 
@@ -182,5 +184,13 @@ package body ESCBasicTypesPkg is
    begin
       if ( c ) then return a; else return b; end if;
    end function ite;
+
+   function toSlv(
+      constant x : integer;
+      constant l : natural
+   ) return std_logic_vector is
+   begin
+      return std_logic_vector( to_unsigned( x, l ) );
+   end function toSlv;
 
 end package body ESCBasicTypesPkg;
