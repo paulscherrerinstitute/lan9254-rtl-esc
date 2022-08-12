@@ -47,7 +47,7 @@ entity ESCFoE is
       -- more data cannot be accepted.
       --
       --  e.g:  foeBusy <= '1' when fifoAvailableSpace >= mbxSize else '0';
-      -- 
+      --
       -- note that foeMst.last is asserted for one (empty, i.e., ben = "00")
       -- beat to indicate that all data has been transferred.
       -- I.e., 'foeMst' presents a defragmented stream (but the byte-enables
@@ -78,7 +78,7 @@ entity ESCFoE is
       -- This valid with the first beat on 'foeMst' until 'foeDone and foeDoneAck'
       foeFileIdx        : out natural range 0 to 15;
 
-      debug             : out std_logic_vector(15 downto 0) := (others => '0')
+      debug             : out std_logic_vector(63 downto 0) := (others => '0')
    );
 end entity ESCFoE;
 
@@ -123,7 +123,31 @@ architecture rtl of ESCFoE is
 
    signal mbxRdyIbLoc         : std_logic;
 
+   signal foeMstLoc           : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
+
 begin
+
+   debug(2 downto 0)          <= toSlv( StateType'pos( r.state ), 3 );
+   debug(3)                   <= mbxRdyOb;
+   debug(5 downto 4)          <= toSlv( OpType'pos( r.opState ), 2  );
+   debug(6)                   <= r.mbxMstOb.valid;
+   debug(7)                   <= r.mbxMstOb.last;
+   debug(23 downto  8)        <= r.mbxMstOb.data;
+   debug(39 downto 24)        <= mbxMstIb.data;
+   debug(40)                  <= mbxMstIb.valid;
+   debug(41)                  <= mbxMstIb.last;
+   debug(42)                  <= mbxRdyIbLoc;
+   debug(43)                  <= r.err.vld;
+   debug(44)                  <= mbxErrRdy;
+   debug(45)                  <= foeMstLoc.valid;
+   debug(46)                  <= foeMstLoc.last;
+   debug(47)                  <= foeRdy;
+   debug(48)                  <= r.foeErr;
+   debug(49)                  <= foeAbort;
+   debug(50)                  <= r.foeDoneAck;
+   debug(51)                  <= foeDone;
+   debug(52)                  <= foeBusy;
+   debug(63 downto 53)        <= (others => '0');
 
    P_COMB : process ( r, mbxMstIb, mbxRdyOb, mbxSize, mbxErrRdy, foeRdy, foeBusy, foeAbort, foeDone, foeFile0WP ) is
       variable v   : RegType;
@@ -144,13 +168,13 @@ begin
          v.foeMstValid := '0';
       end if;
 
-      foeMst         <= mbxMstIb;
-      foeMst.valid   <= r.foeMstValid;
-      foeMst.ben     <= "00";
+      foeMstLoc         <= mbxMstIb;
+      foeMstLoc.valid   <= r.foeMstValid;
+      foeMstLoc.ben     <= "00";
       if ( r.opState = WAIT_LAST ) then
-         foeMst.last <= '1';
+         foeMstLoc.last <= '1';
       else
-         foeMst.last <= '0';
+         foeMstLoc.last <= '0';
       end if;
 
       mbxRdyIbLoc    <= r.mbxRdyIb;
@@ -176,7 +200,7 @@ begin
                   -- a previous error is still pending and has not been acked
                   -- by the downstream module;
                   v.err.code        := FOE_ERR_CODE_ILLEGAL_C;
-                  v.state           := DRAIN; 
+                  v.state           := DRAIN;
                elsif ( mbxMstIb.last = '1' or mbxMstIb.ben /= "11" ) then
                   -- by default drop short messages
                   -- too short; drop
@@ -256,7 +280,7 @@ begin
                      end if;
                   end loop L_FILEN;
                elsif ( v.foeErr = '0' ) then
-                  -- don't think we can ever get here 
+                  -- don't think we can ever get here
                   v.err.code := FOE_ERR_CODE_VENDOR_C;
                   v.foeErr   := '1';
                   v.state    := DRAIN;
@@ -264,9 +288,9 @@ begin
          end if;
 
          when FWD =>
-            foeMst.valid <= mbxMstIb.valid;
-            foeMst.ben   <= mbxMstIb.ben;
-            mbxRdyIbLoc  <= foeRdy;
+            foeMstLoc.valid <= mbxMstIb.valid;
+            foeMstLoc.ben   <= mbxMstIb.ben;
+            mbxRdyIbLoc     <= foeRdy;
             if ( (mbxMstIb.valid and foeRdy) = '1' )then
                if ( ( mbxMstIb.ben = "01" ) or ( mbxMstIb.ben = "10" ) ) then
                   v.count := r.count + 1;
@@ -374,19 +398,6 @@ begin
    foeErr      <= r.foeErr;
    foeDoneAck  <= r.foeDoneAck;
    foeFileIdx  <= r.foeFileIdx;
- 
-   debug(2 downto 0) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
-   debug(3)          <= r.foeErr;
-   debug(5 downto 4) <= std_logic_vector( to_unsigned( OpType'pos( r.opState ),  2 ) );
-   debug(6)          <= foeDone;
-   debug(7)          <= r.foeDoneAck;
-   debug(8)          <= r.busy;
-   debug(9)          <= r.mbxMstOb.valid;
-   debug(10)         <= mbxRdyOb;
-   debug(11)         <= mbxMstIb.valid;
-   debug(12)         <= mbxMstIb.last;
-   debug(13)         <= mbxRdyIbLoc;
-   debug(14)         <= r.foeMstValid;
-   debug(15)         <= foeRdy;
+   foeMst      <= foeMstLoc;
 
 end architecture rtl;
