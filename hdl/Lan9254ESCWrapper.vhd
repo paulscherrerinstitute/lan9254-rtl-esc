@@ -30,7 +30,8 @@ entity Lan9254ESCWrapper is
       GEN_U2B_ILA_G           : boolean := true;
       NUM_EXT_HBI_MASTERS_G   : natural := 1;
       EXT_HBI_MASTERS_PRI_G   : integer := 0;
-      NUM_BUS_SUBS_G          : natural range 0 to 4 := 0;
+      -- reserve one slot for future use
+      NUM_BUS_SUBS_G          : natural range 0 to 5 := 0;
       NUM_BUS_MSTS_G          : natural := 0;
       DEFAULT_MAC_ADDR_G      : std_logic_vector(47 downto 0) := x"f106a98e0200";  -- 00:02:8e:a9:06:f1
       DEFAULT_IP4_ADDR_G      : std_logic_vector(31 downto 0) := x"0A0A0A0A";      -- 10.10.10.10
