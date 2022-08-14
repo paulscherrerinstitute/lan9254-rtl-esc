@@ -371,7 +371,7 @@ uint32_t            width         = 4;
 				/* fall thru */
 			case 'm':
 			case 'r':
-				if ( reg( e, arg, regbas, (opt == 'i'), (opt == 'm' ? 0 : (1 == width ? 0 : ( 2 == width ? 1 : 4))), width) ) {
+				if ( reg( e, arg, regbas, (opt == 'i'), (opt == 'm' ? 0 : (1 == width ? 0 : ( 2 == width ? 1 : 2))), width) ) {
 					goto bail;
 				}
 				break;
