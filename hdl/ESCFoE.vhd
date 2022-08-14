@@ -118,6 +118,17 @@ architecture rtl of ESCFoE is
       foeMstValid             => '0'
    );
 
+   function toupper(constant x : in std_logic_vector(7 downto 0))
+   return std_logic_vector is
+      variable v : unsigned(x'range);
+   begin
+      v := unsigned( x );
+      if ( v > 96 and v < 123 ) then
+         v(5) := '0';
+      end if;
+      return std_logic_vector( v );
+   end function toupper;
+
    signal r                   : RegType := REG_INIT_C;
    signal rin                 : RegType;
 
@@ -268,7 +279,8 @@ begin
                   v.state    := DRAIN;
 
                   L_FILEN : for i in FILE_MAP_G'range loop
-                     if ( FILE_MAP_G(i) = mbxMstIb.data(7 downto 0) ) then
+                     if (   ( FILE_MAP_G(i) = FOE_FILE_NAME_WILDCARD_C )
+                         or ( FILE_MAP_G(i) = toupper( mbxMstIb.data(7 downto 0) ) ) ) then
                         if ( ( foeFile0WP = '1' ) and ( i = 0 ) ) then
                            v.err.code    := FOE_ERR_CODE_NORIGHTS_C;
                         else

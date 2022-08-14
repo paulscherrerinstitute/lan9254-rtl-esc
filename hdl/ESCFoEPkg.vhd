@@ -50,6 +50,8 @@ package ESCFoEPkg is
 
    type FoEFileNameArray is array (natural range <>) of std_logic_vector(7 downto 0);
 
-   constant FOE_FILE_NAME_ARRAY_EMPTY_C : FoeFileNameArray(1 to 0) := (others => (others => '0'));
+   constant FOE_FILE_NAME_ARRAY_EMPTY_C : FoeFileNameArray(1 to 0)     := (others => (others => '0'));
+
+   constant FOE_FILE_NAME_WILDCARD_C    : std_logic_vector(7 downto 0) := (others => '0');
 
 end package ESCFoEPkg;
