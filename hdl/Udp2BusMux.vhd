@@ -6,8 +6,8 @@ use     work.Udp2BusPkg.all;
 
 entity Udp2BusMux is
    generic (
-      ADDR_MSB_G    : natural := 29;
-      ADDR_LSB_G    : natural := 27;
+      ADDR_MSB_G    : natural := 19;
+      ADDR_LSB_G    : natural := 17;
       NUM_MSTS_G    : natural :=  1;
       NUM_SUBS_G    : natural
    );

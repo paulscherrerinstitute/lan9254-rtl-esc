@@ -154,7 +154,7 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
     fprintf(stderr, "                                  reg: [<range>@]<offset\n");
     fprintf(stderr, "                                  range selects 0..7 sub-devices\n");
-    fprintf(stderr, "                                  (at base-addr (range<<29)).\n");
+    fprintf(stderr, "                                  (at base-addr (range<<19)).\n");
 	fprintf(stderr, "       -m <mem>[=<val>]         : like 'reg' but uses byte-addresses;\n");
 	fprintf(stderr, "                                  note that they still must be word-\n");
 	fprintf(stderr, "                                  aligned; this is a convenience option.\n");
@@ -224,7 +224,7 @@ const char         *op = s;
 			fprintf(stderr, "Error: invalid range (must be 0..7)\n");
 			return -1;
 		}
-		bas <<= 29;
+		bas <<= 19;
 
 		op = at + 1;
 	}
@@ -270,10 +270,10 @@ int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
 Ecur                e             = 0;
-uint32_t            hbibas        = (7<<29);
-uint32_t            escbas        = (6<<29);
-uint32_t            evrbas        = (0<<29);
-uint32_t            regbas        = (0<<29);
+uint32_t            hbibas        = (7<<19);
+uint32_t            escbas        = (6<<19);
+uint32_t            evrbas        = (0<<19);
+uint32_t            regbas        = (0<<19);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
 int                 verbose       = 0;
