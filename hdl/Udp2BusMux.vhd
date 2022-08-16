@@ -6,8 +6,10 @@ use     work.Udp2BusPkg.all;
 
 entity Udp2BusMux is
    generic (
-      ADDR_MSB_G    : natural := 19;
-      ADDR_LSB_G    : natural := 17;
+      -- currently the UDP protocol only supports 20bits
+      -- of address space!
+      ADDR_MSB_G    : natural range 0 to 19 := 19;
+      ADDR_LSB_G    : natural               := 17;
       NUM_MSTS_G    : natural :=  1;
       NUM_SUBS_G    : natural
    );
