@@ -57,11 +57,11 @@ typedef struct EcurRec {
 	unsigned         numReaders;
 } *Ecur;
 
-static void flushReaders(Ecur e, unsigned from)
+static void flushReaders(Ecur e, unsigned from, int err)
 {
 	while ( from < e->numReaders ) {
 		if ( e->readers[from].cb ) {
-			e->readers[from].cb( e->readers[from].datp.vp, -1, e->readers[from].closure );
+			e->readers[from].cb( e->readers[from].datp.vp, err, e->readers[from].closure );
 		}
 		from++;
 	}
@@ -75,7 +75,7 @@ static inline void ecurMkReqHdr(Ecur e, EcurCmd cmd)
 	e->xlen    = HEADER_SIZE;
 	e->rlen    = HEADER_SIZE;
 	e->seq     = (e->seq + 1) & SEQ_MSK;
-	flushReaders( e, 0 );
+	flushReaders( e, 0, ECUR_ERR_INTERNAL );
 }
 
 
@@ -135,7 +135,7 @@ void
 ecurClose(Ecur e)
 {
 	if ( e ) {
-		flushReaders( e, 0 );
+		flushReaders( e, 0, ECUR_ERR_INTERNAL );
 		if ( e->sd >= 0 ) {
 			close( e->sd );
 		}
@@ -240,11 +240,11 @@ EcurReader *reader;
 
 	if ( burstCnt > 256 || burstCnt < 1 ) {
 		fprintf(stderr, "ecurQOp() Error: invalid burst count\n");
-		return -1;
+		return ECUR_ERR_INVALID_COUNT;
 	}
 	if ( ( wordAddr & 0xfff00000 ) != 0 ) {
-		fprintf(stderr, "ecurQOp() Error: word address\n");
-		return -1;
+		fprintf(stderr, "ecurQOp() Error: word address not supported by protocol (too big)\n");
+		return ECUR_ERR_INVALID_ADDR;
 	}
 
 	reqSz = 4;
@@ -257,18 +257,18 @@ EcurReader *reader;
 		repSz += datSz;
 	}
 
+	if ( 0 == e->xlen ) {
+		ecurMkReqHdr(e, RDW);
+	}
+
 	if ( e->xlen + reqSz > sizeof( e->xbuf ) ) {
 		fprintf(stderr, "ecurQOp() Error: request does not fit in buffer\n");
-		return -1;
+		return ECUR_ERR_NOSPACE_REQ;
 	}
 
 	if ( e->rlen + repSz > sizeof( e->rbuf ) - STATUS_SIZE ) {
 		fprintf(stderr, "ecurQOp() Error: reply would not fit in buffer\n");
-		return -1;
-	}
-
-	if ( 0 == e->xlen ) {
-		ecurMkReqHdr(e, RDW);
+		return ECUR_ERR_NOSPACE_REP;
 	}
 
 	wordAddr = (laneCode << 28) | ( (burstCnt - 1) << 20 ) | wordAddr;
@@ -283,7 +283,7 @@ EcurReader *reader;
 	if ( rdnwr ) {
 		if ( MAX_READERS == e->numReaders ) {
 			fprintf(stderr, "ecurQOp() Error: reply would not fit in buffer\n");
-			return -1;
+			return ECUR_ERR_NOSPACE_REP;
 		}
 		reader          = & e->readers[e->numReaders];
 		reader->cb      = cb;
@@ -377,12 +377,12 @@ ecurProcessReply(Ecur e)
 uint16_t status;
 unsigned nelmsOK;
 unsigned rdr  = 0;
-int      rval = -1;
+int      rval = ECUR_ERR_INVALID_REP;
 unsigned ridx, eidx;
 
 	if ( e->rlen < HEADER_SIZE + STATUS_SIZE ) {
 		fprintf(stderr, "ecurProcessReply() Error: not enough data received\n");
-		flushReaders( e, rdr );
+		flushReaders( e, rdr, rval );
 		goto bail;
 	}
 
@@ -390,6 +390,7 @@ unsigned ridx, eidx;
 
 	if ( ( status & STATUS_ERR ) ) {
 		ecurPrint( e, 0, "ecurProcessReply() -- errors were encountered on the target\n");
+		goto bail;
 	}
 
 	nelmsOK        = ( status & STATUS_NELMS_MSK );
@@ -406,13 +407,13 @@ unsigned ridx, eidx;
 	}
 	if ( ridx < eidx ) {
 		fprintf(stderr, "ecurProcessReply(): error -- more data than expected\n");
-		rval = -1;
+		goto bail;
 	}
 
 	rval = nelmsOK;
 
 bail:
-	flushReaders( e, rdr );
+	flushReaders( e, rdr, rval );
 	return rval;
 }
 
@@ -421,8 +422,8 @@ ecurExecute( Ecur e )
 {
 	if ( ecurXfer( e ) <= 0 ) {
 		fprintf(stderr, "ecurExecute() Error -- UDP transfer failed\n");
-		flushReaders( e, 0 );
-		return -1;
+		flushReaders( e, 0, ECUR_ERR_IO );
+		return ECUR_ERR_IO;
 	}
 	return ecurProcessReply( e );
 }
@@ -447,7 +448,7 @@ EcurLaneCode lc;
 		case 2: lc = LC_W1; break;
 		default:
 			fprintf(stderr, "ecurQRead16() Error: misaligned word address\n");
-			return -1;
+			return ECUR_ERR_INVALID_ADDR;
 	}
 	return ecurQOp( e, addr >> 2, lc, (void*)data, n, OP_READ, cb, closure );
 }
@@ -456,7 +457,7 @@ int ecurQRead32(Ecur e, uint32_t addr, uint32_t *data, unsigned n, EcurReadCallb
 {
 	if ( addr & 3 ) {
 		fprintf(stderr, "ecurQRead32() Error: misaligned word address\n");
-		return -1;
+		return ECUR_ERR_INVALID_ADDR;
 	}
 	return ecurQOp( e, addr >> 2, LC_DW, (void*)data, n, OP_READ, cb, closure );
 }
@@ -481,7 +482,7 @@ EcurLaneCode lc;
 		case 2: lc = LC_W1; break;
 		default:
 			fprintf(stderr, "ecurQWrite16() Error: misaligned word address\n");
-			return -1;
+			return ECUR_ERR_INVALID_ADDR;
 	}
 	return ecurQOp( e, addr >> 2, lc, (void*) writeData, n, OP_WRITE, 0, 0 );
 }
@@ -490,7 +491,7 @@ int ecurQWrite32(Ecur e, uint32_t addr, uint32_t *writeData, unsigned n)
 {
 	if ( addr & 3 ) {
 		fprintf(stderr, "ecurQWrite32() Error: misaligned word address\n");
-		return -1;
+		return ECUR_ERR_INVALID_ADDR;
 	}
 	return ecurQOp( e, addr >> 2, LC_DW, (void*) writeData, n, OP_WRITE, 0, 0 );
 }
@@ -504,9 +505,10 @@ int
 ecurRead8(Ecur e, uint32_t addr, uint8_t *data, unsigned n)
 {
 int got;
-	if ( ecurQRead8( e, addr, data, n, cbGetN, (void*)&got ) ) {
+int st;
+	if ( (st = ecurQRead8( e, addr, data, n, cbGetN, (void*)&got )) ) {
 		fprintf(stderr, "ecurRead8() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
@@ -515,9 +517,10 @@ int
 ecurRead16(Ecur e, uint32_t addr, uint16_t *data, unsigned n)
 {
 int got;
-	if ( ecurQRead16( e, addr, data, n, cbGetN, (void*)&got ) ) {
+int st;
+	if ( (st = ecurQRead16( e, addr, data, n, cbGetN, (void*)&got ) )) {
 		fprintf(stderr, "ecurRead16() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
@@ -527,9 +530,10 @@ int
 ecurRead32(Ecur e, uint32_t addr, uint32_t *data, unsigned n)
 {
 int got;
-	if ( ecurQRead32( e, addr, data, n, cbGetN, (void*)&got ) ) {
+int st;
+	if ( (st = ecurQRead32( e, addr, data, n, cbGetN, (void*)&got )) ) {
 		fprintf(stderr, "ecurRead32() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
@@ -537,9 +541,10 @@ int got;
 int
 ecurWrite8(Ecur e, uint32_t addr, uint8_t *data, unsigned n)
 {
-	if ( ecurQWrite8( e, addr, data, n ) ) {
+int st;
+	if ( (st = ecurQWrite8( e, addr, data, n )) ) {
 		fprintf(stderr, "ecurWrite8() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
@@ -547,9 +552,10 @@ ecurWrite8(Ecur e, uint32_t addr, uint8_t *data, unsigned n)
 int
 ecurWrite16(Ecur e, uint32_t addr, uint16_t *data, unsigned n)
 {
-	if ( ecurQWrite16( e, addr, data, n ) ) {
+int st;
+	if ( (st = ecurQWrite16( e, addr, data, n )) ) {
 		fprintf(stderr, "ecurWrite16() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
@@ -558,9 +564,10 @@ ecurWrite16(Ecur e, uint32_t addr, uint16_t *data, unsigned n)
 int
 ecurWrite32(Ecur e, uint32_t addr, uint32_t *data, unsigned n)
 {
-	if ( ecurQWrite32( e, addr, data, n ) ) {
+int st;
+	if ( (st = ecurQWrite32( e, addr, data, n )) ) {
 		fprintf(stderr, "ecurWrite32() Error -- failed to queue request\n");
-		return -1;
+		return st;
 	}
 	return ecurExecute( e );
 }
