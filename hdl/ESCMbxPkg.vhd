@@ -74,6 +74,8 @@ package ESCMbxPkg is
    constant FOE_ERR_CODE_BOOTSTRAPONLY_C          : std_logic_vector(15 downto 0)  := x"8008";
    constant FOE_ERR_CODE_NOTINBOOTSTRAP_C         : std_logic_vector(15 downto 0)  := x"8009";
    constant FOE_ERR_CODE_NORIGHTS_C               : std_logic_vector(15 downto 0)  := x"800A";
+   constant FOE_ERR_CODE_PROGRAM_ERROR_C          : std_logic_vector(15 downto 0)  := x"800B";
+   constant FOE_ERR_CODE_CHECKSUM_ERROR_C         : std_logic_vector(15 downto 0)  := x"800C";
 
    constant FOE_HDR_SIZE_C                        : natural                        := 6;
 
