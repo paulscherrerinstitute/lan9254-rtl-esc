@@ -7,6 +7,7 @@ use work.ESCBasicTypesPkg.all;
 use work.Lan9254Pkg.all;
 use work.Lan9254ESCPkg.all;
 use work.ESCMbxPkg.all;
+use work.ESCFoEPkg.all;
 
 entity ESCFoETb is
 end entity ESCFoETb;
@@ -45,8 +46,8 @@ architecture rtl of ESCFoETb is
    signal mbxErrRdy          : std_logic          := '1';
 
    signal foeBusy            : std_logic          := '0';
-   signal foeErr             : std_logic;
-   signal foeAbort           : std_logic          := '0';
+   signal foeAbort           : std_logic;
+   signal foeError           : FoEErrorType       := FOE_NO_ERROR_C;
    signal foeDone            : std_logic          := '0';
    signal foeDoneAck         : std_logic;
 
@@ -358,9 +359,9 @@ begin
          foeRdy            => foeRdyFrag,
          foeBusy           => foeBusy,
          -- we detected an error
-         foeErr            => foeErr,
-         -- downstream error
          foeAbort          => foeAbort,
+         -- downstream error
+         foeError          => foeError,
          foeDone           => foeDone,
          foeDoneAck        => foeDoneAck,
          foeFile0WP        => '0',
@@ -433,7 +434,7 @@ begin
 
          case ( foeReg.state ) is
             when IDLE =>
-               if ( foeErr = '1' ) then
+               if ( foeAbort = '1' ) then
                   foeReg.state   <= DONE;
                   foeReg.fifoRst <= '1';
                elsif ( foeMst.valid = '1' ) then
@@ -453,11 +454,11 @@ begin
                end if;
 
             when READ =>
-               if ( foeErr = '1' ) then
+               if ( foeAbort = '1' ) then
                   foeReg.state   <= DONE;
                   foeReg.fifoRst <= '1';
                elsif ( foeReg.count >= MEM_SIZE_C ) then
-                  foeAbort       <= '1';
+                  foeError       <= FOE_ERR_CODE_DISKFULL_C;
                   foeReg.fifoRst <= '1';
                   foeReg.state   <= DONE;
                else
@@ -496,7 +497,7 @@ begin
                   foeReg.done <= '1';
                elsif ( (foeReg.done and foeDoneAck) = '1' ) then
                   foeReg.done <= '0';
-                  if ( foeErr = '0' ) then
+                  if ( foeAbort = '0' ) then
                      for i in 0 to foeReg.count - 1 loop
                         if ( numOps /= 5 ) then
                            tmp8 := tstData(i);
@@ -504,12 +505,12 @@ begin
                            tmp8 := tstData1(i);
                         end if;
                         assert ( rcvData(i) = tmp8 )
-                           report "numOps: " & integer'image(numOps) & ", count: " & integer'image(foeReg.count) & ", ERR: " & std_logic'image(foeErr)
+                           report "numOps: " & integer'image(numOps) & ", count: " & integer'image(foeReg.count) & ", ERR: " & std_logic'image(foeAbort)
                            severity failure;
                      end loop;
                   end if;
                   rcvData      <= (others => (others => 'X'));
-                  foeAbort     <= '0';
+                  foeError     <= FOE_NO_ERROR_C;
                   foeReg.state <= IDLE;
                   numOps       <= numOps + 1;
                end if;

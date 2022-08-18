@@ -678,7 +678,7 @@ begin
       signal foeStrmMst         : Lan9254StrmMstType := LAN9254STRM_MST_INIT_C;
       signal foeStrmRdy         : std_logic          := '1';
       signal foeBusy            : std_logic          := '0';
-      signal foeErr             : std_logic;
+      signal foeAbort           : std_logic;
 
       signal fifoRstReq         : std_logic;
       signal fifoErrSum         : std_logic;
@@ -711,9 +711,9 @@ begin
             foeRdy            => foeStrmRdy,
             foeBusy           => foeBusy,
             -- we detected an error
-            foeErr            => foeErr,
+            foeAbort          => foeAbort,
             -- downstream error
-            foeAbort          => foeSub.abort,
+            foeError          => foeSub.err,
             foeDone           => foeSub.done,
             foeDoneAck        => foeMst.doneAck,
             foeFile0WP        => foeSub.file0WP,
@@ -737,9 +737,16 @@ begin
             strmRdyOb         => foeSub.strmRdy
          );
 
-      foeMst.err <= foeErr;
+      foeMst.abort <= foeAbort;
 
-      fifoErrSum <= foeErr or foeSub.abort;
+      P_ERR_SUM : process ( foeSub, foeAbort ) is
+      begin
+         fifoErrSum <= foeAbort;
+         if ( foeSub.err /= FOE_NO_ERROR_C ) then
+            fifoErrSum <= '1';
+         end if;
+      end process P_ERR_SUM;
+
       fifoRstReq <= rst or (fifoErrSum and not fifoErrSumReg);
 
       P_FIFORST : process ( clk ) is

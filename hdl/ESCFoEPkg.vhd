@@ -14,7 +14,7 @@ package ESCFoEPkg is
    type FoEMstType is record
       strmMst : Lan9254StrmMstType;
       fifoRst : std_logic;
-      err     : std_logic;
+      abort   : std_logic;
       doneAck : std_logic;
       fileIdx : natural range 0 to 15;
    end record FoEMstType;
@@ -22,28 +22,33 @@ package ESCFoEPkg is
    constant FOE_MST_INIT_C : FoEMstType := (
       strmMst => LAN9254STRM_MST_INIT_C,
       fifoRst => '0',
-      err     => '0',
+      abort   => '0',
       doneAck => '0',
       fileIdx => 0
    );
 
+   subtype  FoEErrorType   is std_logic_vector(15 downto 0);
+
+   -- use FOE mailbox error codes !
+   constant FOE_NO_ERROR_C :  FoEErrorType := (others => '0');
+   
    type FoESubType is record
       strmRdy : std_logic;
-      abort   : std_logic;
+      err     : FoEErrorType;
       done    : std_logic;
       file0WP : std_logic;
    end record FoESubType;
 
    constant FOE_SUB_ASSERT_C : FoESubType := (
       strmRdy => '1',
-      abort   => '0',
+      err     => FOE_NO_ERROR_C,
       done    => '1',
       file0WP => '1'
    );
 
    constant FOE_SUB_INIT_C : FoESubType := (
       strmRdy => '0',
-      abort   => '0',
+      err     => FOE_NO_ERROR_C,
       done    => '0',
       file0WP => '0'
    );
