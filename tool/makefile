@@ -1,10 +1,13 @@
-all: warn gatherfwparams
+all: warn gatherfwparams FirmwareConstantsAuto.py
 
 Lan9254ESCPkg.o: Lan9254Pkg.o
 Lan9254Pkg.o EvrTxPDOPkg.o:  ESCBasicTypesPkg.o
 
 GatherFwParams.o: EvrTxPDOPkg.o Lan9254ESCPkg.o
 
+
+FirmwareConstantsAuto.py: gatherfwparams
+	./$^ > $@
 
 GHDL=ghdl
 

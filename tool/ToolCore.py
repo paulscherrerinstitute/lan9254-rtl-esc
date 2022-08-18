@@ -921,6 +921,19 @@ class VendorData(FixedPdoPart):
     data[15] = 0
     se.text  = data.hex()
 
+    if (   ( FirmwareConstants.ESC_SM_MAX_LEN( 0 ) > FirmwareConstants.ESC_SM_LEN( 0 ) )
+        or ( FirmwareConstants.ESC_SM_MAX_LEN( 1 ) > FirmwareConstants.ESC_SM_LEN( 1 ) ) ):
+      data=bytearray()
+      for i in range(2):
+        ba = bytearray.fromhex("{:04x}".format(FirmwareConstants.ESC_SM_SMA(i)))
+        ba.reverse()
+        data.extend( ba )
+        ba = bytearray.fromhex("{:04x}".format(FirmwareConstants.ESC_SM_MAX_LEN(i)))
+        ba.reverse()
+        data.extend( ba )
+      se = findOrAdd( self._el, "BootStrap" )
+      se.text = data.hex()
+
     for c in self._el.findall( "Category" ):
       self._el.remove(c)
 
@@ -1415,9 +1428,15 @@ class ESI(object):
 
     mailbox = ET.SubElement( device, "Mailbox" )
     mailbox.set("DataLinkLayer", "1")
-    mailboxEoE = ET.SubElement(mailbox, "EoE")
-    mailboxEoE.set("IP", "1")
-    mailboxEoE.set("MAC", "1")
+   
+    if ( FirmwareConstants.EOE_ENABLED() ):
+       mailboxEoE = ET.SubElement(mailbox, "EoE")
+       mailboxEoE.set("IP", "1")
+       mailboxEoE.set("MAC", "1")
+    if ( FirmwareConstants.FOE_ENABLED() ):
+       mailboxFoE = ET.SubElement(mailbox, "FoE")
+    if ( FirmwareConstants.VOE_ENABLED() ):
+       mailboxFoE = ET.SubElement(mailbox, "VoE")
 
     addOrReplace( device, mailbox )
 

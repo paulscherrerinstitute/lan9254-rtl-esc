@@ -3,6 +3,7 @@
 # The EEPROM config. data for the lan9254 must also
 # be in sync with the firmware (major behaviour and
 # logic levels are defined by these settings).
+from FirmwareConstantsAuto import *
 
 class FirmwareConstants(object):
 
@@ -12,47 +13,53 @@ class FirmwareConstants(object):
 
   @staticmethod
   def ESC_SM_LEN( sm ):
-    if   sm in [0, 1]:
-      return 80
-    elif sm in [2, 3]:
-      return 128
+    if   ( 0 == sm ):
+      return ESC_SM0_LEN_C
+    elif ( 1 == sm ):
+      return ESC_SM1_LEN_C
+    elif ( 2 == sm ):
+      return ESC_SM2_LEN_C
+    elif ( 3 == sm ):
+      return ESC_SM3_LEN_C
     else:
       raise ValueError("Invalid SM index")
 
   @staticmethod
   def ESC_SM_SMA( sm ):
     if   ( 0 == sm ):
-      return 0x1000
+      return ESC_SM0_SMA_C
     elif ( 1 == sm ):
-      return 0x1080
+      return ESC_SM0_SMA_C
     elif ( 2 == sm ):
-      return 0x1100
+      return ESC_SM2_SMA_C
     elif ( 3 == sm ):
-      return 0x1180
+      return ESC_SM3_SMA_C
     else:
       raise ValueError("Invalid SM index")
 
   @staticmethod
   def ESC_SM_SMC( sm ):
     if   ( 0 == sm ):
-      return 0x26
+      return ESC_SM0_SMC_C
     elif ( 1 == sm ):
-      return 0x22
+      return ESC_SM1_SMC_C
     elif ( 2 == sm ):
-      return 0x24
+      return ESC_SM2_SMC_C
     elif ( 3 == sm ):
-      return 0x20
+      return ESC_SM3_SMC_C
     else:
       raise ValueError("Invalid SM index")
 
   @staticmethod
   def ESC_SM_MAX_LEN( sm ):
     if   ( 3 == sm ):
-      return 512
+      return ESC_SM3_MXL_C
     elif ( 2 == sm ):
-      return 128
+      return ESC_SM2_MXL_C
+    elif ( 0 == sm ):
+      return ESC_SM0_MXL_C
     else:
-      return ESC_SM_LEN( sm )
+      return FirmwareConstants.ESC_SM_LEN( sm )
 
   @staticmethod
   def RXMBX_SM():
@@ -73,15 +80,15 @@ class FirmwareConstants(object):
 
   @staticmethod
   def TXPDO_MAX_NUM_SEGMENTS():
-    return 16
+    return TXPDO_MXMAP_C
 
   @staticmethod
   def DEVSPECIFIC_CATEGORY_TXT():
-    return "1"
+    return str(PROM_CAT_ID_C)
 
   @staticmethod
   def I2C_INITPRG_CATEGORY_TXT():
-    return "2"
+    return str(I2CP_CAT_ID_C)
 
   @staticmethod
   def TXPDO_NUM_EVENT_DWORDS():
@@ -94,6 +101,34 @@ class FirmwareConstants(object):
   @staticmethod
   def EVR_NUM_PULSE_GENS():
     return 4
+
+  @staticmethod
+  def EOE_ENABLED():
+    return ENBL_EOE_C
+
+  @staticmethod
+  def FOE_ENABLED():
+    return ENBL_FOE_C
+
+  @staticmethod
+  def VOE_ENABLED():
+    return ENBL_VOE_C
+
+class HardwareConstants(object):
+  @staticmethod
+  def EEPROM_SIZE_BYTES():
+    return 2048
+  @staticmethod
+  def EOE_ENABLED():
+    return ENBL_EOE_C
+
+class HardwareConstants(object):
+  @staticmethod
+  def EEPROM_SIZE_BYTES():
+    return 2048
+  @staticmethod
+  def EOE_ENABLED():
+    return ENBL_EOE_C
 
 class HardwareConstants(object):
   @staticmethod

@@ -80,6 +80,8 @@ if __name__ == "__main__":
     app.exec()
   else:
     from ESIPromGenerator import ESIPromGenerator
+    if ( et is None ):
+       raise RuntimeError("Need xml file argument")
     prom = ESIPromGenerator( et ).makeProm()
     mode = "wb" if overwrite else "xb"
     m    = re.match("^(.*)([.][^.]*)$", fnam)
