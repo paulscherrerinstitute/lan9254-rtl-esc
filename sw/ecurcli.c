@@ -150,7 +150,7 @@ static void usage(const char *nm)
 	fprintf(stderr, "       -v                       : increase verbosity\n");
 	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation)\n");
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
-	fprintf(stderr, "       -i <ireg>[=<val>]        : EVR register access\n");
+	fprintf(stderr, "       -i <ireg>[=<val>]        : EVR indirect register access\n");
 	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
     fprintf(stderr, "                                  reg: [<range>@]<offset\n");
     fprintf(stderr, "                                  range selects 0..7 sub-devices\n");
