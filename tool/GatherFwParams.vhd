@@ -51,7 +51,6 @@ begin
       write(l, string'("ESC_SM3_LEN_C = 0x")); write(l, toString(ESC_SM3_LEN_C)); writeline(output, l);
       write(l, string'("ESC_SM3_MXL_C = 0x")); write(l, toString(ESC_SM3_MXL_C)); writeline(output, l);
 
-      write(l, string'("ESC_SM3_MXL_C = 0x")); write(l, toString(ESC_SM3_MXL_C)); writeline(output, l);
       write(l, string'("TXPDO_MXMAP_C =   ")); write(l, TXPDO_MXMAP_C); writeline(output, l);
 
       write(l, string'("PROM_CAT_ID_C = ")); write(l, PROM_CAT_ID_C); writeline(output, l);

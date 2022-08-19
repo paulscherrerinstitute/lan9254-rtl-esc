@@ -29,7 +29,7 @@ class FirmwareConstants(object):
     if   ( 0 == sm ):
       return ESC_SM0_SMA_C
     elif ( 1 == sm ):
-      return ESC_SM0_SMA_C
+      return ESC_SM1_SMA_C
     elif ( 2 == sm ):
       return ESC_SM2_SMA_C
     elif ( 3 == sm ):
@@ -59,7 +59,7 @@ class FirmwareConstants(object):
     elif ( 0 == sm ):
       return ESC_SM0_MXL_C
     else:
-      return FirmwareConstants.ESC_SM_LEN( sm )
+      return FirmwareConstants .ESC_SM_LEN( sm )
 
   @staticmethod
   def RXMBX_SM():
