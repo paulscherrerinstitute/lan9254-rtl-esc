@@ -14,12 +14,12 @@ end entity GatherFwParams;
 
 architecture soft of GatherFwParams is
 
-   -- FIXME: should obtain this from somewhere
+   -- FIXME: should obtain this from the application!
    constant TXPDO_MXMAP_C : natural                       := 16;
    constant PROM_CAT_ID_C : natural                       := 1;
    constant I2CP_CAT_ID_C : natural                       := 2;
    constant DFLT_MACADD_C : std_logic_vector(47 downto 0) := x"f106a98e0200";  -- 00:02:8e:a9:06:f1
-   constant DFLT_IP4ADD_C : std_logic_vector(31 downto 0) := x"1A0A0A0A";      -- 10.10.10.10
+   constant DFLT_IP4ADD_C : std_logic_vector(31 downto 0) := x"0A0A0A0A";      -- 10.10.10.10
    constant DFLT_UDPPRT_C : std_logic_vector(15 downto 0) := x"0010";          -- 4096
    constant ENBL_FOE_C    : natural                       := 1;
    constant ENBL_EOE_C    : natural                       := 1;
