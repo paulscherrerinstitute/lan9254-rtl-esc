@@ -35,7 +35,7 @@ OBJS+=StrmFifoSync.o
 OBJS+=ESCFoEPkg.o
 
 TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
-TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o
+TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o StrmFifoSyncTb.o
 
 # Default target
 all: $(PROG)
