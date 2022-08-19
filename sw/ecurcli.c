@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <errno.h>
@@ -143,18 +144,21 @@ uint32_t            a;
 
 static void usage(const char *nm)
 {
-	fprintf(stderr, "usage: %s [-hst] [-a <dst_ip>] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
+	fprintf(stderr, "usage: %s [-hstV] [-a <dst_ip>] [-b base] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
 	fprintf(stderr, "       -h                       : this message\n");
 	fprintf(stderr, "       -t                       : run basic test (connection to target required)\n");
 	fprintf(stderr, "       -s                       : print networking stats for target\n");
 	fprintf(stderr, "       -v                       : increase verbosity\n");
-	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation)\n");
+	fprintf(stderr, "       -V                       : show version info\n");
+	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation). Can also be defined by\n");
+	fprintf(stderr, "                                  the 'ECUR_TARGET_IP' environment variable\n");
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
 	fprintf(stderr, "       -i <ireg>[=<val>]        : EVR indirect register access\n");
 	fprintf(stderr, "       -r <reg>[=<val>]         : any register access\n");
     fprintf(stderr, "                                  reg: [<range>@]<offset\n");
     fprintf(stderr, "                                  range selects 0..7 sub-devices\n");
     fprintf(stderr, "                                  (at base-addr (range<<19)).\n");
+    fprintf(stderr, "       -b <base>                : explicitly specify a base-address (added to -m or -r value)\n");
 	fprintf(stderr, "       -m <mem>[=<val>]         : like 'reg' but uses byte-addresses;\n");
 	fprintf(stderr, "                                  note that they still must be word-\n");
 	fprintf(stderr, "                                  aligned; this is a convenience option.\n");
@@ -174,7 +178,7 @@ const char *bitws = (1 == w ? "8" : (2 == w ? "16" : "32"));
 		return -1;
 	}
 	if ( doWrite ) {
-printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
+		printf("Writing 0x%08" PRIx32 " to 0x%08" PRIx32 "\n", v, a);
 		switch ( w ) {
 			case 1:   st = ecurWrite8 ( e, a, &v8,  1 ); break;
 			case 2:   st = ecurWrite16( e, a, &v16, 1 ); break;
@@ -265,7 +269,7 @@ const char         *op = s;
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:tsve:r:i:m:w:";
+char               *optstr        = "ha:b:tsve:r:i:m:Vw:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.10";
 uint16_t            dprt          = 4096;
@@ -274,13 +278,21 @@ uint32_t            hbibas        = (7<<19);
 uint32_t            escbas        = (6<<19);
 uint32_t            evrbas        = (0<<19);
 uint32_t            regbas        = (0<<19);
+uint32_t            cfgbas        = (0<<19) | (1<<17);
 int                 testFailed    = 0;
 int                 printNetStats = 0;
 int                 verbose       = 0;
+int                 printVersion  = 0;
 uint32_t           *u32_p         = 0;
+uint32_t            val;
+int                 st;
 int                 opt;
 const char         *at, *arg;
 uint32_t            width         = 4;
+
+	if ( (arg = getenv("ECUR_TARGET_IP")) ) {
+		dip = arg;
+	}
 
 	while ( (opt = getopt(argc, argv, optstr)) > 0 ) {
         u32_p = 0;
@@ -316,6 +328,10 @@ uint32_t            width         = 4;
                 u32_p = &width;
                 break;
 
+			case 'V':
+				printVersion = 1;
+				break;
+
 			case 'm': /* deal with that later */
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
@@ -341,7 +357,7 @@ uint32_t            width         = 4;
 	}
 
 	if ( ! (e = ecurOpen( dip, dprt, verbose )) ) {
-		fprintf(stderr, "Unable to connect to Firmware\n");
+		fprintf(stderr, "Unable to connect to Firmware at %s:%" PRIu16 "\n", dip, dprt);
 		goto bail;
 	}
 
@@ -351,6 +367,15 @@ uint32_t            width         = 4;
 
 	if ( printNetStats ) {
 		ecurPrintNetStats( e, escbas );
+	}
+
+	if ( printVersion ) {
+		st = ecurRead32( e, cfgbas + 0x10, &val, 1 );
+		if ( st < 0 ) {
+			fprintf(stderr, "ecurRead32() failed\n");
+		} else {
+			printf("Target Firmware Git Hash: 0x%08" PRIx32 "\n", val);
+		}
 	}
 
 	optind = 1;
