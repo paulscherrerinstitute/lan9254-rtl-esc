@@ -1495,6 +1495,9 @@ class ESI(object):
     with io.open( fnam, mode=mode, closefd=closefd ) as f:
       f.write( prom )
 
+  def writeXML(self, fnam):
+    ET.ElementTree(self._root).write( fnam, xml_declaration = True, method = "xml", pretty_print=True )
+
 if __name__ == '__main__':
 
   parser = ET.XMLParser(remove_blank_text=True)

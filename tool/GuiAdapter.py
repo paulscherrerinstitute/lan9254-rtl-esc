@@ -436,7 +436,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     return quit
 
   def saveTo(self, fnam):
-    ET.ElementTree(self._esi.element).write( fnam, xml_declaration = True, method = "xml", pretty_print=True )
+    self._esi.writeXML( fnam )
 
   def update(self):
     segments, elements   = PdoAdapter.getGuiVals(self)

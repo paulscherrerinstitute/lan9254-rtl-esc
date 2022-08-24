@@ -7,12 +7,13 @@ if __name__ == "__main__":
   import io
   import re
 
-  ( opts, args ) = getopt.getopt( sys.argv[1:], "hPVf", ["help", "prom", "vhdl"] )
+  ( opts, args ) = getopt.getopt( sys.argv[1:], "hPVDf", ["help", "prom", "vhdl", "default"] )
 
   isGui     = True
   overwrite = False
   mkProm    = False
   mkVhd     = False
+  mkDfl     = False
 
   for opt in opts:
     if opt[0] in ('-h', '--help'):
@@ -23,18 +24,21 @@ if __name__ == "__main__":
       print("   -h   : print this message")
       print("   -P   : non-GUI mode; just generate PROM (binary) from from XML")
       print("   -V   : non-GUI mode; just generate VHDL package from from XML")
+      print("   -D   : if no xml file is given - create a new one with default settings.")
+      print("          This switch can also be used in combination with -V/-P")
       print("   -f   : overwrite existing PROM and/or VHDL file(s)")
       sys.exit(0)
     elif opt[0] in ('-P', '--prom'):
       isGui  = False
       mkProm = True
-      if ( len(args) < 1 ):
-        raise RuntimeError("In -P/prom mode you must specify an XML file")
     elif opt[0] in ('-f'):
       overwrite = True
     elif opt[0] in ('-V', '--vhdl'):
       isGui = False
       mkVhd = True
+    elif opt[0] in ('-D', '--default'):
+      isGui = False
+      mkDfl = True
 
   et     = None
   fnam   = None
@@ -79,12 +83,22 @@ if __name__ == "__main__":
     window.show()
     app.exec()
   else:
+    from ToolCore         import ESI
     from ESIPromGenerator import ESIPromGenerator
     if ( et is None ):
-       raise RuntimeError("Need xml file argument")
+       if ( mkDfl ):
+         esi = ESI()
+         if ( not mkProm and not mkVhd ):
+           esi.writeXML('-')
+           exit(0)
+         et = ESI().element
+       else:
+         raise RuntimeError("Need xml file argument or '-D' option")
     prom = ESIPromGenerator( et ).makeProm()
     mode = "wb" if overwrite else "xb"
-    m    = re.match("^(.*)([.][^.]*)$", fnam)
+    m    = None
+    if ( not fnam is None ):
+      m    = re.match("^(.*)([.][^.]*)$", fnam)
     if ( mkProm ):
       pnam = '-'
       if (not m is None):

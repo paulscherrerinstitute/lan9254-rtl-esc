@@ -82,8 +82,12 @@ strmfifosynctb: StrmFifoSyncTb.o $(OBJS)
 run: $(PROG)
 	$(GHDL) -r $(PROG) $(GHDLRUNFLAGS)
 
-EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
-	od -Ad -tu2 --endian=little -w2 -v $< | awk -f gen-prom.awk > $@
+# old method - now use the tool
+#EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
+#	od -Ad -tu2 --endian=little -w2 -v $< | awk -f gen-prom.awk > $@
+
+EEPROMContentPkg.vhd: ../tool/FirmwareConstantsAuto.py
+	../tool/EsiTool.py -VDf
 
 eeprom.bin: test.xml
 	$(RM) $@
