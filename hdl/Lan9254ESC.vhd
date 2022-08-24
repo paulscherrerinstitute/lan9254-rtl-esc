@@ -1733,6 +1733,10 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
    GEN_RX_PDO : if ( not DISABLE_RXPDO_G ) generate
 
+      signal rxPDOMstLoc : Lan9254PDOMstType;
+
+   begin
+
    U_SM_RX   : entity work.ESCSmRx
       generic map (
          SM_SMA_G    => unsigned(ESC_SM2_SMA_C)
@@ -1747,7 +1751,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          len         => unsigned(r.config.sm2Len),
          typ         => x"0",
 
-         rxPDOMst    => rxPDOMst,
+         rxPDOMst    => rxPDOMstLoc,
          rxPDORdy    => rxPDORdy,
 
          req         => rxPDOReq,
@@ -1755,6 +1759,12 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
 
          stats       => stats(1 downto 1)
       );
+
+   P_SPLICE : process ( rxPDOMstLoc, r ) is
+   begin
+      rxPDOMst          <= rxPDOMstLoc;
+      rxPDOMst.escState <= r.curState;
+   end process P_SPLICE;
 
    end generate GEN_RX_PDO;
 

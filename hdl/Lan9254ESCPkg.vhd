@@ -21,6 +21,41 @@ package Lan9254ESCPkg is
       UNKNOWN
    );
 
+   type Lan9254PDOMstType is record
+      escState : ESCStateType;
+      wrdAddr  : Lan9254WordAddrType;
+      data     : std_logic_vector(15 downto 0);
+      valid    : std_logic;
+      ben      : std_logic_vector( 1 downto 0);
+      usr      : std_logic_vector( 3 downto 0);
+      last     : std_logic;
+   end record Lan9254PDOMstType;
+
+   constant LAN9254PDO_MST_INIT_C : Lan9254PDOMstType := (
+      escState => UNKNOWN,
+      wrdAddr  => (others => '0'),
+      data     => (others => '0'),
+      valid    => '0',
+      ben      => (others => '0'),
+      usr      => (others => '0'),
+      last     => '0'
+   );
+
+   type ESCStreamType is (
+      EOE,
+      VOE
+   );
+
+   subtype ESCStreamIndexType is natural range
+      ESCStreamType'pos(ESCStreamType'high)
+         downto
+      ESCStreamType'pos(ESCStreamType'low);
+
+   type Lan9254PDOMstArray is array (ESCStreamIndexType) of Lan9254PDOMstType;
+
+   function toStrmMst(constant x : Lan9254PDOMstType) return Lan9254StrmMstType;
+
+
    type EcRegType is record
       addr     : std_logic_vector(15 downto 0);
       bena     : std_logic_vector( 3 downto 0);
@@ -279,6 +314,18 @@ package Lan9254ESCPkg is
 end package LAN9254ESCPkg;
 
 package body LAN9254ESCPkg is
+
+   function toStrmMst(constant x : Lan9254PDOMstType)
+   return Lan9254StrmMstType is
+      variable v : Lan9254StrmMstType;
+   begin
+      v.data  := x.data;
+      v.valid := x.valid;
+      v.ben   := x.ben;
+      v.usr   := x.usr;
+      v.last  := x.last;
+      return v;
+   end function toStrmMst;
 
    function SM_ADDR_F(constant sm : natural range 0 to 7; constant off : natural range 0 to 15)
    return std_logic_vector is

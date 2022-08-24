@@ -56,24 +56,6 @@ package Lan9254Pkg is
    type Lan9254ReqArray is array (integer range <>) of Lan9254ReqType;
    type Lan9254RepArray is array (integer range <>) of Lan9254RepType;
 
-   type Lan9254PDOMstType is record
-      wrdAddr : Lan9254WordAddrType;
-      data    : std_logic_vector(15 downto 0);
-      valid   : std_logic;
-      ben     : std_logic_vector( 1 downto 0);
-      usr     : std_logic_vector( 3 downto 0);
-      last    : std_logic;
-   end record Lan9254PDOMstType;
-
-   constant LAN9254PDO_MST_INIT_C : Lan9254PDOMstType := (
-      wrdAddr => (others => '0'),
-      data    => (others => '0'),
-      valid   => '0',
-      ben     => (others => '0'),
-      usr     => (others => '0'),
-      last    => '0'
-   );
-
    type Lan9254StrmMstType is record
       data    : std_logic_vector(15 downto 0);
       valid   : std_logic;
@@ -90,21 +72,7 @@ package Lan9254Pkg is
       last    => '0'
    );
 
-   function toStrmMst(constant x : Lan9254PDOMstType) return Lan9254StrmMstType;
-
    type Lan9254StrmMstArray is array (natural range <>) of Lan9254StrmMstType;
-
-   type ESCStreamType is (
-      EOE,
-      VOE
-   );
-
-   subtype ESCStreamIndexType is natural range
-      ESCStreamType'pos(ESCStreamType'high)
-         downto
-      ESCStreamType'pos(ESCStreamType'low);
-
-   type Lan9254PDOMstArray is array (ESCStreamIndexType) of Lan9254PDOMstType;
 
    type Lan9254HBIOutType is record
       cs      : std_logic;
@@ -422,17 +390,5 @@ package body Lan9254Pkg is
          end if;
       end if;
    end procedure lan9254HBIWrite;
-
-   function toStrmMst(constant x : Lan9254PDOMstType)
-   return Lan9254StrmMstType is
-      variable v : Lan9254StrmMstType;
-   begin
-      v.data  := x.data;
-      v.valid := x.valid;
-      v.ben   := x.ben;
-      v.usr   := x.usr;
-      v.last  := x.last;
-      return v;
-   end function toStrmMst;
 
 end package body Lan9254Pkg;
