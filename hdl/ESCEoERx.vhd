@@ -360,6 +360,7 @@ report "SET IP PARAMS -- NEW IP: "
             m.valid  := r.eoeErr;
             m.last   := r.eoeErr;
             v.fragNo := (others => '0');
+            rdy      := not r.drained;
             if ( (r.eoeErr and eoeRdyLoc ) = '1' ) then
                v.eoeErr := '0';
             end if;
