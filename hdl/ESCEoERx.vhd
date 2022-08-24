@@ -123,9 +123,9 @@ begin
    debug( 5 downto  0) <= std_logic_vector( r.fragNo  );
    debug(11 downto  6) <= std_logic_vector( r.frameOff );
 
-   debug(13 downto 12) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 2 ) );
-   debug(14          ) <= r.timeAppend;
-   debug(15 downto 15) <= (others => '0');
+   debug(14 downto 12) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
+--   debug(15          ) <= r.timeAppend;
+   debug(15          ) <= r.eoeErr;
 
    P_COMB : process ( r, mbxMstIb, eoeRdyLoc, mbxRdyOb, addrCfgAck ) is
       variable v   : RegType;
@@ -306,13 +306,16 @@ report "SET IP PARAMS -- NEW MAC";
                   v.rspStatus  := EOE_ERR_CODE_SUCCESS_C;
                   if ( r.hasIp ) then
 report "SET IP PARAMS -- NEW IP: "
-       & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)( 7 downto  0)))) & "."
+       & integer'image(to_integer(unsigned(mbxMstIb.data (15 downto  8))))  & "."
+       & integer'image(to_integer(unsigned(mbxMstIb.data ( 7 downto  0))))  & "."
        & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)(15 downto  8)))) & "."
-       & integer'image(to_integer(unsigned(mbxMstIb.data ( 7 downto  0)))) & "."
-       & integer'image(to_integer(unsigned(mbxMstIb.data (15 downto  8))));
+       & integer'image(to_integer(unsigned(r.ip4AddrTmp(0)( 7 downto  0)))) ;
                      if ( ( r.ip4AddrTmp(0) /= x"0000" ) or ( mbxMstIb.data /= x"0000" ) ) then
-                        v.ip4Addr(0) := r.ip4AddrTmp(0);
-                        v.ip4Addr(1) := mbxMstIb.data;
+                        -- while EOE provides the MAC address in 'network' order
+                        -- it uses little-endian for the IPV4 address. Internally we
+                        -- use network-byte order so we swap here
+                        v.ip4Addr(1) := bswap( r.ip4AddrTmp(0) );
+                        v.ip4Addr(0) := bswap( mbxMstIb.data   );
                         v.ip4AddrVld := '1';
                      else
                         v.rspStatus  := EOE_ERR_CODE_UNSUP_DHCP_C;
