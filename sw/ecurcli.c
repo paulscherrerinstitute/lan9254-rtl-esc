@@ -351,11 +351,6 @@ uint32_t            width         = 4;
         }
 	}
 
-	if ( regbas >= 8 ) {
-		fprintf(stderr, "device index must be 0..7\n");
-		goto bail;
-	}
-
 	if ( ! (e = ecurOpen( dip, dprt, verbose )) ) {
 		fprintf(stderr, "Unable to connect to Firmware at %s:%" PRIu16 "\n", dip, dprt);
 		goto bail;
