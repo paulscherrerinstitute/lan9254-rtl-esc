@@ -36,27 +36,38 @@ package ESCFoEPkg is
       strmRdy : std_logic;
       err     : FoEErrorType;
       done    : std_logic;
-      file0WP : std_logic;
+      fileWP  : std_logic;
    end record FoESubType;
 
    constant FOE_SUB_ASSERT_C : FoESubType := (
       strmRdy => '1',
       err     => FOE_NO_ERROR_C,
       done    => '1',
-      file0WP => '1'
+      fileWP  => '1'
    );
 
    constant FOE_SUB_INIT_C : FoESubType := (
       strmRdy => '0',
       err     => FOE_NO_ERROR_C,
       done    => '0',
-      file0WP => '0'
+      fileWP  => '0'
    );
 
-   type FoEFileNameArray is array (natural range <>) of std_logic_vector(7 downto 0);
+   type FoEFileType is record
+      id      : std_logic_vector(7 downto 0);
+      wp      : boolean;
+   end record FoEFileType;
 
-   constant FOE_FILE_NAME_ARRAY_EMPTY_C : FoeFileNameArray(1 to 0)     := (others => (others => '0'));
+   constant FOE_FILE_ID_WILDCARD_C    : std_logic_vector(7 downto 0) := (others => '0');
 
-   constant FOE_FILE_NAME_WILDCARD_C    : std_logic_vector(7 downto 0) := (others => '0');
+   constant FOE_FILE_INIT_C : FoEFileType := (
+      id      => FOE_FILE_ID_WILDCARD_C,
+      wp      => false
+   );
+
+   type FoEFileArray is array (natural range <>) of FoEFileType;
+
+   constant FOE_FILE_ARRAY_EMPTY_C : FoeFileArray(1 to 0)     := (others => FOE_FILE_INIT_C );
+
 
 end package ESCFoEPkg;

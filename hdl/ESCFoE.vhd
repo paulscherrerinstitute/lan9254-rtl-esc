@@ -17,7 +17,7 @@ entity ESCFoE is
       -- that can be written.
       -- The selection (if any valid filename was received) is presented
       -- on 'foeFileIdx'.
-      FILE_MAP_G        : FoEFileNameArray
+      FILE_MAP_G        : FoEFileArray
    );
    port (
       clk               : in  std_logic;
@@ -71,9 +71,9 @@ entity ESCFoE is
       --   - after foeError has been processed
       foeDone           : in  std_logic := '1';
       foeDoneAck        : out std_logic;
-      -- Indicate whether the file with index 0 in FILE_MAP_G is write-
-      -- protected (foeFile0WP = '1').
-      foeFile0WP        : in  std_logic := '1';
+      -- Indicate whether the files with 'wp = true' in FILE_MAP_G are write-
+      -- protected (foeFileWP = '1').
+      foeFileWP         : in  std_logic := '1';
       -- Index into FILE_MAP_G that should be written.
       -- This valid with the first beat on 'foeMst' until 'foeDone and foeDoneAck'
       foeFileIdx        : out natural range 0 to 15;
@@ -160,7 +160,7 @@ begin
    debug(55 downto 52)        <= foeError(3 downto 0);
    debug(63 downto 56)        <= (others => '0');
 
-   P_COMB : process ( r, mbxMstIb, mbxRdyOb, mbxSize, mbxErrRdy, foeRdy, foeBusy, foeError, foeDone, foeFile0WP ) is
+   P_COMB : process ( r, mbxMstIb, mbxRdyOb, mbxSize, mbxErrRdy, foeRdy, foeBusy, foeError, foeDone, foeFileWP ) is
       variable v   : RegType;
    begin
       v := r;
@@ -279,9 +279,9 @@ begin
                   v.state    := DRAIN;
 
                   L_FILEN : for i in FILE_MAP_G'range loop
-                     if (   ( FILE_MAP_G(i) = FOE_FILE_NAME_WILDCARD_C )
-                         or ( FILE_MAP_G(i) = toupper( mbxMstIb.data(7 downto 0) ) ) ) then
-                        if ( ( foeFile0WP = '1' ) and ( i = 0 ) ) then
+                     if (   ( FILE_MAP_G(i).id = FOE_FILE_ID_WILDCARD_C )
+                         or ( FILE_MAP_G(i).id = toupper( mbxMstIb.data(7 downto 0) ) ) ) then
+                        if ( ( foeFileWP = '1' ) and FILE_MAP_G(i).wp ) then
                            v.err.code    := FOE_ERR_CODE_NORIGHTS_C;
                         else
                            v.err.code    := (others => '0');

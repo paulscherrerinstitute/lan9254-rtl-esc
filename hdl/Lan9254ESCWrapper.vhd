@@ -22,7 +22,7 @@ entity Lan9254ESCWrapper is
       ENABLE_VOE_G            : boolean := false;
       ENABLE_EOE_G            : boolean := true;
       -- FoE is enabled if the file-name array is not empty
-      FOE_FILE_MAP_G          : FoeFileNameArray := FOE_FILE_NAME_ARRAY_EMPTY_C;
+      FOE_FILE_MAP_G          : FoeFileArray := FOE_FILE_ARRAY_EMPTY_C;
       TXPDO_MAX_UPDATE_FREQ_G : real    := 5.0E3;
       REG_IO_TEST_ENABLE_G    : boolean := true;
       GEN_EOE_ILA_G           : boolean := true;
@@ -716,7 +716,7 @@ begin
             foeError          => foeSub.err,
             foeDone           => foeSub.done,
             foeDoneAck        => foeMst.doneAck,
-            foeFile0WP        => foeSub.file0WP,
+            foeFileWP         => foeSub.fileWP,
             foeFileIdx        => foeMst.fileIdx,
             debug             => foeDebug
 

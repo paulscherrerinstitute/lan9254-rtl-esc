@@ -337,7 +337,7 @@ begin
 
    U_DUT : entity work.ESCFoE
       generic map (
-         FILE_MAP_G => ( 0 => x"41" )
+         FILE_MAP_G => ( 0 => (id => x"41", wp => false ) )
       )
       port map (
          clk               => clk,
@@ -364,7 +364,7 @@ begin
          foeError          => foeError,
          foeDone           => foeDone,
          foeDoneAck        => foeDoneAck,
-         foeFile0WP        => '0',
+         foeFileWP         => '0',
          foeFileIdx        => foeFileIdx,
          debug             => open
 
