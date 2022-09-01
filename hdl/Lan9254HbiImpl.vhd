@@ -303,9 +303,8 @@ begin
                      v.rep.berr  := (others => '0');
                      v.hbiOut.ws := not HBI_WS_ACT_C;
                      if ( r.req.be = BE_DEASS_C ) then
-                        -- no more work; deassert CS
-                        v.hbiOut.cs := not HBI_CS_ACT_C;
-                        -- must hold data after deasserting ws/cs
+                        -- no more work;
+                        -- must hold data after deasserting ws
                         v.dly       := TDWRH_CNT_C;
                      else
                         -- min. delay until second access
@@ -317,6 +316,7 @@ begin
                   -- only get here if be = BE_DEASS_C
                   -- high-Z the bus and wait for the rest trdale
                   v.hbiOut.ad_t := (others => '1');
+                  v.hbiOut.cs   := not HBI_CS_ACT_C;
                   DONE(v, TRDAL_CNT_C - TDWRH_CNT_C);
                end if;
          end case;
