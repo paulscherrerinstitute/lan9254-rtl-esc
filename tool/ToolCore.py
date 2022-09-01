@@ -457,7 +457,7 @@ class PdoEntry(object):
 
   def syncElms(self, subEl, subVal):
     if not isinstance(subVal, list):
-      subVal = [ subVal for i in range( len(subEl) ) ]
+      subVal = [ subVal for i in range( len(self._elmLst) ) ]
     i = 0
     for e in self._elmLst:
       se = findOrAdd(e, subEl)

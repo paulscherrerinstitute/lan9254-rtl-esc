@@ -6,6 +6,7 @@ from   FixedPdoForm       import FixedPdoForm, PdoElementGroup
 # XML interface
 from   lxml               import etree as ET
 from   ToolCore           import VendorData, Pdo, NetConfig, ESI
+import traceback
 
 class VendorDataAdapter(object):
   def __init__(self, vendorData):
@@ -388,7 +389,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
           self.saveTo( self._fnam )
           self.resetModified()
         except Exception as e:
-          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) + "\n" + traceback.format_exc() ).show()
       return save
 
     def mkSaveAs(slf):
@@ -402,7 +403,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
           self.saveTo( fn[0] )
           self.resetModified()
         except Exception as e:
-          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) + "\n" + traceback.format_exc() ).show()
       return saveAs
 
     def mkWriteSii(slf):
@@ -415,7 +416,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
           self.update()
           self._esi.writeProm( fn[0], overwrite=True )
         except Exception as e:
-          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) ).show()
+          DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) + "\n" + traceback.format_exc() ).show()
       return writeSii
 
     if ( not self._fnam is None ):
