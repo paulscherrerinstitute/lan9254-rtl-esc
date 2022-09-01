@@ -271,7 +271,7 @@ main(int argc, char **argv)
 {
 char               *optstr        = "ha:b:tsve:r:i:m:Vw:";
 int                 rval          = 1;
-const char         *dip           = "10.10.10.10";
+const char         *dip           = "10.10.10.20";
 uint16_t            dprt          = 4096;
 Ecur                e             = 0;
 uint32_t            hbibas        = (7<<19);
