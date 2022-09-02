@@ -55,6 +55,9 @@ Sending of the TxPDO is triggered by an EVR pulse-generator and the
 (default) event-code and delay of this trigger pulse are defined here.
 The delay is measured in EVR-clock ticks.
 
+The special event code `0` does not use a pulse-generator but detects
+the arrival of the EVR's distributed data buffer.
+
 #### LATCH0 Events
 The EtherCAT-EVR hardware/firmware latches the EtherCAT DC timestamp
 when the LATCH0 signal (in firmware) is asserted and deasserted, respectively.
@@ -62,6 +65,9 @@ The firmware asserts and deasserts this signal when specific EVR-events
 occur. The default event codes are defined in the GUI. Note that two
 appropriate event codes should be used to make sure LATCH0 is asserted
 and deasserted periodically in a meaningful sequence.
+
+For generating the LATCH events the special event code `0` may also
+be used (see TxPDO Trigger).
 
 ### TxPDO Layout
 Many details of the TxPDO image can be defined by the tool. Note that
