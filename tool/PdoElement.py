@@ -71,9 +71,20 @@ class PdoElement(object):
     self.isSigned    = isSigned
     self.typeName    = typeName
     self.indexedName = indexedName
+    self.help        = None
 
   def clone(self):
     return copy(self)
+
+  @property
+  def help(self):
+    return self._help
+
+  @help.setter
+  def help(self, val):
+    if not isinstance(val, str) and not val is None:
+      raise ValueError("help must be a string or None")
+    self._help = val
 
   @property
   def name(self):

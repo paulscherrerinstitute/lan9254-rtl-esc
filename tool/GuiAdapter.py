@@ -102,7 +102,9 @@ class VendorDataAdapter(object):
 
   def makeFixedPdoEl(self, which, idx):
     p = self._vendorData.fixedProperties[which]
-    return PdoElement( p["name"], idx, int( ( p["size"] + 7 ) / 8 ), p["nelms"] )
+    e = PdoElement( p["name"], idx, int( ( p["size"] + 7 ) / 8 ), p["nelms"] )
+    e.help = p["help"]
+    return e
 
   def makeGui(self, pdoAdapt, parent = None):
     self.__gui = FixedPdoForm( None, parent )
@@ -164,7 +166,7 @@ class VendorDataAdapter(object):
     def mkCodGet(vd, ev):
       # ensure that the event is actually enabled
       if ( ev < 10 ):
-        vd.getEvrParam(ev).pulseEnabled = True
+        vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
       def g():
         if ( ev >= 10 ):
           cod = vd.getExtraEvent( ev - 10 )
@@ -175,12 +177,13 @@ class VendorDataAdapter(object):
     def mkCodSet(vd, ev):
       # ensure that the event is actually enabled
       if ( ev < 10 ):
-        vd.getEvrParam(ev).pulseEnabled = True
+        vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
       def s(v):
         if ( ev >= 10 ):
           vd.setExtraEvent( ev - 10, int(v) )
         else:
-          vd.getEvrParam(ev).pulseEvent = int(v)
+          vd.getEvrParam(ev).pulseEvent   = int(v)
+          vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
       return s
     def mkDlyGet(vd, ev):
       def g():
@@ -203,13 +206,16 @@ class VendorDataAdapter(object):
     s   = mkCodSet( self._vendorData, 0 )
     createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
     frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Code"), edt )
+    edt.setToolTip("Event code 0 can be used to trigger\n" + 
+                   "on arrival of the EVR data buffer"
+                  )
 
     edt = QtWidgets.QLineEdit()
     edt.setMaxLength( 12 )
     g   = mkDlyGet( self._vendorData, 0 )
     s   = mkDlySet( self._vendorData, 0 )
     createValidator( edt, g, s, QtGui.QIntValidator, 0, 10000000 )
-    edt.setToolTip("Delay is in EVR clock cycles")
+    edt.setToolTip("Delay is in EVR clock cycles\nNOTE: ignored for event 0")
     frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Delay"), edt )
 
     edt = QtWidgets.QLineEdit()
@@ -218,7 +224,9 @@ class VendorDataAdapter(object):
     s   = mkCodSet( self._vendorData, 10 )
     createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
     edt.setToolTip("When this event is detected LATCH0 is asserted;\n" +
-                   "you also need to define an event to deassert LATCH0!")
+                   "you also need to define an event to deassert LATCH0!\n" +
+                   "Event 0 triggers on arrival of the EVR data buffer"
+                   )
     frm.addRow( QtWidgets.QLabel("Event Code setting  LATCH0"), edt )
 
     edt = QtWidgets.QLineEdit()
@@ -227,7 +235,9 @@ class VendorDataAdapter(object):
     s   = mkCodSet( self._vendorData, 11 )
     createValidator( edt, g, s, QtGui.QIntValidator, 0, 255 )
     edt.setToolTip("When this event is detected LATCH0 is deasserted;\n" +
-                   "you also need to define an event to assert LATCH0!")
+                   "you also need to define an event to assert LATCH0!\n" +
+                   "Event 0 triggers on arrival of the EVR data buffer"
+                  )
     frm.addRow( QtWidgets.QLabel("Event Code clearing LATCH0"), edt )
 
 

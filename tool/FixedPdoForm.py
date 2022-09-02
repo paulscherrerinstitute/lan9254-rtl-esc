@@ -128,6 +128,8 @@ class FixedPdoForm(object):
     mkEdtRst(ledt, pdoEl)()
     ledt.editingFinished.connect( mkEdtRst( ledt, pdoEl ) )
     ledt.returnPressed.connect( mkEdtDon( self, ledt, pdoEl ) )
+    if ( not pdoEl.help is None ):
+      ledt.setToolTip( pdoEl.help )
     val  = QtGui.QRegExpValidator(QtCore.QRegExp("[0-9a-fA-F]{1,4}"))
     ledt.setValidator( val )
     # Use a dummy (invisible) checkbox to get things to line up...
@@ -160,8 +162,17 @@ if __name__ == "__main__":
 
   window = QtWidgets.QWidget()
   f = FixedPdoForm(None)
-  e = [ PdoElement("TimestampHi", 0x1100, 4), PdoElement("TimestampLo", 0x1101, 4) ]
-  g = PdoElementGroup( e, False )
+  l = []
+  e = PdoElement("TimestampHi", 0x1100, 4)
+  e.help = "Timestamp received by EVR via\n" + \
+           "dedicated events 0x70/0x71/0x7c/0x7c"
+  print(e)
+  l.append(e)
+  e = PdoElement("TimestampLo", 0x1101, 4)
+  e.help = "Timestamp received by EVR via\n" + \
+           "dedicated events 0x70/0x71/0x7c/0x7c"
+  l.append(e)
+  g = PdoElementGroup( l, False )
   f.addGroup( g )
   f.addGroup( PdoElement("EventSet", 0x1102, 4, 4) )
 

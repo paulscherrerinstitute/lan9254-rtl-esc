@@ -474,10 +474,12 @@ class FixedPdoPart(object):
 
   F_MASK        = (F_WITH_LTCH1F << 1) - 1
 
-  def __init__(self, flags, names = None):
+  def __init__(self, flags, names = None, helps = None):
     super().__init__()
-    self._maxSegs = FirmwareConstants.TXPDO_MAX_NUM_SEGMENTS()
-    self._flags   = flags
+    self._maxSegs     = FirmwareConstants.TXPDO_MAX_NUM_SEGMENTS()
+    self._flags       = flags
+    self._eventDWords = FirmwareConstants.TXPDO_NUM_EVENT_DWORDS()
+    n                 = self._eventDWords
     if names is None:
       names = [ "TimestampLo",
                 "TimestampHi",
@@ -486,19 +488,29 @@ class FixedPdoPart(object):
                 "TimestampLatch0Falling",
                 "TimestampLatch1Rising",
                 "TimestampLatch1Falling" ]
+      helps = [ "Timestamp (ns) received by EVR via\n" + \
+                "dedicated events 0x7c (or event clock) / 0x7d",
+                "Timestamp (s) received by EVR via\n" + \
+                "dedicated events 0x70/0x71/0x7d",
+                ("A bit-set of all events observed since\n" + \
+                "the TxPDO was last sent. This adds {:d} DWORDS\n" + \
+                "to the TxPDO.").format(n),
+                "The DC time of LATCH0 raising",
+                "The DC time of LATCH0 falling",
+                "The DC time of LATCH1 raising",
+                "The DC time of LATCH1 falling"]
+
     else:
       if ( len(names) != 7 ):
         raise ValueError("names of predefined items must be a list of 7 strings")
-    self._eventDWords = FirmwareConstants.TXPDO_NUM_EVENT_DWORDS()
-    n                 = self._eventDWords
     self._fixed       = [
-      { "name" : names[0], "size" : 32, "nelms": 1 },
-      { "name" : names[1], "size" : 32, "nelms": 1 },
-      { "name" : names[2], "size" : 32, "nelms": n },
-      { "name" : names[3], "size" : 64, "nelms": 1 },
-      { "name" : names[4], "size" : 64, "nelms": 1 },
-      { "name" : names[5], "size" : 64, "nelms": 1 },
-      { "name" : names[6], "size" : 64, "nelms": 1 },
+      { "name" : names[0], "size" : 32, "nelms": 1, "help" : helps[0] },
+      { "name" : names[1], "size" : 32, "nelms": 1, "help" : helps[1] },
+      { "name" : names[2], "size" : 32, "nelms": n, "help" : helps[2] },
+      { "name" : names[3], "size" : 64, "nelms": 1, "help" : helps[3] },
+      { "name" : names[4], "size" : 64, "nelms": 1, "help" : helps[4] },
+      { "name" : names[5], "size" : 64, "nelms": 1, "help" : helps[5] },
+      { "name" : names[6], "size" : 64, "nelms": 1, "help" : helps[6] },
     ]
 
   @property
