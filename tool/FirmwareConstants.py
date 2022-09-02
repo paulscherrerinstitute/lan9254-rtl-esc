@@ -92,7 +92,7 @@ class FirmwareConstants(object):
 
   @staticmethod
   def TXPDO_NUM_EVENT_DWORDS():
-    return 4
+    return 8
 
   @staticmethod
   def EEPROM_LAYOUT_VERSION():
