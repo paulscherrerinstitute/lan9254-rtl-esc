@@ -386,11 +386,15 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
       pass
     self.resetModified()
 
-    def fileSaveDialog(slf, typ):
+    def fileSaveDialog(slf, typ, prop = None):
       op  = QtWidgets.QFileDialog.Options()
       op |= QtWidgets.QFileDialog.DontUseNativeDialog;
       parent = slf._main
-      return QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", "", typ, options=op)
+      if prop is None:
+        curnam = ""
+      else:
+        curnam = prop
+      return QtWidgets.QFileDialog.getSaveFileName(parent, "File Name", prop, typ, options=op)
 
     def mkSave(slf):
       def save():
@@ -404,7 +408,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
 
     def mkSaveAs(slf):
       def saveAs():
-        fn = fileSaveDialog(self, "XML Files (*.xml);;All Files (*)")
+        fn = fileSaveDialog(self, "XML Files (*.xml);;All Files (*)", self._fnam)
         if ( 0 == len( fn[0] ) ):
           # cancel
           return
@@ -418,7 +422,12 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
 
     def mkWriteSii(slf):
       def writeSii():
-        fn = fileSaveDialog(self, "SII Files (*.sii);;All Files (*)")
+        suff = ".xml"
+        if ( not self._fnam is None ) and self._fnam.endswith(suff):
+           prop = self._fnam[:-len(suff)] + ".sii"
+        else:
+           prop = ""
+        fn = fileSaveDialog(self, "SII Files (*.sii);;All Files (*)", prop)
         if ( 0 == len( fn[0] ) ):
           # cancel
           return
@@ -431,6 +440,8 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
 
     if ( not self._fnam is None ):
       fileMenu.addAction( "Save" ).triggered.connect( mkSave( self ) )
+      if ( not self._main is None ):
+        self._main.setWindowTitle( self._fnam )
     fileMenu.addAction( "Save As" ).triggered.connect( mkSaveAs( self ) )
     fileMenu.addAction( "Write SII (EEPROM) File" ).triggered.connect( mkWriteSii( self ) )
     fileMenu.addAction( "Quit" ).triggered.connect( self.mkQuit() )
