@@ -10,6 +10,8 @@ foreach f {
   EEPROMContentPkg.vhd
   ESCEoERx.vhd
   ESCEoETx.vhd
+  ESCFoEPkg.vhd
+  ESCFoE.vhd
   ESCMbxPkg.vhd
   ESCRxMbxMux.vhd
   ESCSmRx.vhd
@@ -17,6 +19,7 @@ foreach f {
   ESCTxMbxErr.vhd
   ESCTxMbxMux.vhd
   ESCTxPDO.vhd
+  IlaWrappersPkg.vhd
   IPV4ChkSum.vhd
   Lan9254ESCPkg.vhd
   Lan9254ESCrun.vhd
@@ -31,6 +34,7 @@ foreach f {
   MicroUDPIPMux.vhd
   SynchronizerBit.vhd
   Lan9254Pkg.vhd
+  StrmFifoSync.vhd
   StrmFrameBuf.vhd
   Udp2BusPkg.vhd
   Udp2Bus.vhd
