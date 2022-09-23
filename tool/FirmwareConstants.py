@@ -118,19 +118,3 @@ class HardwareConstants(object):
   @staticmethod
   def EEPROM_SIZE_BYTES():
     return 2048
-  @staticmethod
-  def EOE_ENABLED():
-    return ENBL_EOE_C
-
-class HardwareConstants(object):
-  @staticmethod
-  def EEPROM_SIZE_BYTES():
-    return 2048
-  @staticmethod
-  def EOE_ENABLED():
-    return ENBL_EOE_C
-
-class HardwareConstants(object):
-  @staticmethod
-  def EEPROM_SIZE_BYTES():
-    return 2048
