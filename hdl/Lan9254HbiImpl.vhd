@@ -93,7 +93,6 @@ architecture rtl of Lan9254HBI is
       req            : Lan9254ReqType;
       rep            : Lan9254RepType;
       state          : StateType;
-      nstate         : StateType;
       dly            : DelayType;
       timeo          : TimeoType;
    end record RegType;
@@ -103,7 +102,6 @@ architecture rtl of Lan9254HBI is
       req            => LAN9254REQ_INIT_C,
       hbiOut         => LAN9254HBIOUT_INIT_C,
       state          => IDLE,
-      nstate         => IDLE,
       dly            => 0,
       timeo          => 0
    );
@@ -141,6 +139,18 @@ begin
       probe1(          16) <= hbiInp.waitAck;
       probe1(          17) <= waitAckSync;
       probe1(63 downto 18) <= (others => '0');
+
+      probe2( 2 downto  0) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
+      probe2(           3) <= r.req.valid;
+      probe2( 7 downto  4) <= r.req.be;
+      probe2(           8) <= r.req.rdnwr;
+      probe2(           9) <= r.req.lock;
+      probe2(          10) <= r.req.noAck;
+      probe2(          11) <= r.rep.valid;
+      probe2(12 downto 12) <= r.rep.berr;
+
+      probe2(31 downto 13) <= (others => '0');
+      probe2(63 downto 32) <= r.rep.rdata;
 
       U_ILA : component Ila_256
          port map (
@@ -253,7 +263,7 @@ begin
                   -- max(tadrh,talerd) but they are identical
                   v.dly         := TADRH_CNT_C;
                else
-                  if ( v.req.rdnwr = '1' ) then
+                  if ( r.req.rdnwr = '1' ) then
                      -- FIXME -- should we turn off the AD buffers before asserting RD ?
                      v.hbiOut.ad_t := (others => '1');
                      v.state       := READ;
