@@ -91,6 +91,7 @@ entity Lan9254ESC is
 end entity Lan9254ESC;
 
 architecture rtl of Lan9254ESC is
+   attribute KEEP                     : string;
 
    constant TXPDO_UPDATE_DECIMATION_C : natural := integer(CLK_FREQ_G/TXPDO_MAX_UPDATE_FREQ_G);
 
@@ -621,6 +622,7 @@ architecture rtl of Lan9254ESC is
    signal     rinHBIMux       : HBIMuxRegType;
 
    signal     r               : RegType                       := REG_INIT_C;
+--   attribute  KEEP       of r : signal is "TRUE"; -- This messed things really up; ILA was not detected
    signal     rin             : RegType;
 
    signal     rxMBXDebug      : std_logic_vector(2 downto 0)  := (others => '0');
@@ -1836,15 +1838,31 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       signal     probe2          : std_logic_vector(63 downto 0) := (others => '0');
       signal     probe3          : std_logic_vector(63 downto 0) := (others => '0');
 
+      signal     testDbg         : std_logic_vector( 7 downto 0);
+
+      attribute KEEP of probe0 : signal is "TRUE";
+      attribute KEEP of probe1 : signal is "TRUE";
+      attribute KEEP of probe2 : signal is "TRUE";
+      attribute KEEP of probe3 : signal is "TRUE";
+
    begin
+
+      P_TEST_DBG : process ( r, rxMBXPDO ) is
+      begin
+         testDbg <= std_logic_vector( rxMBXPDO.wrdAddr(7 downto 0) );
+         if ( r.state = TEST ) then
+            testDbg(4 downto 0) <= std_logic_vector( to_unsigned( r.testFail, 5 ) );
+         end if;
+      end process P_TEST_DBG;
 
       probe0(13 downto  0) <= std_logic_vector(reqLoc.addr);
       probe0(15 downto 14) <= rxMBXDebug(1 downto 0);
+      -- !!!! vivado 2021.1 silently changed encoding, TEST -> 8; this improved when I set KEEP on the probes !!!!
       probe0(20 downto 16) <= std_logic_vector( to_unsigned( ControllerStateType'pos( r.state ), 5) );
       probe0(21          ) <= reqLoc.rdnwr;
       probe0(22          ) <= reqLoc.valid;
       probe0(23          ) <= rep.valid;
-      probe0(31 downto 24) <= std_logic_vector( rxMBXPDO.wrdAddr(7 downto 0) );
+      probe0(31 downto 24) <= testDbg; -- rxMBXPDO.wrdAddr but if still in TEST state then testFail
       probe0(63 downto 32) <= reqLoc.data;
 
       probe1(31 downto  0) <= rep.rdata;
