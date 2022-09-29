@@ -212,8 +212,6 @@ begin
          case ( r.state ) is
 
             when IDLE =>
-               v.rep    := LAN9254REP_INIT_C;
-
                -- latch request
                v.req    := req;
                -- reset reply and bus signals
@@ -283,26 +281,24 @@ begin
                end if;
 
             when READ =>
-               if ( r.hbiOut.rs = HBI_RS_ACT_C ) then
-                  -- wait ack
-                  if ( waitAckDone ) then
-                     v.timeo        := 0;
-                     -- capture data
-                     if ( r.hbiOut.ad(0) = '1' ) then -- hi-word selected
-                        v.rep.rdata(31 downto 16) := hbiInp.ad;
-                     else
-                        v.rep.rdata(15 downto  0) := hbiInp.ad;
-                     end if;
-                     v.rep.berr  := (others => '0'); -- OK so far
-                     v.hbiOut.rs := not HBI_RS_ACT_C;
-                     if ( r.req.be = BE_DEASS_C ) then
-                        -- no more work; deassert CS
-                        v.hbiOut.cs := not HBI_CS_ACT_C;
-                        DONE(v, TRDAL_CNT_C);
-                     else
-                        v.dly       := TRDAL_CNT_C;
-                        v.state     := ADDR; -- a second cycle is necessary
-                     end if;
+               -- wait ack
+               if ( waitAckDone ) then
+                  v.timeo        := 0;
+                  -- capture data
+                  if ( r.hbiOut.ad(0) = '1' ) then -- hi-word selected
+                     v.rep.rdata(31 downto 16) := hbiInp.ad;
+                  else
+                     v.rep.rdata(15 downto  0) := hbiInp.ad;
+                  end if;
+                  v.rep.berr  := (others => '0'); -- OK so far
+                  v.hbiOut.rs := not HBI_RS_ACT_C;
+                  if ( r.req.be = BE_DEASS_C ) then
+                     -- no more work; deassert CS
+                     v.hbiOut.cs := not HBI_CS_ACT_C;
+                     DONE(v, TRDAL_CNT_C);
+                  else
+                     v.dly       := TRDAL_CNT_C;
+                     v.state     := ADDR; -- a second cycle is necessary
                   end if;
                end if;
 
