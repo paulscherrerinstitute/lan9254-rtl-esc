@@ -236,13 +236,13 @@ begin
          debug       => debug(23 downto 0),
 
          testFailed  => testFailed,
-         stats       => statsLoc(1 downto 0),
+         stats       => statsLoc(1 downto 0) --,
 
-         ilaTrigOb   => ilaTrg(0),
-         ilaTackOb   => ilaAck(0),
+--       ilaTrigOb   => ilaTrg(0),
+--       ilaTackOb   => ilaAck(0),
 
-         ilaTrigIb   => ilaTrg(NUM_ILAS_C - 1),
-         ilaTackIb   => ilaAck(NUM_ILAS_C - 1)
+--       ilaTrigIb   => ilaTrg(NUM_ILAS_C - 1),
+--       ilaTackIb   => ilaAck(NUM_ILAS_C - 1)
       );
 
       req <= reqLoc;
@@ -392,11 +392,11 @@ begin
                probe0       => probe0,
                probe1       => probe1,
                probe2       => probe2,
-               probe3       => probe3,
-               trig_out     => ilaTrg(1),
-               trig_out_ack => ilaAck(1),
-               trig_in      => ilaTrg(0),
-               trig_in_ack  => ilaAck(0)
+               probe3       => probe3 --,
+--             trig_out     => ilaTrg(1),
+--             trig_out_ack => ilaAck(1),
+--             trig_in      => ilaTrg(0),
+--             trig_in_ack  => ilaAck(0)
             );
       end generate GEN_ILA;
 
@@ -649,13 +649,13 @@ begin
             strmMstOb         => udpTxMst.strm,
             strmRdyOb         => udpTxRdy,
 
-            frameSize         => udpFrameSize,
+            frameSize         => udpFrameSize --,
 
-            ilaTrgOb          => ilaTrg(2),
-            ilaAckOb          => ilaAck(2),
+--          ilaTrgOb          => ilaTrg(2),
+--          ilaAckOb          => ilaAck(2),
 
-            ilaTrgIb          => ilaTrg(1),
-            ilaAckIb          => ilaAck(1)
+--          ilaTrgIb          => ilaTrg(1),
+--          ilaAckIb          => ilaAck(1)
          );
 
       P_LOC_STAT_REGS : process ( udp2BusReqOb( UDP_IDX_LOC_C ), statsLoc ) is
