@@ -1852,6 +1852,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          testDbg <= std_logic_vector( rxMBXPDO.wrdAddr(7 downto 0) );
          if ( r.state = TEST ) then
             testDbg(4 downto 0) <= std_logic_vector( to_unsigned( r.testFail, 5 ) );
+            testDbg(5)          <= '1';
          end if;
       end process P_TEST_DBG;
 
@@ -1875,7 +1876,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
       probe2( 8          ) <= toSL(r.program.seq(0).rdnwr);
       probe2( 9          ) <= toSL(r.program.seq(1).rdnwr);
       probe2(10          ) <= toSL(r.program.seq(2).rdnwr);
-      probe2(11          ) <= stalled;
+      probe2(11          ) <= (stalled or rst); -- lack of probes; or them together
       probe2(15 downto 12) <= r.program.seq(0).reg.bena;
       probe2(19 downto 16) <= r.program.seq(1).reg.bena;
       probe2(23 downto 20) <= r.program.seq(2).reg.bena;
