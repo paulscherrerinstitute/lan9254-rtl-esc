@@ -112,6 +112,9 @@ architecture rtl of Lan9254HBI is
    signal waitAckSync : std_logic;
    signal waitAckDone : boolean;
 
+   signal dbg1        : std_logic_vector(15 downto 0);
+   signal dbg2        : std_logic_vector(15 downto 0);
+
    constant END_SEL_C : std_logic := '0';
 
 begin
@@ -121,10 +124,16 @@ begin
    assert MUXED_MODE_G      report "Only MUXED_MODE_G = true implemented ATM, sorry" severity failure;
 
    GEN_ILA : if ( GEN_ILA_G ) generate
+      attribute KEEP : string;
       signal probe0 : std_logic_vector(63 downto 0) := (others => '0');
       signal probe1 : std_logic_vector(63 downto 0) := (others => '0');
       signal probe2 : std_logic_vector(63 downto 0) := (others => '0');
       signal probe3 : std_logic_vector(63 downto 0) := (others => '0');
+
+      attribute KEEP of probe0 : signal is "TRUE";
+      attribute KEEP of probe1 : signal is "TRUE";
+      attribute KEEP of probe2 : signal is "TRUE";
+      attribute KEEP of probe3 : signal is "TRUE";
    begin
       probe0(15 downto  0) <= r.hbiOut.ad(15 downto 0);
       probe0(17 downto 16) <= r.hbiOut.ale;
@@ -151,6 +160,10 @@ begin
 
       probe2(31 downto 13) <= (others => '0');
       probe2(63 downto 32) <= r.rep.rdata;
+
+      probe3(15 downto  0) <= dbg1;
+      probe3(31 downto 16) <= dbg2;
+      probe3(63 downto 32) <= (others => '0');
 
       U_ILA : component Ila_256
          port map (
@@ -340,6 +353,10 @@ begin
             r <= REG_INIT_C;
          elsif ( cen = '1' ) then
             r <= rin;
+            dbg1 <= hbiInp.ad;
+            if ( waitAckDone and r.state = READ ) then
+               dbg1 <= hbiInp.ad;
+            end if;
          end if;
       end if;
    end process P_SEQ;
