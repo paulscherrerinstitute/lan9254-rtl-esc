@@ -1,13 +1,19 @@
 -- bus transfer across asynchronous clock domains
+
+-- NOTE: proper constraints should constrain the datapath delays as well
+--       as declare false paths through the bit-synchronizers.
 library ieee;
 use     ieee.std_logic_1164.all;
 use     work.Udp2BusPkg.all;
+use     work.ESCBasicTypesPkg.all;
 
 -- if the resets are going to be used then additional logic is required
 -- to ensure both sides of the bridge are reset.
 entity Bus2BusAsync is
    generic (
-      SYNC_STAGES_G : positive := 2
+      -- set 'KEEP' = "TRUE" on clock-crossing signals to help writing constraints
+      KEEP_XSIGNALS_G : boolean := true;
+      SYNC_STAGES_G   : positive := 2
    );
    port (
       clkMst       : in  std_logic;
@@ -26,6 +32,8 @@ end entity Bus2BusAsync;
 
 architecture Impl of Bus2BusAsync is
 
+   attribute KEEP     : string;
+
    signal tglMstNxt   : std_logic;
    signal tglMst      : std_logic := '0';
    signal tglSub      : std_logic := '0';
@@ -35,9 +43,19 @@ architecture Impl of Bus2BusAsync is
    signal wrkMst      : std_logic := '0'; -- master side working
    signal wrkMstNxt   : std_logic;
 
+   signal reqMstLoc   : Udp2BusReqType;
+   signal repSubLoc   : Udp2BusRepType;
+
+   -- may set KEEP on domain-crossing signals
+   attribute KEEP    of reqMstLoc : signal is toString( KEEP_XSIGNALS_G );
+   attribute KEEP    of repSubLoc : signal is toString( KEEP_XSIGNALS_G );
+
 begin
 
-   P_MST_COMB : process ( reqMst, repSub, wrkMst, tglMst, monSub ) is 
+   repSubLoc <= repSub;
+   reqMstLoc <= reqMst;
+
+   P_MST_COMB : process ( reqMst, repSubLoc, wrkMst, tglMst, monSub ) is 
    begin
       repMst       <= repSub;
       repMst.valid <= '0';
@@ -69,10 +87,10 @@ begin
       end if;
    end process P_MST_SEQ;
 
-   P_SUB_COMB : process ( reqMst, repSub, tglSub, monMst ) is
+   P_SUB_COMB : process ( reqMstLoc, repSub, tglSub, monMst ) is
    begin
       tglSubNxt    <= tglSub;
-      reqSub       <= reqMst;
+      reqSub       <= reqMstLoc;
       reqSub.valid <= monMst xor tglSub;
       if ( repSub.valid = '1' ) then
          -- the sub has acked; propagate the token back to the
