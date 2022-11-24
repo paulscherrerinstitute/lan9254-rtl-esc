@@ -17,6 +17,7 @@ PROG+=lan9254escrun lan9254esctb txmbxtb eoetb
 PROG+=strmframebuftb udp2bustb devicedna7tb
 PROG+=udp2busmuxtb
 PROG+=escfoetb strmfifosynctb
+PROG+=bus2busasynctb
 
 EVRPDO_S:=EvrTxPDO.vhd EvrTxPDOPkg.vhd EvrTxPDOSimWrapper.vhd
 
@@ -33,9 +34,11 @@ OBJS+=AddressGenerator.o IPAddrConfigPkg.o SynchronizerBit.o $(EVRPDO_O)
 OBJS+=ESCFoE.o
 OBJS+=StrmFifoSync.o
 OBJS+=ESCFoEPkg.o
+OBJS+=Bus2BusAsync.o
 
 TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o StrmFifoSyncTb.o
+TOPS+=Bus2BusAsyncTb.o
 
 # Default target
 all: $(PROG)
@@ -49,6 +52,9 @@ lan9254escrun: $(OBJS) Lan9254ESCrun.o
 
 # Elaboration target
 lan9254esctb: $(OBJS) Lan9254ESCTb.o
+	$(GHDL) -e $(GHDLFLAGS) $@
+
+bus2busasynctb: $(OBJS) Bus2BusAsyncTb.o
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 udp2busmuxtb: $(OBJS) Udp2BusMuxTb.o

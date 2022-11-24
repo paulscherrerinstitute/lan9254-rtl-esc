@@ -23,6 +23,7 @@ package ESCBasicTypesPkg is
 
    function toString(constant x : std_logic_vector) return string;
    function toString(constant x : unsigned        ) return string;
+   function toString(constant x : boolean         ) return string;
 
    function toSl(constant a: boolean) return std_logic;
 
@@ -129,6 +130,12 @@ package body ESCBasicTypesPkg is
    return string is
    begin
       return toString(std_logic_vector(x));
+   end function toString;
+
+   function toString(constant x : boolean)
+   return string is
+   begin
+      if ( x ) then return "TRUE"; else return "FALSE"; end if;
    end function toString;
 
    function toSl(constant a: boolean)
