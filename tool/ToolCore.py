@@ -766,6 +766,7 @@ class Evr320PulseParam(Configurable):
     self._width    = 4
     self._delay    = 0
     self._event    = 0
+    self._invrt    = False
 
   @property
   def pulseEnabled(self):
@@ -806,11 +807,22 @@ class Evr320PulseParam(Configurable):
     self._event    = v
     self._modified = True
 
+  @property
+  def pulseInvert(self):
+    return self._invrt
+
+  @pulseInvert.setter
+  def pulseInvert(self, v):
+    self._invrt    = not not v
+    self._modified = True
+
   def promData(self):
     rv = bytearray()
-    x  = self.pulseWidth & ~(1<<31)
+    x  = self.pulseWidth & ~(3<<30)
     if self.pulseEnabled:
       x |= (1<<31)
+    if self.pulseInvert:
+      x |= (1<<30)
     for v in [x, self.pulseDelay]:
       for i in range(4):
         rv.append( (v & 255) )
