@@ -7,7 +7,7 @@
 CROSS=
 GHDL=$(CROSS)ghdl
 CXX=$(CROSS)g++
-GHDLFLAGS=$(addprefix -P,$(UNISIM))
+GHDLFLAGS=$(addprefix -P,$(UNISIM)) -Wl,-no-pie
 
 SIITOOL=siitool
 
@@ -18,6 +18,7 @@ PROG+=strmframebuftb udp2bustb devicedna7tb
 PROG+=udp2busmuxtb
 PROG+=escfoetb strmfifosynctb
 PROG+=bus2busasynctb
+PROG+=bus2busasyncalttb
 
 EVRPDO_S:=EvrTxPDO.vhd EvrTxPDOPkg.vhd EvrTxPDOSimWrapper.vhd
 
@@ -39,6 +40,7 @@ OBJS+=Bus2BusAsync.o
 TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o StrmFifoSyncTb.o
 TOPS+=Bus2BusAsyncTb.o
+TOPS+=Bus2BusAsyncAltTb.o
 
 # Default target
 all: $(PROG)
@@ -55,6 +57,9 @@ lan9254esctb: $(OBJS) Lan9254ESCTb.o
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 bus2busasynctb: $(OBJS) Bus2BusAsyncTb.o
+	$(GHDL) -e $(GHDLFLAGS) $@
+
+bus2busasyncalttb: $(OBJS) Bus2BusAsyncAltTb.o
 	$(GHDL) -e $(GHDLFLAGS) $@
 
 udp2busmuxtb: $(OBJS) Udp2BusMuxTb.o
