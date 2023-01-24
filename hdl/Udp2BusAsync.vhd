@@ -9,8 +9,8 @@ use     work.Udp2BusPkg.all;
 
 entity Udp2BusAsync is
    generic (
-      STAGES_I2O_G : natural := 3;
-      STAGES_O2I_G : natural := 3
+      STAGES_I2O_G : natural := 2;
+      STAGES_O2I_G : natural := 2
    );
    port (
       clkIb        : in  std_logic;
@@ -58,14 +58,12 @@ begin
          end if;
       end process P_I2O;
 
-      reqOb.valid <= i2oOut xor o2iTgl;
-
       P_O2I : process ( clkIb ) is
       begin
          if ( rising_edge( clkIb ) ) then
             o2i <= o2i(o2i'left - 1 downto 0) & o2iTgl;
 
-            if ( ( o2iOut xnor i2oTgl ) ) then
+            if ( o2iOutLst = i2oTgl ) then
                i2oReq <= reqIb;
 
                if ( reqIb.valid = '1' ) then
@@ -77,7 +75,17 @@ begin
          end if;
       end process P_O2I;
 
-      repIb.valid <= o2iOut xor o2iOutLst;
+      P_COMB : process ( o2iOut, o2iOutLst, i2oReq, o2iRep, i2oOut, o2iTgl ) is
+      begin
+
+         reqOb       <= i2oReq;
+         reqOb.valid <= i2oOut xor o2iTgl;
+
+         repIb       <= o2iRep;
+         repIb.valid <= o2iOut xor o2iOutLst;
+
+      end process P_COMB;
+
 
       i2oOut <= i2o(i2o'left);
       o2iOut <= o2i(o2i'left);
