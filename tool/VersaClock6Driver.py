@@ -69,7 +69,7 @@ class VersaClock6Driver( ClockDriver ):
       d[i] = (v & 0xff)
       v  <<= 8
     prg.extend( self._writeReg( intDivReg, d ) )
-    # 
+    #
     d = bytearray()
     v  = (3<<5) # select LVDS
     v |= (0<<3) # 1.8V drive
@@ -79,7 +79,40 @@ class VersaClock6Driver( ClockDriver ):
     d.append(v)
     prg.extend( self._writeReg( outCtrlReg, d ) )
     return prg
-    
+
+  def disassemble(self, prg):
+    ip      = 0
+    fracDiv = 0
+    intDiv  = 0
+    outf    = -1
+    outi    = -1
+    while ip < len(prg):
+      if ( prg[ip] == 0xff or prg[ip] == 0x00 ):
+         break
+      cmdl    = (prg[ip+1] & 0xf) + 1
+      print("ip, cmdl", ip, cmdl)
+      reg     = prg[ip+2]
+      if   reg in [0x21, 0x31, 0x41, 0x51]:
+        outf    = ((reg - 0x20) >> 4) + 1
+        for i in range(4,8):
+          fracDiv = (fracDiv<<8) | prg[ip + i]
+        fracDiv >>= 2
+        print("Fractional divisor (out {:d}): {:g}".format(outf,fracDiv/2.0**24))
+      elif reg in [0x2D, 0x3D, 0x4D, 0x5D]:
+        outi    = ((reg - 0x20) >> 4) + 1
+        for i in range(3,5):
+          intDiv = (intDiv<<8) | prg[ip + i]
+        intDiv >>= 4
+        print("Integer divisor (out {:d}): {:d}".format(outf,intDiv))
+      ip += cmdl + 2 # i2c addr/rw + cmd 2 byte
+    if ( outi != outf ):
+      raise ValueError("Disassembly failed - different outputs for integer and fractional divisors")
+    if ( outi < 1 or outf < 1 ):
+      raise ValueError("Disassembly failed - invalid outputs")
+    f = self._vcoFreq / (intDiv + fracDiv/2.0**24) / 2.0
+    print("Output {:d} programmed for {:8.6f}MHz".format(outf, f))
+
+
   def mkInitProg(self, freqMHz):
     return self._setOutputDivider( freqMHz )
 
