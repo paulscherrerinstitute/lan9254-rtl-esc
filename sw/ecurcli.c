@@ -5,8 +5,42 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <termios.h>
+#include <unistd.h>
+#include <ctype.h>
 
 #include "ecur.h"
+
+static int getYesNo(const char *msg)
+{
+struct termios orig;
+struct termios tmp;
+int            ans     = 'N';
+int            restore = -1;
+
+
+	printf("%s y/[n]?", msg);
+    fflush(stdout);
+
+	cfmakeraw( &tmp );
+	tmp.c_cc[VMIN] = 1;
+
+	if (     isatty( 1 )
+	      && 0 == (restore = tcgetattr( 1, &orig ))
+	      && 0 == tcsetattr( 1, TCSANOW, &tmp ) ) {
+
+		if ( 1 != read(1, &ans, 1) ) {
+			ans = 'N';
+		}
+	} else {
+		ans = getchar();
+	}
+	if ( 0 == restore ) {
+		tcsetattr( 1, TCSANOW, &orig );
+	}
+	printf("\n");
+	return toupper( ans );
+}
 
 static void
 p32(void *p, int n, void *c)
@@ -144,12 +178,13 @@ uint32_t            a;
 
 static void usage(const char *nm)
 {
-	fprintf(stderr, "usage: %s [-hstV] [-a <dst_ip>] [-b base] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
+	fprintf(stderr, "usage: %s [-hstVP] [-a <dst_ip>] [-b base] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
 	fprintf(stderr, "       -h                       : this message\n");
 	fprintf(stderr, "       -t                       : run basic test (connection to target required)\n");
 	fprintf(stderr, "       -s                       : print networking stats for target\n");
 	fprintf(stderr, "       -v                       : increase verbosity\n");
 	fprintf(stderr, "       -V                       : show version info\n");
+	fprintf(stderr, "       -P                       : power-cycle the target\n");
 	fprintf(stderr, "       -a dst_ip                : set target ip (dot notation). Can also be defined by\n");
 	fprintf(stderr, "                                  the 'ECUR_TARGET_IP' environment variable\n");
 	fprintf(stderr, "       -e <reg>[=<val>]         : EVR register access\n");
@@ -269,13 +304,14 @@ const char         *op = s;
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:b:tsve:r:i:m:Vw:";
+char               *optstr        = "ha:b:tsve:r:i:m:VPw:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.20";
 uint16_t            dprt          = 4096;
 Ecur                e             = 0;
 uint32_t            hbibas        = (7<<19);
 uint32_t            escbas        = (6<<19);
+uint32_t            locbas        = (3<<19);
 uint32_t            evrbas        = (0<<19);
 uint32_t            regbas        = (0<<19);
 uint32_t            cfgbas        = (0<<19) | (1<<17);
@@ -285,10 +321,12 @@ int                 verbose       = 0;
 int                 printVersion  = 0;
 uint32_t           *u32_p         = 0;
 uint32_t            val;
+uint16_t            val16;
 int                 st;
 int                 opt;
 const char         *at, *arg;
 uint32_t            width         = 4;
+int                 powerCycle    = 0;
 
 	if ( (arg = getenv("ECUR_TARGET_IP")) ) {
 		dip = arg;
@@ -332,6 +370,10 @@ uint32_t            width         = 4;
 				printVersion = 1;
 				break;
 
+			case 'P':
+				powerCycle = 1;
+				break;
+
 			case 'm': /* deal with that later */
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
@@ -358,6 +400,17 @@ uint32_t            width         = 4;
 
 	if ( testFailed ) {
 		testFailed = ecurTest( e, hbibas );
+	}
+
+	if ( powerCycle ) {
+		if ( 'Y' == getYesNo("About to power-cycle the target; proceed") ) {
+			printf("<connection might be lost; ignore errors>\n");
+			val16 = 0xdead;
+			ecurWrite16( e, locbas + 0x8, &val16, 1 );
+		}
+		/* on success we might never get here */
+		rval = 0;
+		goto bail;
 	}
 
 	if ( printNetStats ) {
