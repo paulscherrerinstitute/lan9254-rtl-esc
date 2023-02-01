@@ -134,7 +134,7 @@ begin
       elsif ( v.rdy = '1' ) then
          if ( tena  = '1' ) then
             if ( ( r.cnt = 7 ) or ( r.cnt = 0 ) ) then
-               v.cnt := (others => '0');
+               v.cnt := "001";
             else
                v.cnt := r.cnt + 1;
             end if;
