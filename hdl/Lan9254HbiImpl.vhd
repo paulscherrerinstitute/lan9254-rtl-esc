@@ -115,6 +115,9 @@ architecture rtl of Lan9254HBI is
    signal dbg1        : std_logic_vector(15 downto 0);
    signal dbg2        : std_logic_vector(15 downto 0);
 
+   signal dlyRun      : std_logic;
+   signal tmoRun      : std_logic;
+
    constant END_SEL_C : std_logic := '0';
 
 begin
@@ -147,7 +150,9 @@ begin
       probe1(15 downto  0) <= hbiInp.ad(15 downto 0);
       probe1(          16) <= hbiInp.waitAck;
       probe1(          17) <= waitAckSync;
-      probe1(63 downto 18) <= (others => '0');
+      probe1(          18) <= dlyRun;
+      probe1(          19) <= tmoRun;
+      probe1(63 downto 20) <= (others => '0');
 
       probe2( 2 downto  0) <= std_logic_vector( to_unsigned( StateType'pos( r.state ), 3 ) );
       probe2(           3) <= r.req.valid;
@@ -157,8 +162,16 @@ begin
       probe2(          10) <= r.req.noAck;
       probe2(          11) <= r.rep.valid;
       probe2(12 downto 12) <= r.rep.berr;
+      probe2(          13) <= rst;
+      probe2(          14) <= cen;
 
-      probe2(31 downto 13) <= (others => '0');
+      probe2(          15) <= req.valid;
+      probe2(19 downto 16) <= req.be;
+      probe2(          20) <= req.rdnwr;
+      probe2(          21) <= req.lock;
+      probe2(          22) <= req.noAck;
+
+      probe2(31 downto 23) <= (others => '0');
       probe2(63 downto 32) <= r.rep.rdata;
 
       probe3(15 downto  0) <= dbg1;
@@ -212,13 +225,18 @@ begin
       -- reply only valid for 1 cycle
       v.rep.valid := '0';
 
+      dlyRun <= '0';
+      tmoRun <= '0';
+
       if ( r.timeo /= 0 ) then
          v.timeo := r.timeo - 1;
+         tmoRun  <= '1';
       end if;
 
       -- delay counter
       B_DELAY : if ( r.dly /= 0 ) then
-         v.dly := r.dly - 1;
+         v.dly  := r.dly - 1;
+         dlyRun <= '1';
       else
          -- only do work if no delay is pending
 
