@@ -1593,8 +1593,8 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
                end if;
             elsif ( r.txMBXLEna = '0' ) then -- must wait until msg length is written to the buffer
                -- schedule next write to the LAN9254. Note that we always 'write-through' the
-               -- ESCTxMbxBuf buffer memory; i.e,. data are store there (first branch of the 'HANDLE_TXMBX'
-               -- statement.
+               -- ESCTxMbxBuf buffer memory; i.e,. data are stored there (first branch of the 'HANDLE_TXMBX'
+               -- statement).
                scheduleRegXact( v, (
                   0 => RWXACT(
                          unsigned(ESC_SM1_SMA_C) + (to_unsigned(r.txMBXWAddr, ESC_SM1_SMA_C'length - 1) & "0"),
