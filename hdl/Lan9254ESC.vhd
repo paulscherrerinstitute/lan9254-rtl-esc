@@ -112,6 +112,7 @@ architecture rtl of Lan9254ESC is
    type HBIMuxStateType is ( IDLE, EXT, ESC, SM0, SM2, SM3 );
 
    type ControllerStateType is (
+      WRDY,
       TEST,
       CONF,
       INIT,
@@ -141,6 +142,10 @@ architecture rtl of Lan9254ESC is
    );
 
    type TxMbxReplayType is ( NONE, NORMAL, SAVE_BUF, RESEND_BUF );
+
+   -- hardware configuration register
+   constant DEVICE_READY : natural := 27;
+   constant HWC : EcRegType := ( addr=> x"3074", bena => (others => HBI_BE_ACT_C) );
 
    constant RB0 : EcRegType := ( addr=> x"3064", bena => HBI_BE_B0_C );
    constant RB1 : EcRegType := ( addr=> x"3065", bena => HBI_BE_B0_C );
@@ -351,10 +356,11 @@ architecture rtl of Lan9254ESC is
       eepWriteReqVld       : std_logic;
       eepEmulActive        : std_logic;
       configRst            : std_logic;
+      wasRdy               : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
-      state                => TEST,
+      state                => WRDY,
       config               => ESC_CONFIG_REQ_INIT_C,
       configAck            => ESC_CONFIG_ACK_INIT_C,
       sm0Len               => (others => '0'),
@@ -393,7 +399,8 @@ architecture rtl of Lan9254ESC is
       hbiWaitTimer         => 0,
       eepWriteReqVld       => '0',
       eepEmulActive        => '0',
-      configRst            => '1'
+      configRst            => '1',
+      wasRdy               => '0'
    );
 
    type HBIMuxRegType is record
@@ -784,6 +791,13 @@ begin
       end if;
 
       C_STATE : case ( r.state ) is
+         when WRDY =>
+            if ( '0' = r.program.don ) then
+               scheduleRegXact( v, ( 0 => RWXACT( HWC ) ) );
+            else
+               v.wasRdy := r.program.seq(0).val( DEVICE_READY );
+               v.state := TEST;
+            end if;
 
          when TEST =>
             if ( REG_IO_TEST_ENABLE_G ) then
@@ -1853,6 +1867,7 @@ report "TXMBOX now status " & toString( r.program.seq(0).val(7 downto 0) );
          if ( r.state = TEST ) then
             testDbg(4 downto 0) <= std_logic_vector( to_unsigned( r.testFail, 5 ) );
             testDbg(5)          <= '1';
+            testDbg(6)          <= r.wasRdy;
          end if;
       end process P_TEST_DBG;
 
