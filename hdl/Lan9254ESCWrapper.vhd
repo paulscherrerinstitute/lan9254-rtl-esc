@@ -50,13 +50,15 @@ entity Lan9254ESCWrapper is
 
       -- interrupt from Lan9254
       irq                     : in  std_logic         := '1'; -- default to polled-mode
+
       -- read during INIT state (and only during INIT) of the controller FSM
       -- user may delay initialization by deasserting 'valid'.
-
       configRstReq            : out std_logic;
       escConfigReq            : in  ESCConfigReqType  := ESC_CONFIG_REQ_INIT_C;
       escConfigAck            : out ESCConfigAckType;
 
+      -- SII EEPROM write operation in *emulation* mode. I.e., it is possible
+      -- to rewrite the real EEPROM while in emulation mode.
       eepWriteReq             : out EEPROMWriteWordReqType;
       eepWriteAck             : in  EEPROMWriteWordAckType := EEPROM_WRITE_WORD_ACK_ASSERT_C;
       eepEmulActive           : out std_logic;
