@@ -4,8 +4,8 @@ tool/eeprom.bin
 sw/*.o
 test/*.o
 test/work-*.cf
-hdl/*tb
-hdl/lan9254escrun
+test/*tb
+test/lan9254escrun
 sw/ecurcli
 sw/spiFlashRead
 tool/__pycache__
