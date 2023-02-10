@@ -66,7 +66,6 @@ architecture rtl of TxMBXTb is
    ) is
    begin
       ok  := true;
-      rep <= rep;
       if ( req.rdnwr = '1' ) then
          if    (   req.addr = x"0800" ) then
             if ( req.be = HBI_BE_W0_C ) then
@@ -151,8 +150,6 @@ architecture rtl of TxMBXTb is
       variable i     : natural;
       variable ok    : boolean;
    begin
-     rep  <= rep;
-     rpt  <= rpt;
      don  := '0';
      stat := '1';
      while ( don = '0' ) loop
@@ -167,6 +164,13 @@ architecture rtl of TxMBXTb is
                  elsif (   req.addr = x"0120" ) then
                     rep.rdata( 3 downto 0 ) <= toSlv( st );
                     stat := '0';
+                 elsif (   req.addr = x"0500" ) then
+                    assert req.be = HBI_BE_W1_C report "escSetState: unexpected BE" severity failure;
+                    rep.rdata <= x"00400000";
+                 elsif (   req.addr = x"3064" ) then
+                    rep.rdata <= x"87654321";
+                 elsif (   req.addr = x"3074" ) then
+                    rep.rdata <= (27 => '1', others => '0');
                  else
                     assert false report "escSetState: READ from unexpected address " & toString(req.addr) severity failure;
                  end if;
@@ -184,7 +188,9 @@ architecture rtl of TxMBXTb is
                  end if;
               end if;
            end if;
+report "repvalid PRE" & std_logic'image(rep.valid);
            wait until rising_edge( clk );
+report "repvalid POS" & std_logic'image(rep.valid);
            rep.valid <= '0';
         end if;
         wait until rising_edge( clk );
@@ -202,8 +208,6 @@ architecture rtl of TxMBXTb is
       variable stat  : std_logic;
       variable smok  : boolean;
    begin
-     rep  <= rep;
-     rpt  <= rpt;
      don  := '0';
      stat := '1';
      rpt  <= not rpt;
@@ -474,8 +478,8 @@ begin
    P_CLK : process is
    begin
       if ( run ) then
-         clk <= not clk;
          wait for 5 us;
+         clk <= not clk;
       else
          wait;
       end if;
