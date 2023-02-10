@@ -13,6 +13,8 @@ SIITOOL=siitool
 
 -include config.local.mk
 
+vpath %.vhd ../hdl
+
 PROG+=lan9254escrun lan9254esctb txmbxtb eoetb
 PROG+=strmframebuftb udp2bustb devicedna7tb
 PROG+=udp2busmuxtb
@@ -37,7 +39,7 @@ OBJS+=StrmFifoSync.o
 OBJS+=ESCFoEPkg.o
 OBJS+=Bus2BusAsync.o
 
-TOPS+=Lan9254ESCTb.o  Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
+TOPS+=Lan9254ESCrun.o TxMBXTb.o EoETb.o StrmFrameBufTb.o
 TOPS+=Udp2BusTb.o DeviceDna7Tb.o Udp2BusMuxTb.o ESCFoETb.o StrmFifoSyncTb.o
 TOPS+=Bus2BusAsyncTb.o
 TOPS+=Bus2BusAsyncAltTb.o
@@ -53,8 +55,6 @@ lan9254escrun: $(OBJS) Lan9254ESCrun.o
 	$(GHDL) -e -fsynopsys -Wl,readWriteSim.o $(GHDLFLAGS) $@
 
 # Elaboration target
-lan9254esctb: $(OBJS) Lan9254ESCTb.o
-	$(GHDL) -e $(GHDLFLAGS) $@
 
 bus2busasynctb: $(OBJS) Bus2BusAsyncTb.o
 	$(GHDL) -e $(GHDLFLAGS) $@
@@ -90,8 +90,8 @@ strmfifosynctb: StrmFifoSyncTb.o $(OBJS)
 	$(GHDL) -e $(GHDLFLAGS) -fsynopsys $@
 
 # Run target
-run: $(PROG)
-	$(GHDL) -r $(PROG) $(GHDLRUNFLAGS)
+run: $(filter %tb,$(PROG))
+	for tst in $^; do $(GHDL) -r $$tst $(GHDLRUNFLAGS); done
 
 # old method - now use the tool
 #EEPROMContentPkg.vhd: eeprom.bin gen-prom.awk
@@ -123,8 +123,6 @@ eeprom.bin: test.xml
 ##MM	$(GHDL) -a $(GHDLFLAGS) $<
 ##MMLan9254HbiSoft.o: Lan9254HbiSoft.vhd
 ##MM	$(GHDL) -a $(GHDLFLAGS) $<
-##MMLan9254ESCTb.o: Lan9254ESCTb.vhd
-##MM	$(GHDL) -a $(GHDLFLAGS) $<
 ##MMLan9254ESCrun.o: Lan9254ESCrun.vhd
 ##MM	$(GHDL) -a $(GHDLFLAGS) $<
 %.o: %.vhd
@@ -135,7 +133,6 @@ Lan9254ESC.o:  Lan9254Pkg.o Lan9254ESCPkg.o EEEmulPkg.o RxPDOSoft.o IlaWrappersP
 EEEmulPkg.o: EEPROMContentPkg.o Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254Hbi.o:  Lan9254Pkg.o Lan9254ESCPkg.o
 Lan9254HbiSoft.o:  Lan9254Pkg.o Lan9254Hbi.o Lan9254ESCPkg.o
-Lan9254ESCTb.o:  $(OBJS)
 Lan9254ESCrun.o: $(OBJS)
 TxMBXTb.o:       $(OBJS)
 EoETb.o:         $(OBJS)
