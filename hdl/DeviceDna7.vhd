@@ -31,7 +31,7 @@ begin
 
    U_DNA_PORT : DNA_PORT
       generic map (
-         SIM_DNA_VALUE => x"000_0000_dead_beef"
+         SIM_DNA_VALUE => x"123_4567_dead_beef"
       )
       port map (
          CLK    => clk,
