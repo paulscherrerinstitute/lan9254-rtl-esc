@@ -57,7 +57,7 @@ begin
 
    P_MST_COMB : process ( reqMst, repSubLoc, wrkMst, tglMst, monSub ) is 
    begin
-      repMst       <= repSub;
+      repMst       <= repSubLoc;
       repMst.valid <= '0';
       wrkMstNxt    <= wrkMst;
       tglMstNxt    <= tglMst;
