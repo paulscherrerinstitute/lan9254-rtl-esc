@@ -792,14 +792,15 @@ begin
 
       C_STATE : case ( r.state ) is
          when WRDY =>
-            if ( '0' = r.program.don ) then
-               scheduleRegXact( v, ( 0 => RWXACT( HWC ) ) );
-            else
-               v.wasRdy := r.program.seq(0).val( DEVICE_READY );
-               if ( v.wasRdy = '1' ) then
-                  v.state  := TEST;
-               end if;
-            end if;
+            v.state := TEST;
+--            if ( '0' = r.program.don ) then
+--               scheduleRegXact( v, ( 0 => RWXACT( HWC ) ) );
+--            else
+--               v.wasRdy := r.program.seq(0).val( DEVICE_READY );
+--               if ( v.wasRdy = '1' ) then
+--                  v.state  := TEST;
+--               end if;
+--            end if;
 
          when TEST =>
             if ( REG_IO_TEST_ENABLE_G ) then
