@@ -98,7 +98,7 @@ test: $(filter-out %run,$(PROG))
 		echo "Running test $$i"; \
 		if ! $(GHDL) -r $$i $(GHDLRUNFLAGS); then \
 			echo "TEST FAILED";\
-			exit; \
+			exit 1; \
 		fi;\
 	done)
 	echo "All Tests PASSED"
