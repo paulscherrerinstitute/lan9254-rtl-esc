@@ -86,7 +86,8 @@ begin
 
    process ( clkSub ) is begin
       if ( rising_edge( clkSub ) ) then
-         if ( reqSub.valid = '1' ) then
+         repSub.valid <= '0';
+         if ( ( not repSub.valid and reqSub.valid ) = '1' ) then
             if ( reqSub.dwaddr = "00" & x"000_0000" ) then
                if ( reqSub.rdnwr = '1' ) then
                   repSub.rdata  <= x"1234_5678";
@@ -101,10 +102,11 @@ begin
                if ( reqSub.rdnwr = '1' ) then
                   repSub.rdata <= x"abcd_ef00";
                   repSub.berr  <= '1';
+                  repSub.valid <= '1';
                else
                   assert reqSub.be   = "0110"      severity failure;
                   assert reqSub.data = x"feedbeef" severity failure;
-                  repSub.valid <= '0';
+                  repSub.valid <= '1';
                end if;
             else
                report "Illegal Address" severity failure;
