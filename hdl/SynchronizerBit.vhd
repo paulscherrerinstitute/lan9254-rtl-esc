@@ -12,7 +12,7 @@ entity SynchronizerBit is
    );
    port (
       clk      : in  std_logic;
-      rst      : in  std_logic;
+      rst      : in  std_logic := '0';
       datInp   : in  std_logic_vector(WIDTH_G - 1 downto 0);
       datOut   : out std_logic_vector(WIDTH_G - 1 downto 0)
    );
