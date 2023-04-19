@@ -178,7 +178,7 @@ uint32_t            a;
 
 static void usage(const char *nm)
 {
-	fprintf(stderr, "usage: %s [-hstVP] [-a <dst_ip>] [-b base] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
+	fprintf(stderr, "usage: %s [-hstVPG] [-a <dst_ip>] [-b base] [-w <width>] [-e <evr_reg>[=<value>]]\n", nm);
 	fprintf(stderr, "       -h                       : this message\n");
 	fprintf(stderr, "       -t                       : run basic test (connection to target required)\n");
 	fprintf(stderr, "       -s                       : print networking stats for target\n");
@@ -198,6 +198,7 @@ static void usage(const char *nm)
 	fprintf(stderr, "                                  note that they still must be word-\n");
 	fprintf(stderr, "                                  aligned; this is a convenience option.\n");
 	fprintf(stderr, "       -w <width>               : width (1,2,4); must be used with -m\n");
+    fprintf(stderr, "       -G                       : enable FOE writing to golden-image and other protected flash areas\n");
 }
 
 static int
@@ -304,7 +305,7 @@ const char         *op = s;
 int
 main(int argc, char **argv)
 {
-char               *optstr        = "ha:b:tsve:r:i:m:VPw:";
+char               *optstr        = "ha:b:tsve:r:i:m:VPGw:";
 int                 rval          = 1;
 const char         *dip           = "10.10.10.20";
 uint16_t            dprt          = 4096;
@@ -327,6 +328,7 @@ int                 opt;
 const char         *at, *arg;
 uint32_t            width         = 4;
 int                 powerCycle    = 0;
+int                 flashUnprot   = 0;
 
 	if ( (arg = getenv("ECUR_TARGET_IP")) ) {
 		dip = arg;
@@ -374,6 +376,10 @@ int                 powerCycle    = 0;
 				powerCycle = 1;
 				break;
 
+			case 'G':
+				flashUnprot = 1;
+				break;
+
 			case 'm': /* deal with that later */
 			case 'r': /* deal with that later */
 			case 'e': /* deal with that later */
@@ -400,6 +406,11 @@ int                 powerCycle    = 0;
 
 	if ( testFailed ) {
 		testFailed = ecurTest( e, hbibas );
+	}
+
+	if ( flashUnprot ) {
+			val = 0x10000;
+			ecurWrite32( e, locbas + 0x8, &val, 1 );
 	}
 
 	if ( powerCycle ) {
