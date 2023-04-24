@@ -152,7 +152,7 @@ int                 got;
 
 	if ( ! destIP || ! *destIP ) {
 		if ( ! (destIP = getenv( "ECUR_TARGET_IP" )) ) {
-			fprintf(stderr, "ecurOpen(): No destination IP passed - set 'ECUR_TARGET_IP' env-variable!");
+			fprintf(stderr, "ecurOpen(): No destination IP passed - set 'ECUR_TARGET_IP' env-variable!\n");
 			return 0;
 		}
 	}
