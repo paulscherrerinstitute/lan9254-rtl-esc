@@ -150,6 +150,13 @@ Ecur                e;
 struct sockaddr_in  a;
 int                 got;
 
+	if ( ! destIP || ! *destIP ) {
+		if ( ! (destIP = getenv( "ECUR_TARGET_IP" )) ) {
+			fprintf(stderr, "ecurOpen(): No destination IP passed - set 'ECUR_TARGET_IP' env-variable!");
+			return 0;
+		}
+	}
+
 	if ( (e = malloc( sizeof(*e) ) ) ) {
 
 		e->seq            = 0;

@@ -18,6 +18,9 @@ typedef struct EcurRec *Ecur;
 
 /* Open connection; ECUR_DEFAULT_PORT should be fine in all normal cases */
 #define ECUR_DEFAULT_PORT 0
+/* If an empty or NULL 'destIP' is passed then the ECUR_TARGET_IP env-variable
+ * is used (if set).
+ */
 Ecur
 ecurOpen(const char *destIP, unsigned destPort, int verbosity);
 
