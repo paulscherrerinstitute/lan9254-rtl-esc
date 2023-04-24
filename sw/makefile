@@ -1,17 +1,16 @@
 CFLAGS=-O2 -Wall -g -I.
+RANLIB=ranlib
 
-all: ecurcli spiFlashRead
+all: libecur.a
 
-ecur.o ecurcli.o:%.o:%.c ecur.h
+ecur.o:%.o:%.c ecur.h
 	$(CC) $(CFLAGS) -c $<
 
-ecurcli: ecurcli.o ecur.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-spiFlashRead: spiFlashRead.o ecur.o
-	$(CC) $(CFLAGS) -o $@ $^
+libecur.a: ecur.o
+	$(AR) r $@ $^
+	$(RANLIB) $@
 
 clean:
-	$(RM) ecur.o ecurcli spiFlashRead
+	$(RM) ecur.o libecur.a
 
 .PHONY: clean
