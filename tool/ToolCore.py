@@ -1500,7 +1500,6 @@ class ESI(object):
     self.syncElms()
 
   def syncElms(self):
-    print("syncElms setting SM{} size to {}".format( FirmwareConstants.TXPDO_SM() , self.txPdo.pdoSize() ))
     self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self.txPdo.pdoSize() )
    
   def makeProm(self):
