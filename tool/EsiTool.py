@@ -116,6 +116,8 @@ if __name__ == "__main__":
         print("library ieee;", file=f)
         print("use ieee.std_logic_1164.all;", file=f)
         print("-- AUTOMATICALLY GENERATED; DONT EDIT", file=f)
+        print("-- Generated from XML:", file=f)
+        esi.writeXML(f, pre='-- ')
         print("package EEPROMContentPkg is", file=f)
         print("type EEPROMArray is array (natural range <>) of std_logic_vector(15 downto 0);", file=f)
         print("constant EEPROM_INIT_C : EEPROMArray := (", file=f)

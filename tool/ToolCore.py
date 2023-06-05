@@ -1500,6 +1500,7 @@ class ESI(object):
     self.syncElms()
 
   def syncElms(self):
+    print("syncElms setting SM{} size to {}".format( FirmwareConstants.TXPDO_SM() , self.txPdo.pdoSize() ))
     self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self.txPdo.pdoSize() )
    
   def makeProm(self):
@@ -1519,8 +1520,32 @@ class ESI(object):
     with io.open( fnam, mode=mode, closefd=closefd ) as f:
       f.write( prom )
 
-  def writeXML(self, fnam):
-    ET.ElementTree(self._root).write( fnam, xml_declaration = True, method = "xml", pretty_print=True )
+  def _resolveOpen(self, fnam, flg):
+    if ( isinstance(fnam, io.TextIOWrapper) ):
+      return fnam
+    elif isinstance(fnam, int):
+      pass
+    if ( fnam == '-' ):
+      fnam = sys.stdout.fileno()
+    return io.open(fnam, flg)
+
+  def writeXML(self, fnam, pre=''):
+    if ( isinstance(fnam, io.TextIOWrapper) ):
+      txt = self.toString().split('\n')
+      if ( len(txt[-1]) == 0 ):
+        del( txt[-1] )
+      for lin in txt: 
+        print('{}{}'.format(pre, lin), file=fnam)
+    else:
+      if fnam == '-':
+        fnam = sys.stdout.fileno()
+      with io.open(fnam, 'w') as f:
+        self.writeXML( f, pre )
+
+  def toString(self):
+    et = ET.ElementTree(self._root)
+    st = ET.tostring( et, xml_declaration = True, method = "xml", pretty_print=True, encoding='utf-8')
+    return st.decode()
 
 if __name__ == '__main__':
 
