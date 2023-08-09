@@ -94,6 +94,8 @@ if __name__ == "__main__":
          et = ESI().element
        else:
          raise RuntimeError("Need xml file argument or '-D' option")
+    else:
+       esi = ESI(et)
     prom = ESIPromGenerator( et ).makeProm()
     mode = "wb" if overwrite else "xb"
     m    = None
