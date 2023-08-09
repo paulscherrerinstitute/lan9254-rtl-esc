@@ -166,32 +166,40 @@ class VendorDataAdapter(object):
     def mkCodGet(vd, ev):
       # ensure that the event is actually enabled
       if ( ev < 10 ):
-        vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
+        vd.getEvrPulseParam(ev).pulseEnabled = (vd.getEvrPulseParam(ev).pulseEvent > 0)
       def g():
         if ( ev >= 10 ):
           cod = vd.getExtraEvent( ev - 10 )
         else:
-          cod = vd.getEvrParam(ev).pulseEvent
+          cod = vd.getEvrPulseParam(ev).pulseEvent
         return str(cod)
       return g
     def mkCodSet(vd, ev):
       # ensure that the event is actually enabled
       if ( ev < 10 ):
-        vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
+        vd.getEvrPulseParam(ev).pulseEnabled = (vd.getEvrPulseParam(ev).pulseEvent > 0)
       def s(v):
         if ( ev >= 10 ):
           vd.setExtraEvent( ev - 10, int(v) )
         else:
-          vd.getEvrParam(ev).pulseEvent   = int(v)
-          vd.getEvrParam(ev).pulseEnabled = (vd.getEvrParam(ev).pulseEvent > 0)
+          vd.getEvrPulseParam(ev).pulseEvent   = int(v)
+          vd.getEvrPulseParam(ev).pulseEnabled = (vd.getEvrPulseParam(ev).pulseEvent > 0)
       return s
     def mkDlyGet(vd, ev):
       def g():
-        return str(vd.getEvrParam(ev).pulseDelay)
+        return str(vd.getEvrPulseParam(ev).pulseDelay / self._clkConfig.freqMHz * 1000.0) # nano-secs
       return g
     def mkDlySet(vd, ev):
       def s(v):
-        vd.getEvrParam(ev).pulseDelay = int(v)
+        vd.getEvrPulseParam(ev).pulseDelay = int(round(float(v) * self._clkConfig.freqMHz / 1000.0 ))
+      return s
+    def mkDCTgtGet(vd):
+      def g():
+        return str(vd.getEvrDCTargetNS())
+      return g
+    def mkDCTgtSet(vd):
+      def s(v):
+        return vd.setEvrDCTargetNS( float(v) )
       return s
     vb  = QtWidgets.QVBoxLayout()
     self._evrCfgGui = vb
@@ -214,9 +222,9 @@ class VendorDataAdapter(object):
     edt.setMaxLength( 12 )
     g   = mkDlyGet( self._vendorData, 0 )
     s   = mkDlySet( self._vendorData, 0 )
-    createValidator( edt, g, s, QtGui.QIntValidator, 0, 10000000 )
-    edt.setToolTip("Delay is in EVR clock cycles\nNOTE: ignored for event 0")
-    frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Delay"), edt )
+    createValidator( edt, g, s, QtGui.QDoubleValidator, 0, 10000000, 8 )
+    edt.setToolTip("Delay is in ns (but in multiples of event-clock cycles)\nNOTE: ignored for event 0")
+    frm.addRow( QtWidgets.QLabel("TxPDO Trigger Event Delay [ns]"), edt )
 
     edt = QtWidgets.QLineEdit()
     edt.setMaxLength( 4 )
@@ -240,6 +248,13 @@ class VendorDataAdapter(object):
                   )
     frm.addRow( QtWidgets.QLabel("Event Code clearing LATCH0"), edt )
 
+    edt = QtWidgets.QLineEdit()
+    edt.setMaxLength( 12 )
+    g   = mkDCTgtGet( self._vendorData )
+    s   = mkDCTgtSet( self._vendorData )
+    createValidator( edt, g, s, QtGui.QDoubleValidator, 0, 65535, 8 )
+    edt.setToolTip("Delay-Compensation Target in ns (set to 0 to disable DC)")
+    frm.addRow( QtWidgets.QLabel("Delay-Compensation Target [ns]"), edt )
 
     vb.addLayout( frm )
     return self._evrCfgGui

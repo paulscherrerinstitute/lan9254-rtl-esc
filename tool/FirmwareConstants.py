@@ -1,6 +1,6 @@
 # These parameters must match configuration constants
 # and generics in VHDL
-# The EEPROM config. data for the lan9254 must also
+# The EEPROM config. Data for the lan9254 must also
 # be in sync with the firmware (major behaviour and
 # logic levels are defined by these settings).
 from FirmwareConstantsAuto import *
@@ -96,7 +96,7 @@ class FirmwareConstants(object):
 
   @staticmethod
   def EEPROM_LAYOUT_VERSION():
-    return 1
+    return 2
 
   @staticmethod
   def EVR_NUM_PULSE_GENS():

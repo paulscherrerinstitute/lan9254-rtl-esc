@@ -691,6 +691,41 @@ class ClockConfig(Configurable):
   def freqMHzHigh(self):
     return self._drv.freqMHzHigh
 
+class EvrDCConfig(Configurable):
+  def __init__(self, dcTarget = 0, freqMHz = 0):
+    super().__init__()
+    if ( 0 == freqMHz ):
+      # assume they give us nano-seconds already
+      self._DCTargetNS = dcTarget
+    else:
+      self._DCTargetNS = float(dcTarget) / 65536.0 * 1000.0 / freqMHz
+
+  def setDCTargetNS(self, ns):
+    self._DCTargetNS = ns
+    self._modified      = True
+
+  def getDCTargetNS(self):
+    return self._DCTargetNS
+
+  def promData(self, freqMHz):
+    rv = bytearray(4)
+    v  = int( round( freqMHz * self.getDCTargetNS() / 1000.0 * 65536.0 ) )
+    if ( 0 > v ):
+      v = 0
+    elif ( v > 0xffffffff ):
+      v = 0xffffffff
+    for i in range(4):
+      rv[i] = v & 255
+      v   >>= 8
+    return rv
+
+  @staticmethod
+  def fromPromDataClicks(prom):
+    dcTgtClicks = 0
+    for i in range(4):
+       dcTgtClicks = (dcTgtClicks << 8) | prom[3 - i]
+    return dcTgtClicks, 4
+
 class NetConfig(Configurable):
   def __init__(self):
     super().__init__()
@@ -854,7 +889,7 @@ class ExtraEvents(object):
 
 class VendorData(FixedPdoPart):
 
-  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), evrParams = None, eventCodes = ExtraEvents(), clockConfig = ClockConfig(), fixedNames = None ):
+  def __init__(self, el, segments = [], flags = 0, netConfig = NetConfig(), evrParams = None, eventCodes = ExtraEvents(), clockConfig = ClockConfig(), evrDCConfig = EvrDCConfig(), fixedNames = None ):
     super().__init__(flags, fixedNames)
     if (el is None):
       el = ET.Element("Eeprom")
@@ -864,34 +899,42 @@ class VendorData(FixedPdoPart):
     self._el        = el
     self._modified  = False
     if ( evrParams is None ):
-      self._evrParams = [ Evr320PulseParam() for i in range(FirmwareConstants.EVR_NUM_PULSE_GENS()) ]
+      self._evrPulseParams = [ Evr320PulseParam() for i in range(FirmwareConstants.EVR_NUM_PULSE_GENS()) ]
     else:
-      self._evrParams = evrParams
+      self._evrPulseParams = evrParams
     self._xtraEvents = eventCodes
     for i in range(len(self._xtraEvents)):
       self._xtraEvents[i] = 0x11*(i+1)
 
-    self._clockConfig = clockConfig
+    self._clockConfig   = clockConfig
+    self._evrDCConfig   = evrDCConfig
 
     self.update( self.flags, segments )
     self.resetModified()
 
   @property
   def modified(self):
-    rv = self._modified or self._netConfig.modified or self._clockConfig.modified
-    for p in self._evrParams:
+    rv = self._modified or self._netConfig.modified or self._clockConfig.modified or self._evrDCConfig.modified
+    for p in self._evrPulseParams:
       rv = rv or p.modified
     return rv
+
+  def getEvrDCTargetNS(self):
+    return self._evrDCConfig.getDCTargetNS()
+
+  def setEvrDCTargetNS(self, v):
+    self._evrDCConfig.setDCTargetNS( v )
 
   def resetModified(self):
     self._modified = False
     self._netConfig.resetModified()
     self._clockConfig.resetModified()
-    for p in self._evrParams:
+    self._evrDCConfig.resetModified()
+    for p in self._evrPulseParams:
       p.resetModified()
 
-  def getEvrParam(self, idx):
-    return self._evrParams[idx]
+  def getEvrPulseParam(self, idx):
+    return self._evrPulseParams[idx]
 
   def getExtraEvent(self, idx):
     return self._xtraEvents[idx]
@@ -979,6 +1022,13 @@ class VendorData(FixedPdoPart):
       DriverName=self._clockConfig.driverName()
     ).text = "{:.8g}".format( self._clockConfig.freqMHz )
 
+    for s in vdr.findall("EvrDCTargetNS"):
+      vdr.remove(s)
+    ET.SubElement(
+      vdr,
+      "EvrDCTargetNS",
+    ).text = "{:.8g}".format( self.getEvrDCTargetNS() )
+
     cat = ET.SubElement( self._el, "Category" )
     se  = findOrAdd( cat, "CatNo" )
     se.text = FirmwareConstants.DEVSPECIFIC_CATEGORY_TXT()
@@ -1026,8 +1076,9 @@ class VendorData(FixedPdoPart):
     prom = bytearray()
     prom.append( FirmwareConstants.EEPROM_LAYOUT_VERSION() )
     prom.extend( self._netConfig.promData() )
-    prom.append( len( self._evrParams )     )
-    for p in self._evrParams:
+    prom.extend( self._evrDCConfig.promData( self._clockConfig.freqMHz ) )
+    prom.append( len( self._evrPulseParams )     )
+    for p in self._evrPulseParams:
       prom.extend( p.promData() )
     prom.extend( self._xtraEvents.promData() )
     prom.append( (self._flags & self.F_MASK) )
@@ -1056,6 +1107,7 @@ class VendorData(FixedPdoPart):
     vdr = el.find("VendorSpecific")
     clkFrqMHz = None
     clkDrvNam = None
+    dcTgtNs   = 0.0
     if (not vdr is None):
       for s in vdr.findall("Segment"):
         swap8words = s.get("Swap8")
@@ -1069,6 +1121,10 @@ class VendorData(FixedPdoPart):
       if not s is None:
         clkDrvNam = s.get("DriverName")
         clkFrqMHz = float( s.text )
+      s = vdr.find("EvrDCTargetNS")
+      if not s is None:
+        dcTgtNS = float( s.text )
+    evrDCCfg = EvrDCConfig( dcTgtNS )
     # look for prom data
     prom = None
     cat = el.find("Category")
@@ -1091,7 +1147,7 @@ class VendorData(FixedPdoPart):
       if len(prom) < 1 + 12 + 1 + FirmwareConstants.EVR_NUM_PULSE_GENS() * 9 + 2:
         raise Exception("WARNING: truncated vendor-specific prom data; ignoring")
 
-      if ( prom[0] != FirmwareConstants.EEPROM_LAYOUT_VERSION() ):
+      if ( prom[0] > FirmwareConstants.EEPROM_LAYOUT_VERSION() or prom[0] < 1 ):
         raise Exception("WARNING: vendor-specific prom data version mismatch; ignoring")
 
       promIdx  = 1
@@ -1100,6 +1156,14 @@ class VendorData(FixedPdoPart):
       netCfg.setIp4Addr( prom[promIdx +  6: promIdx + 10] )
       netCfg.setUdpPort( prom[promIdx + 10: promIdx + 12] )
       promIdx += 12
+
+      if ( 1 == prom[0] ):
+        print("WARNING: Old prom layout version; (no DC target) -- will upgrade when saving!")
+      else:
+         dcTgt, l = EvrDCConfig.fromPromDataClicks(prom[promIdx:])
+         promIdx += l
+         # ignore the dcTgt (clicks) and use the float value from the XML instead
+         # to avoid roundoff issues.
       
       numPulseGens = prom[promIdx]
       promIdx += 1
@@ -1164,7 +1228,7 @@ class VendorData(FixedPdoPart):
       evrCfg   = None
       clkCfg   = ClockConfig()
       print( str( e ) )
-    return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, *args, **kwargs )
+    return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, evrDCCfg, *args, **kwargs )
     
 class Pdo(object):
 
