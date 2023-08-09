@@ -7,13 +7,14 @@ if __name__ == "__main__":
   import io
   import re
 
-  ( opts, args ) = getopt.getopt( sys.argv[1:], "hPVDf", ["help", "prom", "vhdl", "default"] )
+  ( opts, args ) = getopt.getopt( sys.argv[1:], "hsPVDf", ["help", "prom", "vhdl", "default"] )
 
   isGui     = True
   overwrite = False
   mkProm    = False
   mkVhd     = False
   mkDfl     = False
+  rdSii     = False
 
   for opt in opts:
     if opt[0] in ('-h', '--help'):
@@ -39,10 +40,25 @@ if __name__ == "__main__":
     elif opt[0] in ('-D', '--default'):
       isGui = False
       mkDfl = True
+    elif opt[0] in ('-s' ):
+      isGui = False
+      mkDfl = False
+      rdSii = True
 
   et     = None
   fnam   = None
   schema = None
+
+  if ( rdSii ):
+    from ESIPromGenerator import ESIPromGenerator
+    from ToolCore         import XMLBase
+    if ( len(args) > 0 ):
+      fnam = args[0]
+    with io.open(fnam, 'rb') as f:
+      prom = f.read()
+    et = XMLBase( ESIPromGenerator( XMLBase.mkBasicTree( False ) ).parseProm( prom ) )
+    et.writeXML('-')
+    sys.exit(0)
 
   if ( len(args) > 0 ):
     try:

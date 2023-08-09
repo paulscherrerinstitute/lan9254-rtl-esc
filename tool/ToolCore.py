@@ -1076,8 +1076,8 @@ class VendorData(FixedPdoPart):
     prom = bytearray()
     prom.append( FirmwareConstants.EEPROM_LAYOUT_VERSION() )
     prom.extend( self._netConfig.promData() )
-    prom.extend( self._evrDCConfig.promData( self._clockConfig.freqMHz ) )
     prom.append( len( self._evrPulseParams )     )
+    prom.extend( self._evrDCConfig.promData( self._clockConfig.freqMHz ) )
     for p in self._evrPulseParams:
       prom.extend( p.promData() )
     prom.extend( self._xtraEvents.promData() )
@@ -1107,7 +1107,7 @@ class VendorData(FixedPdoPart):
     vdr = el.find("VendorSpecific")
     clkFrqMHz = None
     clkDrvNam = None
-    dcTgtNs   = 0.0
+    dcTgtNS   = 0.0
     if (not vdr is None):
       for s in vdr.findall("Segment"):
         swap8words = s.get("Swap8")
@@ -1142,8 +1142,12 @@ class VendorData(FixedPdoPart):
     evrCfg  = None
     xtraEvt = ExtraEvents()
     try:
-      if (len(segments) > 0 and prom is None):
-        raise Exception("WARNING: inconsistent vendor-specific data (Segment names found but no hex data); purging all segments!")
+      if (prom is None):
+        if (len(segments) > 0):
+          raise Exception("WARNING: inconsistent vendor-specific data (Segment names found but no hex data); purging all segments!")
+        else:
+          raise Exception("WARNING: no prom data in XML")
+
       if len(prom) < 1 + 12 + 1 + FirmwareConstants.EVR_NUM_PULSE_GENS() * 9 + 2:
         raise Exception("WARNING: truncated vendor-specific prom data; ignoring")
 
@@ -1157,6 +1161,10 @@ class VendorData(FixedPdoPart):
       netCfg.setUdpPort( prom[promIdx + 10: promIdx + 12] )
       promIdx += 12
 
+     
+      numPulseGens = prom[promIdx]
+      promIdx += 1
+
       if ( 1 == prom[0] ):
         print("WARNING: Old prom layout version; (no DC target) -- will upgrade when saving!")
       else:
@@ -1164,9 +1172,7 @@ class VendorData(FixedPdoPart):
          promIdx += l
          # ignore the dcTgt (clicks) and use the float value from the XML instead
          # to avoid roundoff issues.
-      
-      numPulseGens = prom[promIdx]
-      promIdx += 1
+ 
       if ( numPulseGens > 16 ):
         raise Exception("WARNING: vendor-specific prom data has an unreasonable number of pulse generators; ignoring")
       evrCfg = []
@@ -1443,38 +1449,51 @@ class Pdo(object):
 
     return pdo
 
-class ESI(object):
+class XMLBase(object):
 
-  def __init__(self, root = None):
-    super().__init__()
-    if root is None:
-      root = ET.Element("EtherCATInfo")
+  @staticmethod
+  def mkBasicTree(useDefaults = True):
+    root = ET.Element("EtherCATInfo")
 
-      # note that XML schema expects these elements in order !
-      vendor          = ET.SubElement(root, "Vendor")
-      vendorId          = ET.SubElement(vendor,"Id")
+    # note that XML schema expects these elements in order !
+    vendor          = ET.SubElement(root, "Vendor")
+    vendorId          = ET.SubElement(vendor,"Id")
+    if ( useDefaults ):
       vendorId.text       = ESIDefaults.VENDOR_ID_TXT()
-      vendorId          = ET.SubElement(vendor,"Name")
+    vendorId          = ET.SubElement(vendor,"Name")
+    if ( useDefaults ):
       vendorId.text       = ESIDefaults.VENDOR_NAME_TXT()
 
-      descriptions    = ET.SubElement(root, "Descriptions")
-      groups            = ET.SubElement(descriptions, "Groups")
-      group               = ET.SubElement(groups, "Group")
-      groupType             = ET.SubElement(group, "Type")
+    descriptions    = ET.SubElement(root, "Descriptions")
+    groups            = ET.SubElement(descriptions, "Groups")
+    group               = ET.SubElement(groups, "Group")
+    groupType             = ET.SubElement(group, "Type")
+    if ( useDefaults ):
       groupType.text          = ESIDefaults.GROUP_TYPE_TXT()
-      groupName             = ET.SubElement(group, "Name")
+
+    groupName             = ET.SubElement(group, "Name")
+    if ( useDefaults ):
       groupName.text          = ESIDefaults.GROUP_NAME_TXT()
 
-      devices           = ET.SubElement(descriptions, "Devices")
-      device              = ET.SubElement(devices,"Device", Physics="YY")
-      deviceType            = ET.SubElement(device, "Type",
-                                ProductCode=ESIDefaults.DEVICE_PRODUCT_CODE_TXT(),
-                                RevisionNo =ESIDefaults.DEVICE_REVISION_NO_TXT())
-      deviceType.text         = ESIDefaults.DEVICE_TYPE_TXT()
-      deviceName            = ET.SubElement(device, "Name")
+    devices           = ET.SubElement(descriptions, "Devices")
+    device              = ET.SubElement(devices,"Device")
+    if ( useDefaults ):
+      device.set("Physics", "YY")
+    deviceType            = ET.SubElement(device, "Type")
+    if ( useDefaults ):
+      deviceType.set( "ProductCode", ESIDefaults.DEVICE_PRODUCT_CODE_TXT() )
+      deviceType.set( "RevisionNo" , ESIDefaults.DEVICE_REVISION_NO_TXT()  )
+      deviceType.text = ESIDefaults.DEVICE_TYPE_TXT()
+
+    deviceName            = ET.SubElement(device, "Name")
+    if ( useDefaults ):
       deviceName.text         = ESIDefaults.DEVICE_NAME_TXT()
 
-      groupType             = ET.SubElement(device, "GroupType").text=ESIDefaults.GROUP_TYPE_TXT()
+    ET.SubElement(device, "Info")
+
+    groupType             = ET.SubElement(device, "GroupType")
+    if ( useDefaults ):
+      groupType.text        = ESIDefaults.GROUP_TYPE_TXT()
       fmmu                  = ET.SubElement(device, "Fmmu")
       fmmu.text               ="Outputs"
       fmmu                  = ET.SubElement(device, "Fmmu")
@@ -1483,10 +1502,39 @@ class ESI(object):
       fmmu.text               ="MBoxState"
       for i in range(4):
         ET.SubElement(device, "Sm")
+    return root
+
+  def __init__(self, root = None):
+    if root is None:
+      root = self.mkBasicTree()
+    self._root = root
+
+  def writeXML(self, fnam, pre=''):
+    if ( isinstance(fnam, io.TextIOWrapper) ):
+      txt = self.toString().split('\n')
+      if ( len(txt[-1]) == 0 ):
+        del( txt[-1] )
+      for lin in txt: 
+        print('{}{}'.format(pre, lin), file=fnam)
     else:
-      device = root.find("Descriptions/Devices/Device")
-      if device is None:
-        raise RuntimeError("'Device' node not found in XML -- fix XML or create from scratch")
+      if fnam == '-':
+        fnam = sys.stdout.fileno()
+      with io.open(fnam, 'w') as f:
+        self.writeXML( f, pre )
+
+  def toString(self):
+    et = ET.ElementTree(self._root)
+    st = ET.tostring( et, xml_declaration = True, method = "xml", pretty_print=True, encoding='utf-8')
+    return st.decode()
+
+class ESI(XMLBase):
+
+  def __init__(self, root = None):
+    super().__init__( root )
+    root = self._root
+    device = root.find("Descriptions/Devices/Device")
+    if device is None:
+      raise RuntimeError("'Device' node not found in XML -- fix XML or create from scratch")
 
     # While this is configurable nothing will actually happen unless firmware is using
     # the rxpdo. We assume some LEDs are hooked up.
@@ -1552,7 +1600,6 @@ class ESI(object):
     else:
       txPdo = Pdo.fromElement( found, self._vendorData.segments )
     self._txPdo = txPdo
-    self._root  = root
     self.syncElms()
 
   @property
@@ -1598,24 +1645,6 @@ class ESI(object):
     if ( fnam == '-' ):
       fnam = sys.stdout.fileno()
     return io.open(fnam, flg)
-
-  def writeXML(self, fnam, pre=''):
-    if ( isinstance(fnam, io.TextIOWrapper) ):
-      txt = self.toString().split('\n')
-      if ( len(txt[-1]) == 0 ):
-        del( txt[-1] )
-      for lin in txt: 
-        print('{}{}'.format(pre, lin), file=fnam)
-    else:
-      if fnam == '-':
-        fnam = sys.stdout.fileno()
-      with io.open(fnam, 'w') as f:
-        self.writeXML( f, pre )
-
-  def toString(self):
-    et = ET.ElementTree(self._root)
-    st = ET.tostring( et, xml_declaration = True, method = "xml", pretty_print=True, encoding='utf-8')
-    return st.decode()
 
 if __name__ == '__main__':
 

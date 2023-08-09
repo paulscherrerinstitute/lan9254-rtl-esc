@@ -1,3 +1,64 @@
+from lxml import etree as ET
+
+class PromRd(object):
+  def __init__(self, prom):
+    self._pidx = 0
+    self._prom = prom
+
+  def skip(self, n=1):
+    self._pidx += n
+
+  def getInt(self, byteSz = 4):
+    val = 0
+    for i in range(byteSz - 1 , -1 , -1):
+      val = (val << 8) | self._prom[i + self._pidx]
+    self._pidx += byteSz
+    return val
+
+  def getUInt8(self):
+    return self.getInt(1)
+
+  def getUInt16(self):
+    return self.getInt(2)
+
+  def getUInt32(self):
+    return self.getInt(4)
+
+  def getBytes(self, n):
+    rv = self._prom[self._pidx:self._pidx + n]
+    self._pidx += n
+    return rv
+
+  @property
+  def pos(self):
+    return self._pidx
+
+class Cat(PromRd):
+
+  def __init__(self, prom, catId = 0):
+    super().__init__(prom)
+    self._id   = -1
+    self._size = 0
+    if ( 0 == catId ):
+      self.next()
+    else:
+      while ( self.id != catId ):
+        self.skip( self.size )
+        self.next()
+
+  @property
+  def id(self):
+    return self._id
+
+  @property
+  def size(self):
+    return self._size
+
+  def next(self):
+    self._id   = self.getUInt16()
+    if ( self._id == 0xffff ):
+        raise KeyError("Category not found")
+    self._size = self.getUInt16() * 2
 
 
 class ESIPromGenerator(object):
@@ -92,6 +153,25 @@ class ESIPromGenerator(object):
       raise KeyError("Element '{}' not found".format( key ) )
     return rv
 
+  @staticmethod
+  def addOrReplace(nod, sub):
+    found = nod.find(sub.tag)
+    if found is None:
+      nod.append(sub)
+    else:
+      nod.replace(found, sub)
+    return sub
+
+  @staticmethod
+  def findOrAdd(nod, tag):
+    hier = tag.split('/')
+    for t in hier:
+      found = nod.find( t )
+      if found is None:
+        found = ET.SubElement(nod, t)
+      nod = found
+    return found
+
   # find a mandatory text or attribute
   def mustGet(self, key, el=None):
     txt = self.findOpt( key, None, el )
@@ -125,7 +205,6 @@ class ESIPromGenerator(object):
       print("Trying to convert '{}'".format(x))
       raise(e)
 
-
   # look up an element, convert to a int of 'byteSz'
   # and append to the prom (as little-endian)
   def appendInt(self, prom, key, dflt=0, byteSz=4, el=None):
@@ -151,8 +230,147 @@ class ESIPromGenerator(object):
   def appendMbx(self, prom, smNode):
     self.appendInt( prom, ".@StartAddress", dflt=None, byteSz=2, el=smNode )
     self.appendInt( prom, ".@DefaultSize",  dflt=None, byteSz=2, el=smNode )
-   
 
+  def getCat(self, prom, catId):
+    pidx = 0
+    val  = -1
+    sz   = -2
+    while val != catId:
+      pidx += 2*sz + 4
+      val   = (prom[pidx + 1] << 8) | prom[pidx + 0]
+      if val == 0xffff:
+        raise KeyError("Category not found")
+      sz    = (prom[pidx + 3] << 8) | prom[pidx + 2]
+    return pidx, 2*sz
+
+  def getCatStrings(self, prom):
+    cat      = Cat( prom, 10 )
+    l        = []
+    sz       = cat.getUInt8()
+    for i in range(sz):
+      sz    = cat.getUInt8()
+      l.append( cat.getBytes( sz ).decode() )
+    return l
+
+  def getCatGeneral(self, devNod, prom, strs):
+    cat      = Cat( prom, 30 )
+    for nm in ["GroupType", None, "Type", "Name"]:
+      sidx   = cat.getUInt8()
+      if ( ( sidx != 0 ) and ( not nm is None ) ):
+        self.findOrAdd(devNod, nm).text = strs[sidx - 1]
+    cat.skip()
+
+    mbxNod = self.mustFind("Mailbox", devNod)
+
+    # these flags seem redundant to the mailbox services
+    val = cat.getUInt8()
+    msk = 0x02
+    if ( val & 0x01 ):
+      coeNod     = mbxNod.find("CoE")
+      haveCoeNod = (not coeNod is None)
+      if ( not haveCoeNod ):
+        coeNod = ET.Element("CoE")
+      for k in ["SDOInfo", "PdoAssign", "PdoConfig", "PdoUpload", "CompleteAccess" ]:
+        if ( val & msk ) != 0:
+          coeNod.set(k, "1")
+        msk <<= 1
+      if not haveCoeNod:
+        mbxNod.append(coeNod)
+    val = cat.getUInt8()
+    if ( val & 0x01 ):
+      self.findOrAdd( mbxNod, "FoE" )
+    val = cat.getUInt8()
+    if ( val & 0x01 ):
+      self.findOrAdd( mbxNod, "EoE" )
+    cat.skip(3)
+
+    val   = cat.getUInt8()
+    if ( val & 0x01 ):
+      self.findOrAdd( devNod, "Info/StateMachineBehavior" ).set("StartToSaveopNoSync", "1")
+    if ( val & 0x02 ):
+      self.findOrAdd( devNod, "Type" ).set("UseLrdLwr", "1")
+    if ( val & 0x04 ):
+      mbxNod.set("DataLinkLayer", "1")
+    if ( val & 0x08 ):
+      self.findOrAdd( devNod, "Info/IdentificationReg134" )
+    if ( val & 0x10 ):
+      self.findOrAdd( devNod, "Info/IdentificationAdo"    )
+
+    val = cat.getUInt16()
+
+    self.findOrAdd( devNod, "Info/Electrical/EBusCurrent" ).text = str( val )
+
+    cat.skip(2)
+
+    val = cat.getUInt16()
+
+    svl = ""
+    while ( val != 0 ):
+      if   ( ( val & 0xf ) == 0x1 ):
+        svl += "Y"
+      elif ( ( val & 0xf ) == 0x4 ):
+        svl += "H"
+      else:
+        svl += " "
+      val >>= 4
+    devNod.set("Physics", svl)
+
+    val = cat.getUInt16()
+    if ( val != 0 ):
+      self.findOrAdd( devNod, "Info/IdentificationAdo"    ).text = str( val )
+
+  def getCatFmmu(self, devNod, prom):
+    cat = Cat( prom, 40 )
+    sz  = cat.size
+    while sz > 0:
+      val = cat.getUInt8()
+      if   ( 0 == val ):
+        svl = None
+      elif ( 1 == val ):
+        svl = "Outputs"
+      elif ( 2 == val ):
+        svl = "Inputs"
+      elif ( 3 == val ):
+        svl = "MBoxState"
+      else:
+        raise RuntimeError("getCatFmmu: unsupported FMMU type")
+      if ( not svl is None ):
+        ET.SubElement(devNod, "Fmmu" ).text = svl
+      sz   -= 1
+ 
+  def getCatSm(self, devNod, prom):
+    cat      = Cat(prom, 41)
+    sz       = cat.size
+    while sz >= 8:
+      sm        = ET.Element("Sm")
+      startAddr = cat.getUInt16()
+      defltSize = cat.getUInt16()
+      cntrlByte = cat.getUInt8()
+      cat.skip(1)
+      enablByte = cat.getUInt8()
+      typeByte  = cat.getUInt8()
+      if (startAddr != 0 or dfltSize != 0 or cntrlByte != 0 or enablByte != 0) and (typeByte != 0):
+        sm.set( "ControlByte",  "#x{:02x}".format( cntrlByte ) )
+        sm.set( "StartAddress", "#x{:04x}".format( startAddr ) )
+        sm.set( "DefaultSize",  "{:d}".format( defltSize ) )
+        sm.set( "Enable",       "{:d}".format( enablByte ) )
+        if   ( typeByte == 0x01 ):
+          typ = "MBoxOut"
+        elif ( typeByte == 0x02 ):
+          typ = "MBoxIn"
+        elif ( typeByte == 0x03 ):
+          typ = "Outputs"
+        elif ( typeByte == 0x04 ):
+          typ = "Inputs"
+        else:
+          raise ValueError("getCatSm: unexpected SM type")
+      devNod.append( sm )
+      sz -= 8
+
+  def getCatPdo(self, devNod, prom, strs, isRxPdo):
+    catId = 51 if isRxPdo else 50
+    cat   = Cat(prom, catId)
+ 
   # append a category to the prom. This is are recursive
   # procedure:
   #  - append the category ID (catId)
@@ -266,7 +484,7 @@ class ESIPromGenerator(object):
       prom.append( 0x00 )
       self.appendStrIdx( prom, strDict, "Name", el=pdo ) 
       flags = 0
-      # WARNING -- not all flags are currently supported (module/slotgroup related stuff0
+      # WARNING -- not all flags are currently supported (module/slotgroup related stuff)
       for k in { ".@Mandatory": 0x0001, ".@Sm": 0x10002, ".@Fixed": 0x10, ".@Virtual": 0x20 }.items():
         txt = self.findOpt( k[0], dflt=None, el=pdo )
         if not txt is None:
@@ -370,6 +588,71 @@ class ESIPromGenerator(object):
         rem = (rem<<1)
       rem &= 0xff
     return rem
+
+  def parseProm(self, prom):
+    devNod = self.mustFind("Descriptions/Devices/Device")
+    rdr    = PromRd( prom )
+
+    eep = ET.Element("Eeprom")
+    eep.set("AssignToPdi","1")
+    ET.SubElement(eep, "ByteSize").text   = str(len(prom))
+    ET.SubElement(eep, "ConfigData").text = rdr.getBytes(16).hex()
+
+    self.findOrAdd( self._root.find("Vendor"), "Id" ).text = "#x{:x}".format( rdr.getUInt32() )
+
+    nod = self.findOrAdd( devNod, "Type" )
+    nod.set("ProductCode", "{:04d}".format( rdr.getUInt32() ))
+    nod.set("RevisionNo",  "{:04d}".format( rdr.getUInt32() ))
+    nod.set("SerialNo"  ,  "{:04d}".format( rdr.getUInt32() ))
+
+    rdr.skip(8)
+
+    allZero = True
+    dat     = rdr.getBytes(8)
+    for i in dat:
+      if ( i != 0 ):
+        allZero = False
+        break
+    if not allZero:
+      ET.SubElement(eep, "BootStrap").text = dat.hex()
+
+    # skip mailbox; get redundant info from SM category
+    rdr.skip(8)
+
+    #Mailbox Services
+    mbx = ET.Element("Mailbox")
+    val = rdr.getUInt16()
+
+    for prot in {"AoE" : 0x01, "EoE" : 0x02, "CoE" : 0x04, "FoE" : 0x08,
+                 "SoE" : 0x10, "VoE" : 0x20 }.items():
+      if ( (val & prot[1]) != 0 ):
+        el = ET.SubElement( mbx, prot[0] )
+        if ( prot[0] == "EoE" ):
+          el.set("IP", "1")
+          el.set("MAC", "1")
+
+    rdr.skip(66)
+
+    val = rdr.getUInt16()
+
+    eep.find("ByteSize").text = str( int( (val + 1)*1024/8 ) )
+
+    val = rdr.getUInt16()
+
+    if( val != 1 ):
+      raise RuntimeError("Unexpected SII version {:d}".format( val ))
+
+    promUpper = prom[rdr.pos:]
+
+    strs = self.getCatStrings( promUpper )
+
+    self.getCatFmmu   ( devNod, promUpper         )
+    self.getCatSm     ( devNod, promUpper         )
+    self.addOrReplace ( devNod, mbx               )
+    self.addOrReplace ( devNod, eep               )
+    self.getCatGeneral( devNod, promUpper,   strs ) 
+
+    return self._root
 
   def makeProm(self, devNod = None):
     prom    = bytearray()
