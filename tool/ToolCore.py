@@ -648,6 +648,10 @@ class Configurable(object):
   def clone(self):
     return copy.copy(self)
 
+class NoClockDriver(RuntimeError):
+  def __init__(self, msg):
+    super().__init__(msg)
+
 class ClockConfig(Configurable):
 
   def __init__(self, freqMHz = 100.333, driverName = "VersaClock6"):
@@ -655,7 +659,7 @@ class ClockConfig(Configurable):
     try:
       self._drv = ClockDriver.findDriver( driverName )
     except KeyError:
-      raise KeyError("No driver for requested clock ({}) found".format( driverName ))
+      raise NoClockDriver("No driver for requested clock ({}) found".format( driverName ))
     self._freqMHz  = self._drv.acceptable( freqMHz )
 
   @property
@@ -1152,6 +1156,9 @@ class VendorData(FixedPdoPart):
           s.swap       = tmp.swap
         rem -= needed
       clkCfg = ClockConfig( clkFrqMHz, clkDrvNam )
+    except NoClockDriver as e:
+      print( str( e ) )
+      clkCfg   = ClockConfig()
     except Exception as e:
       segments = []
       evrCfg   = None
