@@ -1,4 +1,6 @@
 from lxml import etree as ET
+import sys
+from collections import OrderedDict
 
 class PromRd(object):
   def __init__(self, prom):
@@ -39,11 +41,11 @@ class Cat(PromRd):
     super().__init__(prom)
     self._id   = -1
     self._size = 0
+    self._head = 0
     if ( 0 == catId ):
       self.next()
     else:
       while ( self.id != catId ):
-        self.skip( self.size )
         self.next()
 
   @property
@@ -54,11 +56,17 @@ class Cat(PromRd):
   def size(self):
     return self._size
 
+  @property
+  def head(self):
+    return self._head
+
   def next(self):
+    self.skip( self.size - (self.pos - self.head) )
     self._id   = self.getUInt16()
     if ( self._id == 0xffff ):
         raise KeyError("Category not found")
     self._size = self.getUInt16() * 2
+    self._head = self.pos
 
 
 class ESIPromGenerator(object):
@@ -123,6 +131,11 @@ class ESIPromGenerator(object):
   # initialize with the root etree element
   def __init__(self, root):
     self._root = root
+    self._strd = OrderedDict()
+
+  @property
+  def strDict(self):
+    return self._strd
 
   # find an optional element or attribute substituting
   # a 'default' if it cannot be found
@@ -182,15 +195,13 @@ class ESIPromGenerator(object):
   # Find an element and look up its value in the string
   # dictionary; append the index of the value in the
   # string table to the prom
-  def appendStrIdx(self, prom, strDict, key, el=None):
+  def appendStrIdx(self, prom, key, el=None):
     idx = 0
     txt = self.findOpt( key, None, el )
     if ( ( not txt is None ) and ( len(txt) > 0 ) ):
-      s = strDict.get( txt )
-      if ( not s is None ):
-        idx = int(s)
-        if ( idx < 1 or idx > 255 ):
-          raise ValueError("String index out of range")
+      idx = self.findAddStr( txt )
+      if ( idx < 1 or idx > 255 ):
+        raise ValueError("String index out of range")
     prom.append( ( idx & 0xff ) )
 
   # Convert HexDec to int
@@ -364,13 +375,68 @@ class ESIPromGenerator(object):
           typ = "Inputs"
         else:
           raise ValueError("getCatSm: unexpected SM type")
+        sm.text = typ
       devNod.append( sm )
       sz -= 8
 
   def getCatPdo(self, devNod, prom, strs, isRxPdo):
-    catId = 51 if isRxPdo else 50
+    if ( isRxPdo ):
+      catId  = 51
+      pdoNodNm = "RxPdo"
+    else:
+      catId  = 50
+      pdoNodNm = "TxPdo"
     cat   = Cat(prom, catId)
- 
+    sz    = cat.size
+    while ( sz > 0 ):
+      oldpos      = cat.pos
+      pdoNod      = ET.SubElement(devNod, pdoNodNm)
+      idxNod      = ET.SubElement(pdoNod, "Index")
+      idxNod.text = "#x{:04x}".format( cat.getUInt16() )
+      nents       = cat.getUInt8()
+      smIdx       = cat.getUInt8()
+      pdoNod.set("Sm", "{:d}".format( smIdx ))
+      cat.skip() # DC Sync (?? - not explained)
+      sidx        = cat.getUInt8()
+      if ( sidx != 0 ):
+        try:
+          ET.SubElement( pdoNod, "Name" ).text = strs[sidx - 1]
+        except Exception as e:
+          print(e)
+      flags       = cat.getUInt16()
+      # WARNING -- not all flags are currently supported (module/slotgroup related stuff)
+      # Note: Sm is already dealt with above
+      for k in { "Mandatory": 0x0001, "Sm": 0x10002, "Fixed": 0x10, "Virtual": 0x20 }.items():
+        if ( (flags & k[1]) & 0xffff ):
+          if ( k[1] & 0x10000 ):
+            if ( pdoNod.get( k[0] ) is None ):
+              pdoNod.set( k[0], "" )
+          else:
+            pdoNod.set( k[0], "1" )
+        flags &= ~ k[1]
+      flags &= 0xffff
+      if ( flags ):
+        print("Unsupported flags (0x{:04x}) found in {}; ignored".format(flags, pdoNodNm), file=sys.stderr)
+      for i in range(nents):
+        entNod = ET.SubElement( pdoNod, "Entry" )
+        ET.SubElement(entNod, "Index").text = "#x{:04x}".format( cat.getUInt16() )
+        ET.SubElement(entNod, "SubIndex").text = "#x{:02x}".format( cat.getUInt8() )
+        sidx = cat.getUInt8()
+        val  = cat.getUInt8()
+        typ  = None
+        for k in self.BASE_TYPE_MAP.items():
+          if k[1] == val:
+            typ = k[0]
+            break
+        if typ is None:
+          raise ValueError("DataType is not one of the recognized Base Data Types")
+        ET.SubElement(entNod, "BitLen").text = str( cat.getUInt8() )
+        cat.skip(2) # reserved flags; ignored
+        if 0 != sidx:
+          ET.SubElement(entNod, "Name").text = strs[sidx - 1]
+        ET.SubElement(entNod, "DataType").text = typ
+      sz -= (cat.pos - oldpos)
+  
   # append a category to the prom. This is are recursive
   # procedure:
   #  - append the category ID (catId)
@@ -396,16 +462,16 @@ class ESIPromGenerator(object):
     prom[pos+1] = (catLen >> 8) & 0xff
 
   # append 'general' category contents
-  def catGeneral(self, prom, strDict, devNod):
+  def catGeneral(self, prom, devNod):
     # remember position of the group type; need a duplicate later
     grpIdxPos = len(prom)
-    self.appendStrIdx( prom, strDict, "GroupType", el=devNod)
+    self.appendStrIdx( prom, "GroupType", el=devNod)
     # spec is unclear; it mentions ImageData16x14 but that would not be
     # a string and the prom entry is a 8-bit string index.
     # Skip for now as it is marked obsolete in the file specification...
     prom.append( 0x00 )
-    self.appendStrIdx( prom, strDict, "Type", el=devNod)
-    self.appendStrIdx( prom, strDict, "Name", el=devNod)
+    self.appendStrIdx( prom, "Type", el=devNod)
+    self.appendStrIdx( prom, "Name", el=devNod)
     # reserved
     prom.append( 0x00 )
     mbxNod = devNod.find( "Mailbox" )
@@ -472,7 +538,7 @@ class ESIPromGenerator(object):
         v = 0x00
       prom.append( (v & 0xff) )
 
-  def catPdo(self, prom, pdos, strDict):
+  def catPdo(self, prom, pdos):
     for pdo in pdos:
       self.appendInt( prom, "Index", dflt=None, byteSz=2, el=pdo )
       ents = pdo.findall("Entry")
@@ -482,7 +548,7 @@ class ESIPromGenerator(object):
       self.appendInt( prom, ".@Sm", dflt = (2 if pdo.tag == "RxPdo" else 3), byteSz=1, el=pdo )
       # DC Sync (?? - not explained)
       prom.append( 0x00 )
-      self.appendStrIdx( prom, strDict, "Name", el=pdo ) 
+      self.appendStrIdx( prom, "Name", el=pdo ) 
       flags = 0
       # WARNING -- not all flags are currently supported (module/slotgroup related stuff)
       for k in { ".@Mandatory": 0x0001, ".@Sm": 0x10002, ".@Fixed": 0x10, ".@Virtual": 0x20 }.items():
@@ -503,7 +569,7 @@ class ESIPromGenerator(object):
           # if index is nonzero SubIndex is mandatory!
           dfltSubIdx = None
         self.appendInt( prom, "SubIndex", dflt=dfltSubIdx, byteSz=1, el=ent )
-        self.appendStrIdx( prom, strDict, "Name", el=ent )
+        self.appendStrIdx( prom, "Name", el=ent )
         idx = self.BASE_TYPE_MAP.get( self.mustGet("DataType", el=ent) )
         if ( idx is None ):
           raise ValueError("DataType is not one of the recognized Base Data Types")
@@ -530,45 +596,34 @@ class ESIPromGenerator(object):
       num += 1
     self.pad(prom, -1)
 
+  def findAddStr(self, txt):
+    # only do work if the string is not already in the dict/table
+    if txt is None or len(txt) == 0:
+      return 0
+
+    idx = self.strDict.get( txt )
+    if idx is None:
+      idx = len( self.strDict )
+      if ( idx > 255 ):
+        raise ValueError("Category Strings: too many strings")
+      self.strDict[ txt ] = idx
+    return idx + 1
+
   # Build the string dictionary (mapping strings to their
   # index in the string category/table
-  def catStrings(self, prom, strDict, devNod):
+  def catStrings(self, prom, devNod):
     # remember the index where number of strings is stored
     nStrPos = len(prom)
+    if (len(self.strDict) > 255 ):
+      raise ValueError("Category Strings: too many strings")
     # number of strings; we use this directly as a counter
-    prom.append(0x00)
+    prom.append( len(self.strDict) )
 
-    # local helper to add a string to the prom and at the
-    # same time add it to the dict. Duplicates are avoided.
-    def addStr(s):
-      # nothing to do if there is no string or an empty string
-      if s is None or len(s) == 0:
-        return
-      # only do work if the string is not already in the dict/table
-      if ( strDict.get( s ) is None ):
-        if len(s) > 255:
-          raise ValueError("Category Strings: string loo long")
-        if ( prom[nStrPos] == 255 ):
-          raise ValueError("Category Strings: too many strings")
-        # one more string
-        prom[nStrPos] += 1
-        # add to dictionary: string => current number of strings (= index)
-        strDict[s]     = prom[nStrPos]
-        # add to prom
-        prom.append( len(s) )
-        prom.extend( bytearray( s.encode('ascii') ) )
-    # helper to find a number of keys and add their values
-    # to the string table/category
-    def findAddStr(pat):
-      for e in devNod.findall(pat):
-        addStr(e.text)
-    findAddStr("GroupType")
-    findAddStr("Type")
-    findAddStr("Name")
-    findAddStr(".//RxPdo/Name")
-    findAddStr(".//RxPdo/Entry/Name")
-    findAddStr(".//TxPdo/Name")
-    findAddStr(".//TxPdo/Entry/Name")
+    for k in self.strDict.keys():
+      if len(k) > 255:
+        raise ValueError("Category Strings: string loo long")
+      prom.append( len(k) )
+      prom.extend( bytearray( k.encode('ascii') ) )
     self.pad(prom, -1)
 
   def catOther(self, prom, nod):
@@ -644,15 +699,33 @@ class ESIPromGenerator(object):
 
     promUpper = prom[rdr.pos:]
 
+
     strs = self.getCatStrings( promUpper )
 
     self.getCatFmmu   ( devNod, promUpper         )
     self.getCatSm     ( devNod, promUpper         )
+    # RxPDO
+    self.getCatPdo    ( devNod, promUpper,   strs, True )
+    # TxPDO
+    self.getCatPdo    ( devNod, promUpper,   strs, False)
     self.addOrReplace ( devNod, mbx               )
     self.addOrReplace ( devNod, eep               )
     self.getCatGeneral( devNod, promUpper,   strs ) 
 
-    return self._root
+    # - Device- and Vendor-specific categories
+    cat = Cat( promUpper )
+    try:
+      while ( True ):
+        # vendor-specific categories are fixed-up by the EsiTool
+        if (cat.id >= 1 and cat.id < 9) or (cat.id >= 0x0800 and cat.id <= 0xfffe):
+          catNod = ET.SubElement( eep, "Category" )
+          ET.SubElement( catNod, "CatNo" ).text = str( cat.id )
+          ET.SubElement( catNod, "Data" ).text  = cat.getBytes( cat.size ).hex()
+        cat.next()
+    except KeyError:
+      pass # end reached
+
+    return self._root, strs
 
   def makeProm(self, devNod = None):
     prom    = bytearray()
@@ -730,18 +803,13 @@ class ESIPromGenerator(object):
 
     #Categories
 
-    strDict = dict()
-
     # - Device-specific categories
     for cat in devNod.findall(".//Eeprom/Category"):
       catNo = int( self.mustGet("CatNo", el=cat) )
       self.appendCat( prom, catNo, self.catOther, cat )
 
-    # - Gather strings
-    self.appendCat( prom, 10, self.catStrings, strDict, devNod )
-
     # - General Category
-    self.appendCat( prom, 30, self.catGeneral, strDict, devNod )
+    self.appendCat( prom, 30, self.catGeneral, devNod )
     
     fmmus = devNod.findall("Fmmu")
     if ( len(fmmus) > 0 ):
@@ -752,10 +820,13 @@ class ESIPromGenerator(object):
       self.appendCat( prom, 41, self.catSm, sms )
 
     txpdos = devNod.findall("TxPdo")
-    self.appendCat( prom, 50, self.catPdo, txpdos, strDict )
+    self.appendCat( prom, 50, self.catPdo, txpdos )
 
     rxpdos = devNod.findall("RxPdo")
-    self.appendCat( prom, 51, self.catPdo, rxpdos, strDict )
+    self.appendCat( prom, 51, self.catPdo, rxpdos )
+
+    # - Mop up strings
+    self.appendCat( prom, 10, self.catStrings, devNod )
 
     # End marker
     prom.append( 0xff )

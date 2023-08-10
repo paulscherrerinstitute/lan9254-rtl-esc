@@ -114,6 +114,27 @@ class FirmwareConstants(object):
   def VOE_ENABLED():
     return ENBL_VOE_C
 
+  @staticmethod
+  def CLK_FREQ_VND_CAT_ID():
+    return 0x3000
+
+  @staticmethod
+  def EVR_DC_TARGET_VND_CAT_ID():
+    return 0x3001
+
+  @staticmethod
+  def SEGNAMES_VND_CAT_ID():
+    return 0x3002
+
+  @staticmethod
+  def CLK_DRIVER_MAP(key):
+    if ( key == "VersaClock6" ):
+      # attribute -> id mapping
+      return 0x01
+    elif ( key == 0x01 ):
+      # id -> attribute mapping
+      return "VersaClock6"
+    raise KeyError("Unsupported Clock Driver")
 class HardwareConstants(object):
   @staticmethod
   def EEPROM_SIZE_BYTES():

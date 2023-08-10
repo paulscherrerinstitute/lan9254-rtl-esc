@@ -3,12 +3,14 @@ from   lxml      import etree as ET
 from   functools import wraps
 import sys
 import io
+import re
 import copy
 from   FirmwareConstants import FirmwareConstants
 from   AppConstants      import ESIDefaults, HardwareConstants
 from   ESIPromGenerator  import ESIPromGenerator
 from   ClockDriver       import ClockDriver
 import VersaClock6Driver # importing a driver registers it
+import struct
 
 # Define a decorator that checks if
 # the current state allows the object
@@ -316,6 +318,8 @@ class PdoEntry(object):
     self._isLocked    = False
     self._index       = 0
     self._indexedName = indexedName
+    if typeName is None:
+      typeName = ""
     self._typeName    = typeName
     # the following assignments define the order of sub-elements
     # in the associated XML when this is created from scratch.
@@ -325,11 +329,6 @@ class PdoEntry(object):
     self.bitSize      = bitSize
     self.name         = name
     self.isSigned     = isSigned
-    if typeName is None:
-      typeName = ""
-    self.typeName     = typeName
-    self.indexedName  = indexedName
-
 
   @property
   def typeName(self):
@@ -385,6 +384,8 @@ class PdoEntry(object):
   def name(self, val):
     self._name = val
     if ( self.indexedName and self.nelms > 1 ):
+       # remove old index
+       val = re.sub('\[[^]]*[]]','', val)
        val = [ "{}[{:d}]".format(val, i) for i in range(1, self.nelms + 1) ]
     self.syncElms( "Name", val )
 
@@ -608,6 +609,12 @@ def addOrReplace(nod, sub):
   else:
     nod.replace(found, sub)
 
+def findCat(nod, catId):
+  for n in nod.findall( "Category" ):
+    if ( int(catId) == int(n.find( "CatNo" ).text) ):
+      return n
+  raise KeyError("Category {:d} not found".format( catId ) )
+
 class Sm(object):
   def __init__(self, el, start, size, ctl, txt):
     object.__init__(self)
@@ -632,6 +639,14 @@ class Sm(object):
   def syncElms(self):
     self._el.set("DefaultSize",  "{:d}".format(self._size))
     self._el.set("Enable",       "{:d}".format(self._ena))
+
+  @classmethod
+  def fromElement(clazz, el, *args, **kwargs):
+    start = hd2int( el.get("StartAddress") )
+    size  = hd2int( el.get("DefaultSize") )
+    ctl   = hd2int( el.get("ControlByte") )
+    txt   = el.text
+    return clazz( el, start, size, ctl, txt)
 
 class Configurable(object):
   def __init__(self):
@@ -1227,13 +1242,13 @@ class VendorData(FixedPdoPart):
         rem -= needed
       clkCfg = ClockConfig( clkFrqMHz, clkDrvNam )
     except NoClockDriver as e:
-      print( str( e ) )
+      print("No Clock Driver ({}) - using defaults".format( str( e ) ) )
       clkCfg   = ClockConfig()
     except Exception as e:
       segments = []
       evrCfg   = None
       clkCfg   = ClockConfig()
-      print( str( e ) )
+      print("Exception when trying to construct from XML - using defaults".format( str( e ) ) )
     return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, evrDCCfg, *args, **kwargs )
     
 class Pdo(object):
@@ -1394,8 +1409,10 @@ class Pdo(object):
       index = hd2int( clazz.gTxt(el, "Index") )
       name  = clazz.gTxt(el, "Name")
       pdo   = clazz( el, index, name, sm, *args, **kwargs )
-      for s in segments:
-        pdo.addPdoSegment(s)
+
+      if ( not segments is None ):
+        for s in segments:
+          pdo.addPdoSegment(s)
 
       entLst     = []
       # sub-indices must be consecutive and adjacent
@@ -1440,8 +1457,9 @@ class Pdo(object):
         isSigned = not lstTyp is None and len(lstTyp) > 0 and lstTyp[0].upper() != "U"
         entLst.append( PdoEntry( idxLst, lstNam, lstIdx, lstSub, lstLen, isSigned, lstTyp ) )
 
-      for pdoe in entLst:
-        pdo.addEntry( pdoe )
+      if ( not segments is None ):
+        for pdoe in entLst:
+          pdo.addEntry( pdoe )
 
     except Exception as e:
      print("Errors were found when processing " + el.tag)
@@ -1536,52 +1554,62 @@ class ESI(XMLBase):
     if device is None:
       raise RuntimeError("'Device' node not found in XML -- fix XML or create from scratch")
 
-    # While this is configurable nothing will actually happen unless firmware is using
-    # the rxpdo. We assume some LEDs are hooked up.
-    rxPdoEntries = PdoEntry(None, "LED", ESIDefaults.RXPDO_LED_INDEX(), 3, 8, False)
-    rxPdo = ET.Element( "RxPdo" )
-    rxPdo.set( "Fixed",     "1" )
-    rxPdo.set( "Mandatory", "1" )
-    rxPdo.set( "Sm",        str(FirmwareConstants.RXPDO_SM()) )
-    ET.SubElement( rxPdo, "Index" ).text = ESIDefaults.RXPDO_INDEX_TXT()
-    ET.SubElement( rxPdo, "Name"  ).text = "ECAT EVR RxData"
-    rxPdo.extend( rxPdoEntries.elements )
-    rxPdoLen = rxPdoEntries.byteSz * rxPdoEntries.nelms
-    if ( rxPdoLen > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.RXPDO_SM() ) ):
-      raise ValueError("RxPDO size exceeds firmware limit")
-
     # SM configuration must match firmware
     sms = device.findall("Sm")
     if len(sms) < 4 and len(sms) > 0:
       raise RuntimeError("Unexpected number of 'Sm' nodes found (0 or >= 4 expected) -- fix XML or create from scratch")
-    txt = [ "MBoxOut", "MBoxIn", "Outputs", "Inputs" ]
-    if ( 0 == len(sms) ):
-      sms = [ None for i in range(4) ]
+    smType = [ "MBoxOut", "MBoxIn", "Outputs", "Inputs" ]
     self._sms = []
-    for i in range(4):
-      self._sms.append( Sm( sms[i],
-                        FirmwareConstants.ESC_SM_SMA(i),
-                        FirmwareConstants.ESC_SM_LEN(i), 
-                        FirmwareConstants.ESC_SM_SMC(i),
-                        txt[i] ) )
-    self._sms[ FirmwareConstants.RXPDO_SM() ].setSize( rxPdoLen )
 
-    addOrReplace( device, rxPdo )
+    found = device.find( "RxPdo" )
+    if ( found is None ):
+      # While this is configurable nothing will actually happen unless firmware is using
+      # the rxpdo. We assume some LEDs are hooked up.
+      rxPdoEntries = PdoEntry(None, "LED", ESIDefaults.RXPDO_LED_INDEX(), 3, 8, False)
+      rxPdo = ET.Element( "RxPdo" )
+      rxPdo.set( "Fixed",     "1" )
+      rxPdo.set( "Mandatory", "1" )
+      rxPdo.set( "Sm",        str(FirmwareConstants.RXPDO_SM()) )
+      ET.SubElement( rxPdo, "Index" ).text = ESIDefaults.RXPDO_INDEX_TXT()
+      ET.SubElement( rxPdo, "Name"  ).text = "ECAT EVR RxData"
+      rxPdo.extend( rxPdoEntries.elements )
+      rxPdoLen = rxPdoEntries.byteSz * rxPdoEntries.nelms
+      if ( rxPdoLen > FirmwareConstants.ESC_SM_MAX_LEN( FirmwareConstants.RXPDO_SM() ) ):
+        raise ValueError("RxPDO size exceeds firmware limit")
+
+      if ( 0 == len(sms) ):
+        sms = [ None for i in range(4) ]
+
+      for i in range(4):
+        self._sms.append( Sm( sms[i],
+                          FirmwareConstants.ESC_SM_SMA(i),
+                          FirmwareConstants.ESC_SM_LEN(i),
+                          FirmwareConstants.ESC_SM_SMC(i),
+                          smType[i] ) )
+      self._sms[ FirmwareConstants.RXPDO_SM() ].setSize( rxPdoLen )
+
+      addOrReplace( device, rxPdo )
+    else:
+      rxPdo = Pdo.fromElement( found, None, int( found.get("Sm") ) )
+      for sm in sms:
+        self._sms.append( Sm.fromElement( sm ) )
+
     # we'll deal with the TxPDO later (once we have our vendor data)
 
-    mailbox = ET.SubElement( device, "Mailbox" )
-    mailbox.set("DataLinkLayer", "1")
-   
-    if ( FirmwareConstants.EOE_ENABLED() ):
-       mailboxEoE = ET.SubElement(mailbox, "EoE")
-       mailboxEoE.set("IP", "1")
-       mailboxEoE.set("MAC", "1")
-    if ( FirmwareConstants.FOE_ENABLED() ):
-       mailboxFoE = ET.SubElement(mailbox, "FoE")
-    if ( FirmwareConstants.VOE_ENABLED() ):
-       mailboxFoE = ET.SubElement(mailbox, "VoE")
+    found = device.find( "Mailbox" )
 
-    addOrReplace( device, mailbox )
+    if ( found is None ):
+      mailbox = ET.SubElement( device, "Mailbox" )
+      mailbox.set("DataLinkLayer", "1")
+     
+      if ( FirmwareConstants.EOE_ENABLED() ):
+         mailboxEoE = ET.SubElement(mailbox, "EoE")
+         mailboxEoE.set("IP", "1")
+         mailboxEoE.set("MAC", "1")
+      if ( FirmwareConstants.FOE_ENABLED() ):
+         mailboxFoE = ET.SubElement(mailbox, "FoE")
+      if ( FirmwareConstants.VOE_ENABLED() ):
+         mailboxFoE = ET.SubElement(mailbox, "VoE")
 
     # parse or construct eeprom + vendor data
     found = device.find("Eeprom")
@@ -1598,7 +1626,7 @@ class ESI(XMLBase):
       txPdo = Pdo( None, hd2int( ESIDefaults.TXPDO_INDEX_TXT() ), "ECAT EVR TxData", FirmwareConstants.TXPDO_SM() )
       device.insert( device.index( rxPdo ) + 1, txPdo.element )
     else:
-      txPdo = Pdo.fromElement( found, self._vendorData.segments )
+      txPdo = Pdo.fromElement( found, self._vendorData.segments, int( found.get("Sm") ) )
     self._txPdo = txPdo
     self.syncElms()
 
@@ -1619,9 +1647,82 @@ class ESI(XMLBase):
 
   def syncElms(self):
     self._sms[ FirmwareConstants.TXPDO_SM() ].setSize( self.txPdo.pdoSize() )
+
+  @staticmethod
+  def addVndCat(eepNod, catId, dat):
+    vndNod = eepNod.find("VendorSpecific")
+    catNod = ET.Element("Category")
+    ET.SubElement(catNod, "CatNo").text = str( catId )
+    ET.SubElement(catNod, "Data").text  = dat.hex()
+    try:
+      eepNod.remove( findCat( eepNod, catId ) )
+    except KeyError:
+      pass
+    eepNod.insert( eepNod.index( vndNod ), catNod )
+    
    
   def makeProm(self):
-    return ESIPromGenerator( self._root ).makeProm()
+    # fixup vendor-specific data
+    pgen   = ESIPromGenerator( self._root )
+    eepNod = mustFind( self._root, ".//Device/Eeprom" )
+    vndNod = eepNod.find("VendorSpecific")
+    if not vndNod is None:
+      nod    = vndNod.find("ClockFreqMHz")
+      if not nod is None:
+        drvId   = FirmwareConstants.CLK_DRIVER_MAP( nod.get("DriverName") )
+        freqMHz = float( nod.text )
+        catId   = FirmwareConstants.CLK_FREQ_VND_CAT_ID()
+        dat     = bytearray()
+        dat.append( drvId )
+        dat.extend( struct.pack( '<d', freqMHz ) )
+        self.addVndCat( eepNod, catId, dat )
+      nod = vndNod.find("EvrDCTargetNS")
+      if not nod is None:
+        catId   = FirmwareConstants.EVR_DC_TARGET_VND_CAT_ID()
+        dat     = struct.pack( '<d', float( nod.text ) )
+        self.addVndCat( eepNod, catId, dat )
+        dat     = bytearray()
+        for nod in vndNod.findall("Segment"):
+          dat.append( pgen.findAddStr( nod.text ) )
+          dat.append( int( nod.get( "Swap8" ) )   )
+        self.addVndCat( eepNod, FirmwareConstants.SEGNAMES_VND_CAT_ID(), dat )
+    return pgen.makeProm()
+
+  @staticmethod
+  def fromProm(fnam):
+    with io.open(fnam, 'rb') as f:
+      prom = f.read()
+    rootNod, strs = ESIPromGenerator( ESI.mkBasicTree( False ) ).parseProm( prom )
+    eepNod  = mustFind( rootNod, ".//Device/Eeprom" )
+    vndNod  = findOrAdd( eepNod, "VendorSpecific" )
+    catNod  = findCat(eepNod, FirmwareConstants.CLK_FREQ_VND_CAT_ID())
+    if not catNod is None:
+      dat      = bytearray.fromhex( catNod.find("Data").text )
+      drvNam   = FirmwareConstants.CLK_DRIVER_MAP( dat[0] )
+      freqMHz  = struct.unpack( '<d', dat[1:9] )[0]
+      eepNod.remove( catNod )
+      nod      = ET.Element( "ClockFreqMHz", DriverName=drvNam )
+      nod.text = str( freqMHz )
+      addOrReplace( vndNod, nod )
+    catNod  = findCat(eepNod, FirmwareConstants.EVR_DC_TARGET_VND_CAT_ID())
+    if not catNod is None:
+      dat      = bytearray.fromhex( catNod.find("Data").text )
+      dcTgtNS  = struct.unpack( '<d', dat[0:8] )[0]
+      nod      = ET.Element( "EvrDCTargetNS" )
+      nod.text = str( dcTgtNS )
+      addOrReplace( vndNod, nod )
+    catNod  = findCat(eepNod, FirmwareConstants.SEGNAMES_VND_CAT_ID())
+    if not catNod is None:
+      dat      = bytearray.fromhex( catNod.find("Data").text )
+      eepNod.remove( catNod )
+      for i in range(0,len(dat),2):
+         segNod      = ET.SubElement(vndNod, "Segment")
+         sidx        = dat[i]
+         if sidx > 0:
+           segNod.text = strs[ sidx - 1 ]
+         segNod.set( "Swap8", str(dat[i+1]) )
+        
+    return rootNod
 
   def writeProm(self, fnam, overwrite=False, prom = None):
     mode = "wb" if overwrite else "xb"

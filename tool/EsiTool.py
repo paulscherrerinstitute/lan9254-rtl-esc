@@ -6,6 +6,7 @@ if __name__ == "__main__":
   import getopt
   import io
   import re
+  from   ToolCore     import ESI
 
   ( opts, args ) = getopt.getopt( sys.argv[1:], "hsPVDf", ["help", "prom", "vhdl", "default"] )
 
@@ -14,7 +15,7 @@ if __name__ == "__main__":
   mkProm    = False
   mkVhd     = False
   mkDfl     = False
-  rdSii     = False
+  isSii     = False
 
   for opt in opts:
     if opt[0] in ('-h', '--help'):
@@ -41,42 +42,34 @@ if __name__ == "__main__":
       isGui = False
       mkDfl = True
     elif opt[0] in ('-s' ):
+      isSii = True
       isGui = False
-      mkDfl = False
-      rdSii = True
+
+  if ( isSii ):
+    mkDfl  = False
+    mkProm = False
 
   et     = None
   fnam   = None
   schema = None
 
-  if ( rdSii ):
-    from ESIPromGenerator import ESIPromGenerator
-    from ToolCore         import XMLBase
-    if ( len(args) > 0 ):
-      fnam = args[0]
-    with io.open(fnam, 'rb') as f:
-      prom = f.read()
-    et = XMLBase( ESIPromGenerator( XMLBase.mkBasicTree( False ) ).parseProm( prom ) )
-    et.writeXML('-')
-    sys.exit(0)
-
   if ( len(args) > 0 ):
+    fnam     = args[0]
     try:
-      fnam     = args[0]
-      try:
-        schema = ET.XMLSchema( ET.parse( io.open( sys.path[0] + '/EtherCATInfo.xsd','r' ) ) )
-      except Exception as e:
-        print("Warning: unable to process 'EtherCATInfo.xsd' or 'EtherCATBase.xsd' schema -- skipping XML schema verification")
-
-      parser   = ET.XMLParser( remove_blank_text = True, schema = schema)
-      et       = ET.parse( fnam, parser ).getroot()
+      schema = ET.XMLSchema( ET.parse( io.open( sys.path[0] + '/EtherCATInfo.xsd','r' ) ) )
     except Exception as e:
-      print( "Error: " + str(e) )
-      sys.exit(1)
+      print(e)
+      print("Warning: unable to process 'EtherCATInfo.xsd' or 'EtherCATBase.xsd' schema -- skipping XML schema verification")
+    if ( isSii ):
+      et       = ESI.fromProm( fnam )
+    else:
+      parser   = ET.XMLParser( remove_blank_text = True, schema=None   )
+      et       = ET.parse( fnam, parser ).getroot()
+    if not schema is None:
+      schema.assertValid( et )
 
   if ( isGui ):
     from   PyQt5        import QtCore,QtGui,QtWidgets
-    from   ToolCore     import ESI
     from   GuiAdapter   import ESIAdapter
 
     style = (
@@ -99,7 +92,6 @@ if __name__ == "__main__":
     window.show()
     app.exec()
   else:
-    from ToolCore         import ESI
     from ESIPromGenerator import ESIPromGenerator
     if ( et is None ):
        if ( mkDfl ):
@@ -152,3 +144,5 @@ if __name__ == "__main__":
         print("      {:d}/2 => x\"{:04x}\"".format(i, 256*prom[i+1]+prom[i]), file=f)
         print(");", file=f)
         print("end package EEPROMContentPkg;", file=f)
+    if isSii:
+      esi.writeXML('-')
