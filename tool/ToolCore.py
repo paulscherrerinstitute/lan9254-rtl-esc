@@ -1181,7 +1181,7 @@ class VendorData(FixedPdoPart):
       promIdx += 1
 
       if ( 1 == prom[0] ):
-        print("WARNING: Old prom layout version; (no DC target) -- will upgrade when saving!")
+        print("WARNING: Old prom layout version; (no DC target) -- will upgrade when saving!", file=sys.stderr)
       else:
          dcTgt, l = EvrDCConfig.fromPromDataClicks(prom[promIdx:])
          promIdx += l
@@ -1220,6 +1220,10 @@ class VendorData(FixedPdoPart):
         raise Exception("WARNING: configured low-level segments fewer than configured length; purging all segments")
 
       rem = nLLSegs
+      if ( (nLLSegs > 0) and (0 == len(segments)) ):
+        print("WARNING: found segments in PROM but have not VendorSpecific XML section; you are probably decoding", file=sys.stderr)
+        print("         an old PROM. I'll create fake segments but any 8-byte swapping info is lost, beware!"     , file=sys.stderr)
+        segments = [ PdoSegment( "DUMMY{:d}".format(i), 0, 0, 0) for i in range(nLLSegs) ]
       for s in segments:
         needed = s.nDWords if 8 == s.swap else 1
         if needed > rem:
@@ -1242,13 +1246,13 @@ class VendorData(FixedPdoPart):
         rem -= needed
       clkCfg = ClockConfig( clkFrqMHz, clkDrvNam )
     except NoClockDriver as e:
-      print("No Clock Driver ({}) - using defaults".format( str( e ) ) )
+      print("No Clock Driver ({}) - using defaults".format( str( e ) ), file=sys.stderr )
       clkCfg   = ClockConfig()
     except Exception as e:
       segments = []
       evrCfg   = None
       clkCfg   = ClockConfig()
-      print("Exception when trying to construct from XML - using defaults".format( str( e ) ) )
+      print("Exception when trying to construct from XML - using defaults".format( str( e ) ), file=sys.stderr )
     return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, evrDCCfg, *args, **kwargs )
     
 class Pdo(object):
@@ -1535,9 +1539,11 @@ class XMLBase(object):
       for lin in txt: 
         print('{}{}'.format(pre, lin), file=fnam)
     else:
+      closeFd = True
       if fnam == '-':
-        fnam = sys.stdout.fileno()
-      with io.open(fnam, 'w') as f:
+        fnam    = sys.stdout.fileno()
+        closeFd = False
+      with io.open(fnam, 'w', closefd = closeFd) as f:
         self.writeXML( f, pre )
 
   def toString(self):
@@ -1695,7 +1701,11 @@ class ESI(XMLBase):
     rootNod, strs = ESIPromGenerator( ESI.mkBasicTree( False ) ).parseProm( prom )
     eepNod  = mustFind( rootNod, ".//Device/Eeprom" )
     vndNod  = findOrAdd( eepNod, "VendorSpecific" )
-    catNod  = findCat(eepNod, FirmwareConstants.CLK_FREQ_VND_CAT_ID())
+    try:
+      catNod  = findCat(eepNod, FirmwareConstants.CLK_FREQ_VND_CAT_ID())
+    except KeyError:
+      catNod  = None
+      print("Vendor Category (ClockFreqMHz support) not found -- ignoring", file=sys.stderr)
     if not catNod is None:
       dat      = bytearray.fromhex( catNod.find("Data").text )
       drvNam   = FirmwareConstants.CLK_DRIVER_MAP( dat[0] )
@@ -1704,14 +1714,22 @@ class ESI(XMLBase):
       nod      = ET.Element( "ClockFreqMHz", DriverName=drvNam )
       nod.text = str( freqMHz )
       addOrReplace( vndNod, nod )
-    catNod  = findCat(eepNod, FirmwareConstants.EVR_DC_TARGET_VND_CAT_ID())
+    try:
+      catNod  = findCat(eepNod, FirmwareConstants.EVR_DC_TARGET_VND_CAT_ID())
+    except KeyError:
+      catNod  = None
+      print("Vendor Category (EvrDCTargetsNS support) not found -- ignoring", file=sys.stderr)
     if not catNod is None:
       dat      = bytearray.fromhex( catNod.find("Data").text )
       dcTgtNS  = struct.unpack( '<d', dat[0:8] )[0]
       nod      = ET.Element( "EvrDCTargetNS" )
       nod.text = str( dcTgtNS )
       addOrReplace( vndNod, nod )
-    catNod  = findCat(eepNod, FirmwareConstants.SEGNAMES_VND_CAT_ID())
+    try:
+      catNod  = findCat(eepNod, FirmwareConstants.SEGNAMES_VND_CAT_ID())
+    except KeyError:
+      catNod  = None
+      print("Vendor Category (Segment name support) not found -- ignoring", file=sys.stderr)
     if not catNod is None:
       dat      = bytearray.fromhex( catNod.find("Data").text )
       eepNod.remove( catNod )
@@ -1721,6 +1739,8 @@ class ESI(XMLBase):
          if sidx > 0:
            segNod.text = strs[ sidx - 1 ]
          segNod.set( "Swap8", str(dat[i+1]) )
+    if 0 == len(vndNod):
+      eepNod.remove( vndNod )
         
     return rootNod
 
