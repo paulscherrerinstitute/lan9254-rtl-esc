@@ -1,13 +1,12 @@
 test/config.local.mk
 tool/eeprom.bin
 *.swp
-sw/*.o
 test/*.o
 test/work-*.cf
 test/*tb
 test/lan9254escrun
-sw/ecurcli
-sw/spiFlashRead
+sw/*.o
+sw/libecur.a
 tool/__pycache__
 tool/EtherCATBase.xsd
 tool/EtherCATInfo.xsd
