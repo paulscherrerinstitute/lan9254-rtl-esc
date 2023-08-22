@@ -1283,7 +1283,7 @@ class VendorData(FixedPdoPart):
       segments = []
       evrCfg   = None
       clkCfg   = ClockConfig()
-      print("Exception when trying to construct from XML - using defaults".format( str( e ) ), file=sys.stderr )
+      print("Exception when trying to construct from XML ({}) - using defaults".format( str( e ) ), file=sys.stderr )
     return clazz( el, segments, flags, netCfg, evrCfg, xtraEvt, clkCfg, evrDCCfg, *args, **kwargs )
     
 class Pdo(object):
