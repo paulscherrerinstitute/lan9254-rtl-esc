@@ -19,11 +19,13 @@ if __name__ == "__main__":
 
   for opt in opts:
     if opt[0] in ('-h', '--help'):
-      print("Usage: {} [-h] [-P] [esi-xml-file]".format( sys.argv[0] ))
+      print("Usage: {} [-hsPVDf] [esi-xml-file]".format( sys.argv[0] ))
       print("  Tool to generate and/or edit XML ESI file for EtherCAT EVR")
       print("  Provide a file name to edit existing file; w/o file name a new")
       print("  XML can be generated from scratch.")
       print("   -h   : print this message")
+      print("   -s   : the file given is a an SII file; try to disassemble and")
+      print("          convert back to XML which is printed to stdout.")
       print("   -P   : non-GUI mode; just generate PROM (binary) from from XML")
       print("   -V   : non-GUI mode; just generate VHDL package from from XML")
       print("   -D   : if no xml file is given - create a new one with default settings.")
@@ -101,7 +103,7 @@ if __name__ == "__main__":
            exit(0)
          et = ESI().element
        else:
-         raise RuntimeError("Need xml file argument or '-D' option")
+         raise RuntimeError("Need {} file argument or '-D' option".format( "SII" if isSii else "xml" ))
     else:
        esi = ESI(et)
     prom = ESIPromGenerator( et ).makeProm()

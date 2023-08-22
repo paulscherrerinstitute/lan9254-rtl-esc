@@ -675,7 +675,8 @@ class ClockConfig(Configurable):
       self._drv = ClockDriver.findDriver( driverName )
     except KeyError:
       raise NoClockDriver("No driver for requested clock ({}) found".format( driverName ))
-    self._freqMHz  = self._drv.acceptable( freqMHz )
+    self.setFreqMHz( freqMHz )
+    self._modified = False
 
   @property
   def freqMHz(self):
@@ -683,28 +684,58 @@ class ClockConfig(Configurable):
 
   def setFreqMHz(self, f):
     f = float( f )
-    self._freqMHz  = self._drv.acceptable( f )
+    self._freqMHz  = self.acceptable( f )
     self._modified = True
 
   # check if the requested frequency can be synthesized
   # returns actual frequency or raises a RuntimeError if
   # no close frequency can be produced
   def acceptable(self, f):
-    return self._drv.acceptable( f )
+    if ( f < self.freqMHzLow ):
+      raise RuntimeError("Event Frequency too low")
+    if ( f > self.freqMHzHigh ):
+      raise RuntimeError("Event Frequency too high")
+    rdiv = self.getRateDiv( f )
+    return self._drv.acceptable( f*rdiv )/rdiv
+
+  # increase GTP rate divisor by a factor of two while using
+  # double the event-frequency as a reference (necessary to
+  # operate the GTP/PLL within specified range)
+  def getRateDiv(self, f):
+    if ( f < 80.0 ):
+      return 2
+    return 1
 
   def mkInitProg(self):
-    return self._drv.mkInitProg( self._freqMHz )
+    rateDiv = self.getRateDiv( self.freqMHz )
+    p = self._drv.mkInitProg( self.freqMHz*rateDiv )
+    if ( 2 == rateDiv ):
+      # switch the rate divisor
+      addr = 0x180010
+      val  = (1<<6)
+      # reserve bytearray for 2 command bytes and two words
+      p1   = bytearray(2 + 2*4)
+      p1[0] = 0xfe     # bus access (not i2c)
+      p1[1] = 2*4 - 1  # write (bit 7 == 0); nBytes - 1
+      sreg  = (val << 32) | addr
+      for i in range(2,len(p1)):
+        p1[i] = (sreg & 0xff)
+        sreg >>= 8
+      p.extend( p1 )
+    return p
 
   def driverName(self):
     return self._drv.name
 
   @property
   def freqMHzLow(self):
-    return self._drv.freqMHzLow
+    # GTP PLL min freq 1.6GHz; at output div 4 (half rate) -> 40MHz
+    return 40.0
 
   @property
   def freqMHzHigh(self):
-    return self._drv.freqMHzHigh
+    # design built for max. freq; this passes timing
+    return 143.0
 
 class EvrDCConfig(Configurable):
   def __init__(self, dcTarget = 0, freqMHz = 0):
