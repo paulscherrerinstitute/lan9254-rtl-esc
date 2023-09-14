@@ -203,16 +203,16 @@ package Lan9254ESCPkg is
    constant ESC_SM0_SMA_C                               : ESCVal16Type := x"1000";
    constant ESC_SM0_SMC_C                               : ESCVal08Type :=   x"26";
    constant ESC_SM0_LEN_C                               : ESCVal16Type := x"0050";
-   constant ESC_SM0_MXL_C                               : ESCVal16Type := x"0100";
+   constant ESC_SM0_MXL_C                               : ESCVal16Type := x"0200";
    constant ESC_SM0_ACT_C                               : std_logic    := '1';
 
-   constant ESC_SM1_SMA_C                               : ESCVal16Type := x"1100";
+   constant ESC_SM1_SMA_C                               : ESCVal16Type := x"1200";
    constant ESC_SM1_SMC_C                               : ESCVal08Type :=   x"22";
    constant ESC_SM1_LEN_C                               : ESCVal16Type := x"0050";
    constant ESC_SM1_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
-   constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1200";
+   constant ESC_SM2_SMA_C                               : ESCVal16Type := x"1400";
    constant ESC_SM2_SMC_C                               : ESCVal08Type :=   x"24";
    constant ESC_SM2_LEN_C                               : ESCVal16Type := x"0003";
    -- if this is increased the ESC_SM3_SMA_C must be modified accordingly
@@ -222,7 +222,7 @@ package Lan9254ESCPkg is
    constant ESC_SM2_ACT_C                               : std_logic    := '1';
 
    -- PDO address **must** be word-aligned for now
-   constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1600";
+   constant ESC_SM3_SMA_C                               : ESCVal16Type := x"1800";
    constant ESC_SM3_SMC_C                               : ESCVal08Type :=   x"20";
    constant ESC_SM3_LEN_C                               : ESCVal16Type := x"0004";
    constant ESC_SM3_MXL_C                               : ESCVal16Type := x"0400";
