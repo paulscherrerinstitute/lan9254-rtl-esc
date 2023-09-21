@@ -106,7 +106,7 @@ if __name__ == "__main__":
          raise RuntimeError("Need {} file argument or '-D' option".format( "SII" if isSii else "xml" ))
     else:
        esi = ESI(et)
-    prom = ESIPromGenerator( et ).makeProm()
+    prom = esi.makeProm()
     mode = "wb" if overwrite else "xb"
     m    = None
     if ( not fnam is None ):
