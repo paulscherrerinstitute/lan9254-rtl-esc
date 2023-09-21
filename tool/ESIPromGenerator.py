@@ -712,6 +712,15 @@ class ESIPromGenerator(object):
     self.addOrReplace ( devNod, eep               )
     self.getCatGeneral( devNod, promUpper,   strs ) 
 
+    typ = self.findOpt( "Type", dflt = None, el = devNod )
+    if ( not typ is None ):
+      typNod = self.mustFind("Descriptions/Groups/Group/Type")
+      if ( typNod.text is None ):
+        typNod.text = typ
+      namNod = self.mustFind("Descriptions/Groups/Group/Name")
+      if ( namNod.text is None ):
+        namNod.text = typ
+
     # - Device- and Vendor-specific categories
     cat = Cat( promUpper )
     try:
