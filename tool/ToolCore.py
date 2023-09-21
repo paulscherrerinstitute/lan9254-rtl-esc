@@ -1697,6 +1697,18 @@ class ESI(XMLBase):
       pass
     eepNod.insert( eepNod.index( vndNod ), catNod )
     
+  def _getAndMaybeBumpRev(self, bump=False):
+    nod = mustFind( self._root, ".//Device/Type" )
+    rev = hd2int( nod.get("RevisionNo") )
+    if ( bump ):
+      nod.set("RevisionNo", int2hd( rev + 1 ))
+    return rev
+
+  def getRevision(self):
+    return self._getAndMaybeBumpRev()
+
+  def bumpRevision(self):
+    return self._getAndMaybeBumpRev( True )
    
   def makeProm(self):
     # fixup vendor-specific data
