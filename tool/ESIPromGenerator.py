@@ -811,31 +811,35 @@ class ESIPromGenerator(object):
     prom.append( (val >> 8) & 0xff )
 
     #Categories
+    cats = bytearray()
 
     # - Device-specific categories
     for cat in devNod.findall(".//Eeprom/Category"):
       catNo = int( self.mustGet("CatNo", el=cat) )
-      self.appendCat( prom, catNo, self.catOther, cat )
+      self.appendCat( cats, catNo, self.catOther, cat )
 
     # - General Category
-    self.appendCat( prom, 30, self.catGeneral, devNod )
+    self.appendCat( cats, 30, self.catGeneral, devNod )
     
     fmmus = devNod.findall("Fmmu")
     if ( len(fmmus) > 0 ):
-      self.appendCat( prom, 40, self.catFmmu, fmmus )
+      self.appendCat( cats, 40, self.catFmmu, fmmus )
 
     sms   = devNod.findall("Sm")
     if ( len(sms) > 0 ):
-      self.appendCat( prom, 41, self.catSm, sms )
+      self.appendCat( cats, 41, self.catSm, sms )
 
     txpdos = devNod.findall("TxPdo")
-    self.appendCat( prom, 50, self.catPdo, txpdos )
+    self.appendCat( cats, 50, self.catPdo, txpdos )
 
     rxpdos = devNod.findall("RxPdo")
-    self.appendCat( prom, 51, self.catPdo, rxpdos )
+    self.appendCat( cats, 51, self.catPdo, rxpdos )
 
-    # - Mop up strings
+    # Mop up strings; TwinCAT seems to need this first;
+    # otherwise it does not recognize the categories
     self.appendCat( prom, 10, self.catStrings, devNod )
+
+    prom.extend( cats )
 
     # End marker
     prom.append( 0xff )
