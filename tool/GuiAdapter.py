@@ -428,15 +428,16 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
           # cancel
           return
         try:
-          self.update()
           self.saveTo( fn[0] )
-          self.resetModified()
         except Exception as e:
           DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) + "\n" + traceback.format_exc() ).show()
       return saveAs
 
     def mkWriteSii(slf):
       def writeSii():
+        if ( self.modified() ):
+           DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "There are unsaved changes; must save the XML first" ).show()
+           return
         suff = ".xml"
         if ( not self._fnam is None ) and self._fnam.endswith(suff):
            prop = self._fnam[:-len(suff)] + ".sii"
