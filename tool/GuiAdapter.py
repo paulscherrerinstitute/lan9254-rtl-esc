@@ -414,9 +414,7 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     def mkSave(slf):
       def save():
         try:
-          self.update()
           self.saveTo( self._fnam )
-          self.resetModified()
         except Exception as e:
           DialogBase( hasDelete = False, parent = self._main, hasCancel = False ).setMsg( "Error: " + str(e) + "\n" + traceback.format_exc() ).show()
       return save
@@ -474,7 +472,11 @@ class ESIAdapter(VendorDataAdapter, PdoAdapter):
     return quit
 
   def saveTo(self, fnam):
+    self.update()
+    if ( self.modified() ):
+      self._esi.bumpRevision()
     self._esi.writeXML( fnam )
+    self.resetModified()
 
   def update(self):
     segments, elements   = PdoAdapter.getGuiVals(self)
