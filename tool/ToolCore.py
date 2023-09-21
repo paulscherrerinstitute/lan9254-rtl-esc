@@ -482,17 +482,17 @@ class FixedPdoPart(object):
     self._eventDWords = FirmwareConstants.TXPDO_NUM_EVENT_DWORDS()
     n                 = self._eventDWords
     if names is None:
-      names = [ "TimestampLo",
-                "TimestampHi",
+      names = [ "TimestampHi",
+                "TimestampLo",
                 "EventSet",
                 "TimestampLatch0Rising",
                 "TimestampLatch0Falling",
                 "TimestampLatch1Rising",
                 "TimestampLatch1Falling" ]
-      helps = [ "Timestamp (ns) received by EVR via\n" + \
-                "dedicated events 0x7c (or event clock) / 0x7d",
-                "Timestamp (s) received by EVR via\n" + \
+      helps = [ "Timestamp (s) received by EVR via\n" + \
                 "dedicated events 0x70/0x71/0x7d",
+                "Timestamp (ns) received by EVR via\n" + \
+                "dedicated events 0x7c (or event clock) / 0x7d",
                 ("A bit-set of all events observed since\n" + \
                 "the TxPDO was last sent. This adds {:d} DWORDS\n" + \
                 "to the TxPDO.").format(n),
