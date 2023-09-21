@@ -552,10 +552,13 @@ class FixedPdoPart(object):
   def maxNumSegments(self):
     return self._maxSegs
 
-  def checkEntry( self, e, p ):
+  def checkEntry( self, e, p, idx=None ):
     nm = p["name"]
     sz = p["size"]
-    if ( mustFind(e, "Name").text != nm ):
+    en = mustFind(e, "Name").text
+    if ( not idx is None ):
+      nm = "{}[{:d}]".format(nm, idx)
+    if ( en != nm ):
       raise ValueError("Entry named '{}' not found".format(nm))
     if ( int( mustFind(e, "BitLen").text ) != sz ):
       raise ValueError("Bit length of {}('{}') unexpected (expected {:d})".format( e.tag, nm, sz ))
@@ -576,7 +579,7 @@ class FixedPdoPart(object):
     nidx += 2
     if ( (self.flags & self.F_WITH_EVENTS) != 0 ):
       for i in range(self._eventDWords):
-        self.checkEntry( entries[eidx], self._fixed[nidx] )
+        self.checkEntry( entries[eidx], self._fixed[nidx], i + 1 )
         eidx += 1
       fset &= ~ self.F_WITH_EVENTS
     nidx += 1
