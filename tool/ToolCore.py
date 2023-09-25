@@ -533,7 +533,7 @@ class FixedPdoPart(object):
     if ( (self.flags & self.F_WITH_TSTAMP) ):
       rv += 2
     if ( (self.flags & self.F_WITH_EVENTS) ):
-      rv += self._eventDWords
+      rv += 1
     if ( (self.flags & self.F_WITH_LTCH0R) ):
       rv += 1
     if ( (self.flags & self.F_WITH_LTCH0F) ):
@@ -542,6 +542,24 @@ class FixedPdoPart(object):
       rv += 1
     if ( (self.flags & self.F_WITH_LTCH1F) ):
       rv += 1
+    return rv
+
+  # size of PDO 'Entry' elements (in dwords)
+  @property
+  def numDWords(self):
+    rv = 0
+    if ( (self.flags & self.F_WITH_TSTAMP) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_EVENTS) ):
+      rv += self._eventDWords
+    if ( (self.flags & self.F_WITH_LTCH0R) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH0F) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH1R) ):
+      rv += 2
+    if ( (self.flags & self.F_WITH_LTCH1F) ):
+      rv += 2
     return rv
 
   @property
@@ -1008,7 +1026,7 @@ class VendorData(FixedPdoPart):
     for s in segments:
       self._segs.append( s.clone() )
     # add dummy segment for fixed / non-editable entries
-    self._segs.insert(0, PdoSegment( "Fixed", 0, self.numEntries ))
+    self._segs.insert(0, PdoSegment( "Fixed", 0, self.numDWords ))
     for s in self._segs:
       s._lock()
     self.syncElms()
@@ -1403,7 +1421,7 @@ class Pdo(object):
         pos = self._el.index(allent[-1]) + 1
       self._el[pos:pos] = e.elements
     # pdoSize measures managed *and* unmanaged elements
-    self._pdoSize += e.byteSz
+    self._pdoSize += e.byteSz * e.nelms
 
   def gNod(el, tag, noneOk=False):
     rv = el.find(tag)
