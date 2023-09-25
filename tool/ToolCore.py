@@ -1255,8 +1255,8 @@ class VendorData(FixedPdoPart):
 
       rem = nLLSegs
       if ( (nLLSegs > 0) and (0 == len(segments)) ):
-        print("WARNING: found segments in PROM but have not VendorSpecific XML section; you are probably decoding", file=sys.stderr)
-        print("         an old PROM. I'll create fake segments but any 8-byte swapping info is lost, beware!"     , file=sys.stderr)
+        print("WARNING: found segments in PROM but have no VendorSpecific XML section; you are probably decoding", file=sys.stderr)
+        print("         an old PROM. I'll create fake segments but any 8-byte swapping info is lost, beware!"    , file=sys.stderr)
         segments = [ PdoSegment( "DUMMY{:d}".format(i), 0, 0, 0) for i in range(nLLSegs) ]
       for s in segments:
         needed = s.nDWords if 8 == s.swap else 1
