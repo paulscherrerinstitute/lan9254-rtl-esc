@@ -26,13 +26,14 @@ class PdoElementGroup(object):
       raise ValueError("PdoElement object expected")
 
 class LineEditChecker(QtWidgets.QCheckBox):
-  def __init__(self, *args, **kwargs ):
+  def __init__(self, pdoForm, *args, **kwargs ):
     super().__init__(*args, **kwargs)
     self._ledt = list()
     self._pal  = QtGui.QPalette()
     self._rop  = QtGui.QPalette()
     self._rop.setColor( QtGui.QPalette.Base, QtCore.Qt.gray )
     self._rop.setColor( QtGui.QPalette.Text, QtCore.Qt.darkGray )
+    self._pdoForm = pdoForm
     self.stateChanged.connect( self )
     initiallyOn = kwargs.get("checked")
     if initiallyOn is None:
@@ -57,6 +58,7 @@ class LineEditChecker(QtWidgets.QCheckBox):
     ledt.setPalette( pal )
 
   def __call__(self, onoff):
+    self._pdoForm._modified = True
     for l in self._ledt:
       self.setLineEditState( l )
 
@@ -137,7 +139,7 @@ class FixedPdoForm(object):
     wlay = QtWidgets.QHBoxLayout()
     wlay.setContentsMargins(0,0,0,0)
     if not isinstance(checker, LineEditChecker):
-      chk = LineEditChecker( checked=checked )
+      chk = LineEditChecker( self, checked=checked )
       checker = chk
     else:
       chk = QtWidgets.QCheckBox()
