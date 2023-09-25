@@ -588,6 +588,7 @@ class FixedPdoPart(object):
       msk <<= 1
       if ( ( fset & msk ) != 0 ):
         self.checkEntry( entries[eidx], self._fixed[nidx] )
+        eidx += 1
       fset &= ~msk
       nidx += 1
     if ( fset != 0 ):
