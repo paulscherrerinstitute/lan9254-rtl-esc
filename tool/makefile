@@ -1,3 +1,10 @@
+##############################################################################
+##      Copyright (c) 2022#2023 by Paul Scherrer Institute, Switzerland
+##      All rights reserved.
+##  Authors: Till Straumann
+##  License: GNU GPLv2 or later
+##############################################################################
+
 all: warn gatherfwparams FirmwareConstantsAuto.py
 
 Lan9254ESCPkg.o: Lan9254Pkg.o

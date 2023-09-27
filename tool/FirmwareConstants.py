@@ -1,3 +1,10 @@
+##############################################################################
+##      Copyright (c) 2022#2023 by Paul Scherrer Institute, Switzerland
+##      All rights reserved.
+##  Authors: Till Straumann
+##  License: GNU GPLv2 or later
+##############################################################################
+
 # These parameters must match configuration constants
 # and generics in VHDL
 # The EEPROM config. Data for the lan9254 must also

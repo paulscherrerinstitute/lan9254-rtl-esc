@@ -1,3 +1,10 @@
+------------------------------------------------------------------------------
+--      Copyright (c) 2022-2023 by Paul Scherrer Institute, Switzerland
+--      All rights reserved.
+--  Authors: Till Straumann
+--  License: PSI HDL Library License, Version 2.0 (see License.txt)
+------------------------------------------------------------------------------
+
 -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 -- FIXME: this is work-in-progress and not complete!
 -- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

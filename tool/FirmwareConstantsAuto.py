@@ -1,3 +1,10 @@
+##############################################################################
+##      Copyright (c) 2022#2023 by Paul Scherrer Institute, Switzerland
+##      All rights reserved.
+##  Authors: Till Straumann
+##  License: GNU GPLv2 or later
+##############################################################################
+
 ESC_SM0_SMA_C = 0x1000
 ESC_SM0_SMC_C = 0x26
 ESC_SM0_LEN_C = 0x0050

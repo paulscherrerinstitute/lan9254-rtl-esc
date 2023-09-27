@@ -1,3 +1,10 @@
+##############################################################################
+##      Copyright (c) 2022#2023 by Paul Scherrer Institute, Switzerland
+##      All rights reserved.
+##  Authors: Till Straumann
+##  License: GNU GPLv2 or later
+##############################################################################
+
 # Must match the actual hardware on the board
 class HardwareConstants(object):
   @staticmethod

@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+
+##############################################################################
+##      Copyright (c) 2022#2023 by Paul Scherrer Institute, Switzerland
+##      All rights reserved.
+##  Authors: Till Straumann
+##  License: GNU GPLv2 or later
+##############################################################################
+
 from   lxml      import etree as ET
 from   functools import wraps
 import sys
